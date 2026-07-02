@@ -1,0 +1,1137 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover" />
+<meta name="apple-mobile-web-app-capable" content="yes" />
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+<meta name="theme-color" content="#111827" />
+<link rel="manifest" href="manifest.json" />
+<link rel="apple-touch-icon" href="icon-180.png" />
+<title>BSP Inspección de Campo</title>
+<style>
+  :root {
+    --ink: #111827; --gris: #6b7280; --borde: #d1d5db; --fondo: #f3f4f6; --blanco: #fff;
+    --verde: #15803d; --verde-bg: #dcfce7; --verde-tx: #14532d;
+    --ambar: #b45309; --ambar-bg: #fef3c7; --ambar-tx: #78350f;
+    --rojo: #b91c1c; --rojo-bg: #fee2e2; --rojo-tx: #7f1d1d;
+  }
+  * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+  body { margin: 0; background: var(--fondo); color: var(--ink);
+    font-family: system-ui, -apple-system, sans-serif; font-size: 16px;
+    padding-bottom: env(safe-area-inset-bottom); }
+  header { position: sticky; top: 0; z-index: 20; background: var(--ink); color: #fff;
+    padding: calc(10px + env(safe-area-inset-top)) 16px 10px; display: flex; align-items: center; gap: 10px; }
+  header .kicker { font-family: ui-monospace, monospace; font-size: 10px; letter-spacing: 2px;
+    text-transform: uppercase; color: #9ca3af; }
+  header .titulo { font-weight: 700; font-size: 16px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  header .volver { font-size: 26px; line-height: 1; background: none; border: none; color: #fff; padding: 0 4px; }
+  header .estado { font-size: 10px; color: #9ca3af; margin-left: auto; white-space: nowrap; }
+  header .estado.mal { color: #f87171; font-weight: 700; }
+  main { max-width: 460px; margin: 0 auto; padding: 16px 16px 90px; }
+  h2 { font-size: 18px; margin: 0 0 4px; }
+  .sub { color: var(--gris); font-size: 13px; margin: 0 0 14px; }
+  .tarjeta { background: var(--blanco); border: 1px solid var(--borde); border-radius: 14px; padding: 14px; margin-bottom: 10px; }
+  label.campo { display: block; margin-bottom: 12px; }
+  label.campo span, .etiq { display: block; font-size: 11px; font-weight: 600; text-transform: uppercase;
+    letter-spacing: 0.5px; color: var(--gris); margin-bottom: 4px; }
+  input, textarea, select { width: 100%; border: 1px solid var(--borde); border-radius: 10px;
+    padding: 10px 12px; font-size: 16px; font-family: inherit; background: var(--blanco); color: var(--ink); }
+  textarea { resize: vertical; }
+  .btn { display: block; width: 100%; border: none; border-radius: 12px; padding: 13px; font-size: 16px;
+    font-weight: 700; font-family: inherit; text-align: center; }
+  .btn:active { transform: scale(0.98); }
+  .btn-negro { background: var(--ink); color: #fff; }
+  .btn-linea { background: var(--blanco); color: var(--ink); border: 2px solid var(--ink); }
+  .btn-gris { background: var(--blanco); color: var(--gris); border: 1px solid #9ca3af; font-size: 13px; padding: 10px; }
+  .btn-rojo-linea { background: transparent; color: var(--rojo); border: 1px solid #fca5a5; font-size: 14px; padding: 10px; }
+  .btn-rojo { background: var(--rojo); color: #fff; }
+  .btn-ambar { background: var(--ambar-bg); color: var(--ink); border: 2px solid #f59e0b; }
+  .fila { display: flex; gap: 8px; align-items: center; }
+  .fila > * { flex: 1; }
+  .grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+  .atc { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 6px; }
+  .atc button { border-radius: 10px; border: 2px solid; padding: 9px 2px; font-size: 11px; font-weight: 700; font-family: inherit; }
+  .atc .v { background: var(--verde-bg); border-color: var(--verde); color: var(--verde-tx); }
+  .atc .a { background: var(--ambar-bg); border-color: var(--ambar); color: var(--ambar-tx); }
+  .atc .r { background: var(--rojo-bg); border-color: var(--rojo); color: var(--rojo-tx); }
+  .atc .v.on { background: var(--verde); color: #fff; }
+  .atc .a.on { background: var(--ambar); color: #fff; }
+  .atc .r.on { background: var(--rojo); color: #fff; }
+  .item { display: flex; align-items: center; gap: 12px; width: 100%; background: var(--blanco);
+    border: 1px solid var(--borde); border-radius: 14px; padding: 13px; margin-bottom: 8px;
+    text-align: left; font-family: inherit; font-size: 16px; }
+  .item .prog { width: 40px; height: 40px; border-radius: 10px; background: var(--fondo); color: var(--gris);
+    display: flex; align-items: center; justify-content: center; font-weight: 700; font-size: 13px; flex-shrink: 0; }
+  .item .prog.ok { background: var(--verde); color: #fff; }
+  .item .cuerpo { flex: 1; min-width: 0; }
+  .item .nombre { font-weight: 600; }
+  .item .detalle { font-size: 12px; color: var(--gris); }
+  .item .flecha { color: #9ca3af; font-size: 20px; }
+  .chip { font-size: 10px; font-weight: 700; padding: 3px 7px; border-radius: 6px; border: 1px solid; white-space: nowrap; }
+  .chip.v { background: var(--verde-bg); border-color: var(--verde); color: var(--verde-tx); }
+  .chip.a { background: var(--ambar-bg); border-color: var(--ambar); color: var(--ambar-tx); }
+  .chip.r { background: var(--rojo-bg); border-color: var(--rojo); color: var(--rojo-tx); }
+  .foto-card { background: var(--blanco); border: 1px solid var(--borde); border-radius: 14px;
+    overflow: hidden; margin-bottom: 12px; }
+  .foto-card img { width: 100%; max-height: 280px; object-fit: cover; display: block; }
+  .foto-card .cuerpo { padding: 12px; }
+  .error { color: var(--rojo); font-weight: 600; font-size: 14px; margin: 8px 0; }
+  .aviso { color: var(--gris); font-size: 12px; margin: 8px 0; }
+  .selector { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; margin-bottom: 8px; }
+  .selector button { border-radius: 10px; border: 2px solid var(--borde); background: var(--blanco);
+    color: var(--gris); padding: 9px 4px; font-size: 12px; font-weight: 600; font-family: inherit; }
+  .selector button.on { background: var(--ink); color: #fff; border-color: var(--ink); }
+  .pildoras { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 10px; }
+  .pildoras button { border-radius: 999px; border: 2px solid var(--borde); background: var(--blanco);
+    color: var(--gris); padding: 7px 12px; font-size: 13px; font-weight: 600; font-family: inherit; }
+  .pildoras button.on { background: var(--ink); color: #fff; border-color: var(--ink); }
+  .grabadora { background: var(--blanco); border: 1px solid var(--borde); border-radius: 14px; padding: 12px; margin-bottom: 10px; }
+  .grab-live { background: var(--fondo); border: 1px solid var(--borde); border-radius: 10px;
+    padding: 10px; font-size: 14px; min-height: 46px; margin: 8px 0; color: #374151; }
+  .rec { background: var(--rojo); color: #fff; border: none; border-radius: 10px; padding: 10px 16px;
+    font-weight: 700; font-family: inherit; font-size: 14px; }
+  .rec .punto { display: inline-block; width: 9px; height: 9px; background: #fff; border-radius: 999px;
+    margin-right: 6px; animation: parp 1s infinite; }
+  @keyframes parp { 50% { opacity: 0.3; } }
+  audio { width: 100%; height: 38px; }
+  .mono { font-family: ui-monospace, monospace; font-size: 12px; }
+  details summary { font-size: 14px; font-weight: 600; color: #374151; padding: 8px 0; }
+  .lista-foto { display: flex; align-items: center; gap: 8px; background: var(--blanco);
+    border: 1px solid var(--borde); border-radius: 10px; padding: 8px 10px; margin-bottom: 6px; font-size: 13px; }
+  .lista-foto .mini { width: 44px; height: 44px; object-fit: cover; border-radius: 8px; flex-shrink: 0; }
+  .sep { border: none; border-top: 1px solid var(--borde); margin: 16px 0; }
+</style>
+</head>
+<body>
+<header>
+  <button class="volver" id="btnVolver" style="display:none">‹</button>
+  <div style="flex:1;min-width:0">
+    <div class="kicker">BSP 2026 · Inspección de campo</div>
+    <div class="titulo" id="hdrTitulo">Mis inspecciones</div>
+  </div>
+  <div class="estado" id="hdrNube" style="font-size:12px"></div>
+  <div class="estado" id="hdrEstado">·</div>
+</header>
+<main id="app"></main>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
+<script>
+"use strict";
+/* ================= Constantes ================= */
+const ATC = ["INSPECCIONADO", "USO RESTRINGIDO", "NO HABITABLE"];
+const ATC_CLS = { "INSPECCIONADO": "v", "USO RESTRINGIDO": "a", "NO HABITABLE": "r" };
+const ATC_CORTO = { "INSPECCIONADO": "INSPECC.", "USO RESTRINGIDO": "USO RESTR.", "NO HABITABLE": "NO HABITABLE" };
+const DANOS = ["Sin daño", "Mampostería menor", "Mampostería mayor", "Daño estructural", "Preexistente no sísmico"];
+const SISTEMAS = [
+  "Pórticos de concreto armado",
+  "Pórticos de concreto armado con paredes de mampostería",
+  "Muros portantes de mampostería no reforzada",
+  "Mampostería confinada",
+  "Muros de concreto armado (sistema túnel)",
+  "Pórticos de acero",
+  "Sistema mixto concreto-acero",
+  "Prefabricado de concreto"
+];
+const ZONAS = ["Fachada principal","Fachada posterior","Fachada lateral izquierda","Fachada lateral derecha",
+  "Columnas visibles","Vigas interiores visibles","Vigas perimetrales exteriores","Escalera principal",
+  "Escalera de emergencia","Áreas comunes PB","Sótano / estacionamiento","Acceso al sótano",
+  "Fosa del ascensor","Azotea: cuarto de máquinas","Azotea: tanque elevado","Azotea: muro perimetral"];
+const uid = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
+
+/* ================= Nube (Supabase) ================= */
+const SUPA_URL = "https://tkqqjbuzrulqkzhdiqwq.supabase.co";
+const SUPA_KEY = "sb_publishable_j6XrZIg5LwI9Fhp4ZG0jOQ_xdaJw7Qi";
+let supa = null;
+try { supa = window.supabase ? window.supabase.createClient(SUPA_URL, SUPA_KEY) : null; } catch (e) { supa = null; }
+let nube = { sesion: null, estado: "off", msg: "" }; // off | sin-sesion | sync | ok | error
+let _subidos = null; // {blobId: true} blobs ya en la nube
+async function subidosSet() {
+  if (_subidos) return _subidos;
+  try { _subidos = JSON.parse((await kvGet("subidos")) || "{}"); } catch (e) { _subidos = {}; }
+  return _subidos;
+}
+async function marcarSubido(id) {
+  const s = await subidosSet(); s[id] = true; await kvSet("subidos", JSON.stringify(s));
+}
+function ponNube(estado, msg) {
+  nube.estado = estado; nube.msg = msg || "";
+  const el = document.getElementById("hdrNube");
+  if (!el) return;
+  el.textContent = estado === "ok" ? "☁✓" : estado === "sync" ? "☁…" : estado === "error" ? "☁!" : estado === "sin-sesion" ? "☁ entrar" : "";
+  el.title = msg || "";
+}
+function extBlob(b) { return (b && b.type || "").includes("webm") ? "webm" : (b && b.type || "").includes("mp4") ? "m4a" : "jpg"; }
+function rutaNube(tipo, id, blob) {
+  const u = nube.sesion.user.id;
+  return `${u}/${tipo}_${id}.${tipo === "photo" ? "jpg" : extBlob(blob)}`;
+}
+async function subirBlob(tipo, id) {
+  const s = await subidosSet();
+  if (s[tipo + ":" + id]) return true;
+  const blob = await blobGet(tipo + ":" + id);
+  if (!blob) return true;
+  const { error } = await supa.storage.from("archivos").upload(rutaNube(tipo, id, blob), blob, { upsert: true, contentType: blob.type || undefined });
+  if (error) throw new Error("subida " + tipo + ": " + error.message);
+  await marcarSubido(tipo + ":" + id);
+  return true;
+}
+async function bajarBlob(tipo, id) {
+  // intenta las extensiones conocidas
+  for (const ext of tipo === "photo" ? ["jpg"] : ["m4a", "webm"]) {
+    const ruta = `${nube.sesion.user.id}/${tipo}_${id}.${ext}`;
+    const { data, error } = await supa.storage.from("archivos").download(ruta);
+    if (!error && data) {
+      await blobSet(tipo + ":" + id, data);
+      await marcarSubido(tipo + ":" + id);
+      return data;
+    }
+  }
+  return null;
+}
+function blobsDeInsp(d) {
+  const ids = [];
+  for (const u of Object.values(d.unidades || {})) {
+    for (const f of u.fotos || []) ids.push(["photo", f.id]);
+    if (u.voz && u.voz.audio) ids.push(["audio", u.voz.audio]);
+  }
+  for (const nv of d.niveles || []) if (nv.voz && nv.voz.audio) ids.push(["audio", nv.voz.audio]);
+  return ids;
+}
+async function subirInsp(id) {
+  const raw = await kvGet("insp:" + id);
+  if (!raw) return;
+  const d = JSON.parse(raw);
+  const ts = d._ts || new Date().toISOString();
+  const { error } = await supa.from("inspecciones").upsert({ id, user_id: nube.sesion.user.id, data: d, updated_at: ts });
+  if (error) throw new Error("datos: " + error.message);
+  for (const [tipo, bid] of blobsDeInsp(d)) await subirBlob(tipo, bid);
+}
+async function borrarInspNube(id, d) {
+  if (!supa || !nube.sesion) return;
+  try {
+    await supa.from("inspecciones").delete().eq("id", id);
+    const rutas = blobsDeInsp(d).map(([t, b]) => {
+      // borra ambas posibles extensiones de audio
+      return t === "photo" ? [`${nube.sesion.user.id}/photo_${b}.jpg`] : [`${nube.sesion.user.id}/audio_${b}.m4a`, `${nube.sesion.user.id}/audio_${b}.webm`];
+    }).flat();
+    if (rutas.length) await supa.storage.from("archivos").remove(rutas);
+  } catch (e) {}
+}
+let _timerNube = null;
+function programarSubida() {
+  if (!supa || !nube.sesion || !st.inspId) return;
+  clearTimeout(_timerNube);
+  _timerNube = setTimeout(() => sincronizar(true), 4000);
+}
+let _sincronizando = false;
+async function sincronizar(soloActual) {
+  if (!supa || !nube.sesion || _sincronizando || !navigator.onLine) return;
+  _sincronizando = true;
+  ponNube("sync", "Sincronizando…");
+  try {
+    if (soloActual && st.inspId) {
+      await subirInsp(st.inspId);
+    } else {
+      // Bajar: lo remoto nuevo o más reciente
+      const { data: filas, error } = await supa.from("inspecciones").select("id, data, updated_at");
+      if (error) throw new Error(error.message);
+      let cambioIndex = false;
+      for (const fila of filas || []) {
+        const localRaw = await kvGet("insp:" + fila.id);
+        const local = localRaw ? JSON.parse(localRaw) : null;
+        const tsLocal = local && local._ts ? local._ts : "1970";
+        if (!local || fila.updated_at > tsLocal) {
+          const d = fila.data; d._ts = fila.updated_at;
+          await kvSet("insp:" + fila.id, JSON.stringify(d));
+          if (!st.index.find((x) => x.id === fila.id)) {
+            st.index.push({ id: fila.id, nombre: d.edificio.nombre, informe: d.edificio.informe, fecha: d.edificio.fecha });
+            cambioIndex = true;
+          } else {
+            const e = st.index.find((x) => x.id === fila.id);
+            e.nombre = d.edificio.nombre; e.informe = d.edificio.informe; e.fecha = d.edificio.fecha;
+            cambioIndex = true;
+          }
+        }
+      }
+      if (cambioIndex) { await kvSet("index", JSON.stringify(st.index)); if (st.pantalla.n === "lista") render(); }
+      // Subir: todas las locales
+      for (const e of st.index) await subirInsp(e.id);
+    }
+    ponNube("ok", "Sincronizado");
+  } catch (e) {
+    ponNube("error", e.message);
+  }
+  _sincronizando = false;
+}
+async function iniciarNube() {
+  if (!supa) { ponNube("off", "Nube no configurada"); return; }
+  const { data } = await supa.auth.getSession();
+  nube.sesion = data && data.session;
+  if (nube.sesion) { ponNube("ok", "Sesión activa"); sincronizar(false); }
+  else ponNube("sin-sesion", "Sin sesión");
+  supa.auth.onAuthStateChange((ev, ses) => {
+    nube.sesion = ses;
+    if (ses) { ponNube("ok", ""); sincronizar(false); }
+    else ponNube("sin-sesion", "");
+  });
+  window.addEventListener("online", () => sincronizar(false));
+}
+
+/* ================= IndexedDB ================= */
+let _db = null;
+function db() {
+  if (_db) return Promise.resolve(_db);
+  return new Promise((res, rej) => {
+    const r = indexedDB.open("bsp-inspeccion", 1);
+    r.onupgradeneeded = (e) => {
+      const d = e.target.result;
+      d.createObjectStore("kv");
+      d.createObjectStore("blobs");
+    };
+    r.onsuccess = () => { _db = r.result; res(_db); };
+    r.onerror = () => rej(r.error);
+  });
+}
+function idb(store, modo, fn) {
+  return db().then((d) => new Promise((res, rej) => {
+    const tx = d.transaction(store, modo);
+    const req = fn(tx.objectStore(store));
+    req.onsuccess = () => res(req.result);
+    req.onerror = () => rej(req.error);
+  }));
+}
+const kvGet = (k) => idb("kv", "readonly", (s) => s.get(k));
+const kvSet = (k, v) => idb("kv", "readwrite", (s) => s.put(v, k));
+const kvDel = (k) => idb("kv", "readwrite", (s) => s.delete(k));
+const blobGet = (k) => idb("blobs", "readonly", (s) => s.get(k));
+const blobSet = (k, v) => idb("blobs", "readwrite", (s) => s.put(v, k));
+const blobDel = (k) => idb("blobs", "readwrite", (s) => s.delete(k));
+
+/* ================= Estado ================= */
+const st = {
+  pantalla: { n: "lista" },
+  index: [],
+  inspId: null,
+  insp: null,
+  apiKey: "",
+  urls: {},          // pid -> objectURL
+  grabando: null,    // contexto de grabación activa
+  errFoto: "", msgExport: ""
+};
+
+function nuevaInsp() {
+  return {
+    edificio: { nombre: "", direccion: "", municipio: "", informe: "", anio: "", sistema: "",
+      parcela: "", construccion: "", unidades: "", notas: "", fecha: new Date().toISOString().slice(0, 10) },
+    niveles: [], unidades: {}, listo: false
+  };
+}
+const mkNivel = (nombre, apts, comun) => ({ id: uid(), nombre, comun: !!comun,
+  apts: apts.map((n) => ({ id: uid(), nombre: n })), voz: { audio: null, texto: "" } });
+const unidadVacia = () => ({ fotos: [], voz: { audio: null, texto: "" }, atc: "" });
+
+let _timerGuardar = null;
+function guardar() {
+  ponEstado("Guardando…", false);
+  clearTimeout(_timerGuardar);
+  _timerGuardar = setTimeout(async () => {
+    try {
+      if (st.inspId && st.insp) {
+        st.insp._ts = new Date().toISOString();
+        await kvSet("insp:" + st.inspId, JSON.stringify(st.insp));
+        const e = st.index.find((x) => x.id === st.inspId);
+        if (e) { e.nombre = st.insp.edificio.nombre; e.informe = st.insp.edificio.informe; e.fecha = st.insp.edificio.fecha; }
+        await kvSet("index", JSON.stringify(st.index));
+        programarSubida();
+      }
+      ponEstado("Guardado ✓", false);
+    } catch (err) {
+      ponEstado("⚠ SIN GUARDAR", true);
+    }
+  }, 500);
+}
+function ponEstado(t, mal) {
+  const el = document.getElementById("hdrEstado");
+  el.textContent = t; el.className = "estado" + (mal ? " mal" : "");
+}
+
+/* ================= Imagen ================= */
+function comprimir(file, maxDim = 1800, calidad = 0.8) {
+  return new Promise((res, rej) => {
+    const url = URL.createObjectURL(file);
+    const img = new Image();
+    img.onload = () => {
+      let { width, height } = img;
+      const esc = Math.min(1, maxDim / Math.max(width, height));
+      width = Math.round(width * esc); height = Math.round(height * esc);
+      const c = document.createElement("canvas");
+      c.width = width; c.height = height;
+      c.getContext("2d").drawImage(img, 0, 0, width, height);
+      URL.revokeObjectURL(url);
+      c.toBlob((b) => (b ? res(b) : rej(new Error("toBlob"))), "image/jpeg", calidad);
+    };
+    img.onerror = rej;
+    img.src = url;
+  });
+}
+async function urlFoto(pid) {
+  if (st.urls[pid]) return st.urls[pid];
+  let b = await blobGet("photo:" + pid);
+  if (!b && supa && nube.sesion && navigator.onLine) b = await bajarBlob("photo", pid);
+  if (!b) return null;
+  st.urls[pid] = URL.createObjectURL(b);
+  return st.urls[pid];
+}
+
+/* ================= Navegación / render ================= */
+const $app = document.getElementById("app");
+function nav(p) { st.pantalla = p; render(); window.scrollTo(0, 0); }
+function esc(s) { return String(s == null ? "" : s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/"/g, "&quot;"); }
+
+document.getElementById("btnVolver").onclick = () => {
+  const p = st.pantalla;
+  if (p.n === "unidad") nav({ n: "nivel", nivelId: p.nivelId });
+  else if (p.n === "nivel" || p.n === "export") nav({ n: "casa" });
+  else if (p.n === "casa") nav({ n: "lista" });
+  else if (p.n === "setup") nav(st.insp && st.insp.listo ? { n: "casa" } : { n: "lista" });
+  else if (p.n === "ajustes") nav({ n: "lista" });
+};
+
+function render() {
+  const p = st.pantalla;
+  document.getElementById("btnVolver").style.display = p.n === "lista" ? "none" : "block";
+  const t = document.getElementById("hdrTitulo");
+  if (p.n === "lista") t.textContent = "Mis inspecciones";
+  else if (p.n === "ajustes") t.textContent = "Ajustes";
+  else t.textContent = (st.insp && st.insp.edificio.nombre ? st.insp.edificio.nombre : "Nueva inspección") +
+    (st.insp && st.insp.edificio.informe ? " · BSP-2026-" + st.insp.edificio.informe : "");
+  if (p.n === "lista") rLista();
+  else if (p.n === "setup") rSetup();
+  else if (p.n === "casa") rCasa();
+  else if (p.n === "nivel") rNivel();
+  else if (p.n === "unidad") rUnidad();
+  else if (p.n === "export") rExport();
+  else if (p.n === "ajustes") rAjustes();
+}
+
+/* ================= Pantalla: lista ================= */
+function rLista() {
+  const items = st.index.map((e) => `
+    <div class="item" style="padding:10px 13px">
+      <button class="cuerpo" style="background:none;border:none;text-align:left;font-family:inherit;padding:0" data-abrir="${e.id}">
+        <div class="nombre">${esc(e.nombre) || "(sin nombre)"}</div>
+        <div class="detalle">${e.informe ? "BSP-2026-" + esc(e.informe) : "Sin n.° de informe"}${e.fecha ? " · " + esc(e.fecha) : ""}</div>
+      </button>
+      <button class="btn-rojo-linea" style="width:auto;padding:7px 10px;border-radius:8px;font-size:12px" data-borrar="${e.id}">Eliminar</button>
+    </div>`).join("");
+  $app.innerHTML = `
+    <h2>Mis inspecciones</h2>
+    <p class="sub">Cada edificio es una inspección. Al terminar: exporta, respalda el ZIP y elimínala.</p>
+    ${items || '<p class="sub" style="text-align:center;padding:24px 0">No hay inspecciones activas. Crea la primera.</p>'}
+    <button class="btn btn-negro" id="bNueva" style="margin-top:8px">+ Nueva inspección</button>
+    <hr class="sep" />
+    <button class="btn btn-gris" id="bAjustes">⚙️ Ajustes y conexión con Claude</button>`;
+  document.getElementById("bNueva").onclick = async () => {
+    const id = uid();
+    st.insp = nuevaInsp(); st.inspId = id;
+    st.index.push({ id, nombre: "", informe: "", fecha: st.insp.edificio.fecha });
+    await kvSet("insp:" + id, JSON.stringify(st.insp));
+    await kvSet("index", JSON.stringify(st.index));
+    nav({ n: "setup" });
+  };
+  document.getElementById("bAjustes").onclick = () => nav({ n: "ajustes" });
+  $app.querySelectorAll("[data-abrir]").forEach((b) => (b.onclick = async () => {
+    const id = b.dataset.abrir;
+    const raw = await kvGet("insp:" + id);
+    if (!raw) return;
+    st.insp = JSON.parse(raw); st.inspId = id; st.urls = {};
+    nav(st.insp.listo ? { n: "casa" } : { n: "setup" });
+  }));
+  $app.querySelectorAll("[data-borrar]").forEach((b) => (b.onclick = async () => {
+    const id = b.dataset.borrar;
+    const e = st.index.find((x) => x.id === id);
+    if (!confirm(`¿Eliminar "${(e && e.nombre) || "esta inspección"}" con todas sus fotos y audios? Asegúrate de haber exportado y respaldado primero.`)) return;
+    const raw = await kvGet("insp:" + id);
+    if (raw) {
+      const d = JSON.parse(raw);
+      for (const u of Object.values(d.unidades || {})) {
+        for (const f of u.fotos || []) await blobDel("photo:" + f.id);
+        if (u.voz && u.voz.audio) await blobDel("audio:" + u.voz.audio);
+      }
+      for (const nv of d.niveles || []) if (nv.voz && nv.voz.audio) await blobDel("audio:" + nv.voz.audio);
+      borrarInspNube(id, d);
+    }
+    await kvDel("insp:" + id);
+    st.index = st.index.filter((x) => x.id !== id);
+    await kvSet("index", JSON.stringify(st.index));
+    if (st.inspId === id) { st.inspId = null; st.insp = null; }
+    render();
+  }));
+}
+
+/* ================= Pantalla: setup ================= */
+const setupTmp = { pisos: "", apts: "", pb: true, sotano: false, mez: false, formato: "letra", prefijo: "Apto " };
+function rSetup() {
+  const b = st.insp.edificio;
+  const campo = (lbl, k, tipo, ph) => `
+    <label class="campo"><span>${lbl}</span>
+      <input type="${tipo || "text"}" value="${esc(b[k])}" data-b="${k}" placeholder="${ph || ""}" /></label>`;
+  const sisOpts = SISTEMAS.map((s) => `<option ${b.sistema === s ? "selected" : ""}>${s}</option>`).join("");
+  const otro = b.sistema && !SISTEMAS.includes(b.sistema);
+  $app.innerHTML = `
+    <h2>Datos del edificio</h2>
+    <p class="sub">Doblete sísmico 24/06/2026 · Mw 7,2 y 7,5 · Yaracuy</p>
+    ${campo("Nombre del edificio / Residencias", "nombre", "text", "Residencias …")}
+    ${campo("Dirección completa", "direccion")}
+    ${campo("Parroquia / Municipio / Estado", "municipio")}
+    <div class="grid2">
+      ${campo("N.° informe BSP-2026-", "informe", "text", "003")}
+      ${campo("Fecha de inspección", "fecha", "date")}
+      ${campo("Año de construcción", "anio")}
+      ${campo("Parcela (m²)", "parcela")}
+    </div>
+    <label class="campo"><span>Sistema estructural</span>
+      <select id="selSis">
+        <option value="">Seleccionar…</option>${sisOpts}
+        <option value="__otro" ${otro ? "selected" : ""}>Otro (escribir)</option>
+      </select>
+      <input id="sisOtro" style="margin-top:8px;display:${otro ? "block" : "none"}" placeholder="Describe el sistema…" value="${otro ? esc(b.sistema) : ""}" />
+    </label>
+    <div class="grid2">
+      ${campo("Construcción (m²)", "construccion")}
+      ${campo("Total apartamentos", "unidades")}
+    </div>
+    <label class="campo"><span>Notas generales</span>
+      <textarea rows="2" data-b="notas">${esc(b.notas)}</textarea></label>
+    ${st.insp.listo ? `<button class="btn btn-negro" id="bVolverCasa">Guardar y volver a la inspección</button>` : `
+    <div class="tarjeta" style="border:2px solid var(--ink)">
+      <h2 style="font-size:16px">Estructura del edificio</h2>
+      <div class="grid2" style="margin:10px 0">
+        <label class="campo"><span>N.° de pisos</span><input type="number" id="inPisos" value="${setupTmp.pisos}" /></label>
+        <label class="campo"><span>Aptos por piso</span><input type="number" id="inApts" value="${setupTmp.apts}" /></label>
+      </div>
+      <div class="etiq">Formato de numeración</div>
+      <div class="selector" id="selFormato">
+        <button data-f="letra" class="${setupTmp.formato === "letra" ? "on" : ""}">1-A, 1-B, 2-A…</button>
+        <button data-f="pisonum" class="${setupTmp.formato === "pisonum" ? "on" : ""}">11, 12, 21, 22…</button>
+        <button data-f="cien" class="${setupTmp.formato === "cien" ? "on" : ""}">101, 102, 201…</button>
+        <button data-f="simple" class="${setupTmp.formato === "simple" ? "on" : ""}">1, 2, 3 por piso</button>
+      </div>
+      <label class="campo"><span>Prefijo (opcional)</span>
+        <input id="inPrefijo" value="${esc(setupTmp.prefijo)}" placeholder='Ej: "Apto " o vacío' /></label>
+      <div class="pildoras" id="pilNiveles">
+        <button data-p="pb" class="${setupTmp.pb ? "on" : ""}">${setupTmp.pb ? "✓ " : "+ "}Planta Baja</button>
+        <button data-p="sotano" class="${setupTmp.sotano ? "on" : ""}">${setupTmp.sotano ? "✓ " : "+ "}Sótano</button>
+        <button data-p="mez" class="${setupTmp.mez ? "on" : ""}">${setupTmp.mez ? "✓ " : "+ "}Mezanina</button>
+      </div>
+      <p class="aviso">Después podrás agregar, quitar o renombrar unidades por piso. Las 16 zonas comunes del formulario se agregan solas.</p>
+      <p class="error" id="msgSetup"></p>
+      <button class="btn btn-negro" id="bCrear">Crear inspección</button>
+    </div>`}`;
+  $app.querySelectorAll("[data-b]").forEach((inp) => (inp.oninput = () => { b[inp.dataset.b] = inp.value; guardar(); }));
+  const sel = document.getElementById("selSis"), sOtro = document.getElementById("sisOtro");
+  sel.onchange = () => {
+    if (sel.value === "__otro") { sOtro.style.display = "block"; b.sistema = sOtro.value; }
+    else { sOtro.style.display = "none"; b.sistema = sel.value; }
+    guardar();
+  };
+  sOtro.oninput = () => { b.sistema = sOtro.value; guardar(); };
+  if (st.insp.listo) { document.getElementById("bVolverCasa").onclick = () => nav({ n: "casa" }); return; }
+  document.getElementById("inPisos").oninput = (e) => (setupTmp.pisos = e.target.value);
+  document.getElementById("inApts").oninput = (e) => (setupTmp.apts = e.target.value);
+  document.getElementById("inPrefijo").oninput = (e) => (setupTmp.prefijo = e.target.value);
+  document.getElementById("selFormato").querySelectorAll("button").forEach((bt) => (bt.onclick = () => { setupTmp.formato = bt.dataset.f; rSetup(); }));
+  document.getElementById("pilNiveles").querySelectorAll("button").forEach((bt) => (bt.onclick = () => { setupTmp[bt.dataset.p] = !setupTmp[bt.dataset.p]; rSetup(); }));
+  document.getElementById("bCrear").onclick = () => {
+    const n = parseInt(setupTmp.pisos) || 0, k = parseInt(setupTmp.apts) || 0;
+    if (!b.nombre || !n) { document.getElementById("msgSetup").textContent = "Indica al menos el nombre del edificio y el número de pisos."; return; }
+    const niveles = [];
+    if (setupTmp.sotano) niveles.push(mkNivel("Sótano", []));
+    if (setupTmp.pb) niveles.push(mkNivel("Planta Baja", []));
+    if (setupTmp.mez) niveles.push(mkNivel("Mezanina", []));
+    const letras = "ABCDEFGHIJ";
+    for (let p = 1; p <= n; p++) {
+      const apts = [];
+      for (let a = 0; a < k; a++) {
+        let nm;
+        if (setupTmp.formato === "letra") nm = p + "-" + (letras[a] || a + 1);
+        else if (setupTmp.formato === "pisonum") nm = "" + p + (a + 1);
+        else if (setupTmp.formato === "cien") nm = "" + (p * 100 + a + 1);
+        else nm = "" + (a + 1);
+        apts.push((setupTmp.prefijo + nm).trim());
+      }
+      niveles.push(mkNivel("Piso " + p, apts));
+    }
+    niveles.push(mkNivel("Zonas comunes", ZONAS.slice(), true));
+    st.insp.niveles = niveles; st.insp.listo = true;
+    guardar(); nav({ n: "casa" });
+  };
+}
+
+/* ================= Progreso ================= */
+const unidadLista = (u) => !!(u && ((u.fotos && u.fotos.length) || (u.voz && (u.voz.texto || u.voz.audio)) || u.atc));
+
+/* ================= Pantalla: casa (niveles) ================= */
+function rCasa() {
+  const d = st.insp;
+  const totalFotos = Object.values(d.unidades).reduce((s, u) => s + (u.fotos ? u.fotos.length : 0), 0);
+  const items = d.niveles.map((nv) => {
+    const total = nv.apts.length;
+    const hechas = nv.apts.filter((a) => unidadLista(d.unidades[a.id])).length;
+    const ok = total > 0 && hechas === total;
+    return `
+    <button class="item" data-nivel="${nv.id}">
+      <div class="prog ${ok ? "ok" : ""}">${ok ? "✓" : hechas + "/" + total}</div>
+      <div class="cuerpo">
+        <div class="nombre">${esc(nv.nombre)}</div>
+        <div class="detalle">${nv.comun ? "Zonas del formulario de campo" : total + " unidades"}${nv.voz && (nv.voz.texto || nv.voz.audio) ? " · 🎙" : ""}</div>
+      </div>
+      <div class="flecha">›</div>
+    </button>`;
+  }).join("");
+  $app.innerHTML = `
+    <div class="fila" style="margin-bottom:10px">
+      <h2 style="flex:1">Niveles</h2>
+      <button class="btn-gris" style="width:auto;border-radius:10px" id="bEditar">Editar datos</button>
+    </div>
+    ${items}
+    <button class="btn btn-negro" id="bExport" style="margin-top:8px">Exportar inspección (${totalFotos} fotos)</button>
+    <button class="btn btn-rojo-linea" id="bBorrarInsp" style="margin-top:8px">Eliminar esta inspección (al terminar)</button>`;
+  document.getElementById("bEditar").onclick = () => nav({ n: "setup" });
+  document.getElementById("bExport").onclick = () => nav({ n: "export" });
+  document.getElementById("bBorrarInsp").onclick = () => {
+    if (!confirm("¿Exportaste el texto y respaldaste el ZIP de fotos? Esta acción borra todo el edificio y no se puede deshacer.")) return;
+    const id = st.inspId;
+    (async () => {
+      const d = st.insp;
+      for (const u of Object.values(st.insp.unidades)) {
+        for (const f of u.fotos || []) await blobDel("photo:" + f.id);
+        if (u.voz && u.voz.audio) await blobDel("audio:" + u.voz.audio);
+      }
+      for (const nv of st.insp.niveles) if (nv.voz && nv.voz.audio) await blobDel("audio:" + nv.voz.audio);
+      borrarInspNube(id, d);
+      await kvDel("insp:" + id);
+      st.index = st.index.filter((x) => x.id !== id);
+      await kvSet("index", JSON.stringify(st.index));
+      st.insp = null; st.inspId = null;
+      nav({ n: "lista" });
+    })();
+  };
+  $app.querySelectorAll("[data-nivel]").forEach((b) => (b.onclick = () => nav({ n: "nivel", nivelId: b.dataset.nivel })));
+}
+
+/* ================= Grabadora ================= */
+let rec = null; // { mr, sr, chunks, texto, segs, timer, ctx }
+function iniciarGrabacion(ctx, btn, liveEl) {
+  navigator.mediaDevices.getUserMedia({ audio: true }).then((stream) => {
+    const chunks = [];
+    let mime = "";
+    for (const m of ["audio/mp4", "audio/webm;codecs=opus", "audio/webm"])
+      if (window.MediaRecorder && MediaRecorder.isTypeSupported(m)) { mime = m; break; }
+    const mr = new MediaRecorder(stream, mime ? { mimeType: mime, audioBitsPerSecond: 48000 } : undefined);
+    mr.ondataavailable = (e) => { if (e.data && e.data.size) chunks.push(e.data); };
+    mr.onstop = async () => {
+      stream.getTracks().forEach((t) => t.stop());
+      const blob = new Blob(chunks, { type: mr.mimeType || "audio/mp4" });
+      const voz = ctx.voz();
+      if (blob.size > 0) {
+        const aid = voz.audio || uid();
+        await blobSet("audio:" + aid, blob);
+        voz.audio = aid;
+      }
+      const nuevo = (rec && rec.texto || "").trim();
+      if (nuevo) voz.texto = voz.texto ? voz.texto.trim() + "\n" + nuevo : nuevo;
+      rec = null;
+      guardar(); render();
+    };
+    let texto = "";
+    let sr = null;
+    const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+    if (SR) {
+      sr = new SR(); sr.lang = "es-VE"; sr.continuous = true; sr.interimResults = true;
+      sr.onresult = (e) => {
+        if (!rec) return;
+        let interim = "";
+        for (let i = e.resultIndex; i < e.results.length; i++) {
+          if (e.results[i].isFinal) texto += e.results[i][0].transcript + " ";
+          else interim += e.results[i][0].transcript;
+        }
+        rec.texto = texto;
+        if (liveEl) liveEl.textContent = texto + interim;
+      };
+      sr.onend = () => { if (rec && rec.sr === sr) { try { sr.start(); } catch (e) {} } };
+      try { sr.start(); } catch (e) { sr = null; }
+    }
+    if (liveEl && !sr) liveEl.textContent = "Grabando audio… (transcripción en vivo no disponible; dicta luego con el teclado en el campo de texto)";
+    rec = { mr, sr, chunks, texto: "", segs: 0, ctx };
+    mr.start(1000);
+    rec.timer = setInterval(() => {
+      rec.segs++;
+      if (btn) btn.innerHTML = '<span class="punto"></span>Detener ' + Math.floor(rec.segs / 60) + ":" + String(rec.segs % 60).padStart(2, "0");
+    }, 1000);
+    if (btn) btn.innerHTML = '<span class="punto"></span>Detener 0:00';
+  }).catch(() => alert("No se pudo acceder al micrófono. Ve a Ajustes del iPhone → Safari (o la app) → Micrófono y permite el acceso."));
+}
+function detenerGrabacion() {
+  if (!rec) return;
+  clearInterval(rec.timer);
+  if (rec.sr) { const s = rec.sr; rec.sr = null; try { s.stop(); } catch (e) {} }
+  if (rec.mr.state !== "inactive") rec.mr.stop();
+}
+function htmlGrabadora(idBase, etiqueta, voz) {
+  return `
+  <div class="grabadora" id="${idBase}">
+    <div class="fila" style="align-items:center">
+      <div class="etiq" style="margin:0;flex:1">${etiqueta}</div>
+      <button class="rec" style="flex:0 0 auto" id="${idBase}Btn">🎙 ${voz.audio || voz.texto ? "Agregar grabación" : "Grabar resumen"}</button>
+    </div>
+    <div class="grab-live" id="${idBase}Live" style="display:none"></div>
+    <div id="${idBase}Audio"></div>
+    <textarea id="${idBase}Txt" rows="3" placeholder="Resumen (dicta con el 🎙 del teclado o escribe)…" style="margin-top:8px">${esc(voz.texto)}</textarea>
+  </div>`;
+}
+function wireGrabadora(idBase, getVoz) {
+  const btn = document.getElementById(idBase + "Btn");
+  const live = document.getElementById(idBase + "Live");
+  const txt = document.getElementById(idBase + "Txt");
+  const audioDiv = document.getElementById(idBase + "Audio");
+  txt.oninput = () => { getVoz().texto = txt.value; guardar(); };
+  const voz = getVoz();
+  if (voz.audio) {
+    (async () => {
+      let b = await blobGet("audio:" + voz.audio);
+      if (!b && supa && nube.sesion && navigator.onLine) b = await bajarBlob("audio", voz.audio);
+      if (!b) return;
+      const u = URL.createObjectURL(b);
+      audioDiv.innerHTML = `<div class="fila" style="margin-top:8px"><audio controls src="${u}"></audio>
+        <button class="btn-rojo-linea" style="flex:0 0 auto;width:auto;padding:6px 10px;border-radius:8px;font-size:12px" id="${idBase}Del">Eliminar</button></div>`;
+      document.getElementById(idBase + "Del").onclick = async () => {
+        if (!confirm("¿Eliminar la grabación de audio? El texto se conserva.")) return;
+        await blobDel("audio:" + getVoz().audio);
+        getVoz().audio = null; guardar(); render();
+      };
+    })();
+  }
+  btn.onclick = () => {
+    if (rec) { detenerGrabacion(); return; }
+    live.style.display = "block"; live.textContent = "Escuchando…";
+    iniciarGrabacion({ voz: getVoz }, btn, live);
+  };
+}
+
+/* ================= Pantalla: nivel ================= */
+function rNivel() {
+  const nv = st.insp.niveles.find((x) => x.id === st.pantalla.nivelId);
+  if (!nv) return nav({ n: "casa" });
+  const items = nv.apts.map((a) => {
+    const u = st.insp.unidades[a.id];
+    const atc = u && u.atc;
+    const nf = u && u.fotos ? u.fotos.length : 0;
+    return `
+    <button class="item" data-unidad="${a.id}" ${atc ? `style="border:2px solid var(--${ATC_CLS[atc] === "v" ? "verde" : ATC_CLS[atc] === "a" ? "ambar" : "rojo"})"` : ""}>
+      <div class="cuerpo">
+        <div class="nombre">${esc(a.nombre)}</div>
+        <div class="detalle">${nf ? nf + " foto" + (nf > 1 ? "s" : "") : "Sin fotos"}${u && u.voz && (u.voz.texto || u.voz.audio) ? " · 🎙" : ""}</div>
+      </div>
+      ${atc ? `<span class="chip ${ATC_CLS[atc]}">${ATC_CORTO[atc]}</span>` : unidadLista(u) ? '<span style="color:var(--verde);font-weight:700">✓</span>' : ""}
+    </button>`;
+  }).join("");
+  $app.innerHTML = `
+    <h2 style="margin-bottom:12px">${esc(nv.nombre)}</h2>
+    ${items}
+    <div class="fila" style="margin:10px 0">
+      <input id="inNueva" placeholder="${nv.comun ? "Nombre de la zona…" : "Ej: Apto 2-C, Conserjería…"}" />
+      <button class="btn btn-negro" style="flex:0 0 auto;width:auto;padding:10px 16px" id="bAgregar">+ Agregar</button>
+    </div>
+    ${htmlGrabadora("gNivel", "Resumen de voz · " + esc(nv.nombre), nv.voz)}`;
+  document.getElementById("bAgregar").onclick = () => {
+    const v = document.getElementById("inNueva").value.trim();
+    if (!v) return;
+    nv.apts.push({ id: uid(), nombre: v });
+    guardar(); rNivel();
+  };
+  $app.querySelectorAll("[data-unidad]").forEach((b) => (b.onclick = () => nav({ n: "unidad", nivelId: nv.id, unidadId: b.dataset.unidad })));
+  wireGrabadora("gNivel", () => nv.voz);
+}
+
+/* ================= Pantalla: unidad ================= */
+function rUnidad() {
+  const nv = st.insp.niveles.find((x) => x.id === st.pantalla.nivelId);
+  const apt = nv && nv.apts.find((a) => a.id === st.pantalla.unidadId);
+  if (!apt) return nav({ n: "casa" });
+  if (!st.insp.unidades[apt.id]) st.insp.unidades[apt.id] = unidadVacia();
+  const u = st.insp.unidades[apt.id];
+  const atcBtns = ATC.map((a) => `<button class="${ATC_CLS[a]} ${u.atc === a ? "on" : ""}" data-atc="${a}">${ATC_CORTO[a]}</button>`).join("");
+  const fotos = (u.fotos || []).map((f, i) => `
+    <div class="foto-card" data-fid="${f.id}">
+      <img id="img_${f.id}" alt="Foto ${i + 1}" style="display:none" />
+      <div class="cuerpo">
+        <div class="fila" style="margin-bottom:8px">
+          <span class="etiq" style="margin:0;flex:1">FOTO ${i + 1}</span>
+          <button class="btn-gris" style="width:auto;padding:5px 9px;border-radius:8px;font-size:12px;${f.star ? "background:#fbbf24;border-color:#f59e0b;color:var(--ink);font-weight:700" : ""}" data-star="${f.id}">${f.star ? "★ En el informe" : "☆ Incluir en informe"}</button>
+          <button class="btn-rojo-linea" style="width:auto;padding:5px 9px;border-radius:8px;font-size:12px" data-delfoto="${f.id}">Eliminar</button>
+        </div>
+        <textarea rows="2" placeholder="Descripción de lo observado…" data-desc="${f.id}">${esc(f.desc)}</textarea>
+        <select data-dano="${f.id}" style="margin:8px 0">
+          <option value="">Tipo de daño…</option>
+          ${DANOS.map((dm) => `<option ${f.dano === dm ? "selected" : ""}>${dm}</option>`).join("")}
+        </select>
+        <div class="atc">${ATC.map((a) => `<button class="${ATC_CLS[a]} ${f.atc === a ? "on" : ""}" data-fatc="${f.id}|${a}">${ATC_CORTO[a]}</button>`).join("")}</div>
+      </div>
+    </div>`).join("");
+  $app.innerHTML = `
+    <div class="fila" style="margin-bottom:2px">
+      <h2 style="flex:1" id="tituloApt">${esc(apt.nombre)}</h2>
+      <button class="btn-gris" style="width:auto;border-radius:10px" id="bRenombrar">Renombrar</button>
+    </div>
+    <p class="sub">${esc(nv.nombre)}</p>
+    <div class="etiq">Clasificación ATC-20 de esta zona</div>
+    <div class="atc" style="margin-bottom:14px" id="atcUnidad">${atcBtns}</div>
+    <input type="file" accept="image/*" capture="environment" id="fCam" style="display:none" />
+    <input type="file" accept="image/*" multiple id="fGal" style="display:none" />
+    <div class="grid2" style="margin-bottom:12px">
+      <button class="btn btn-negro" id="bCam">📷 Tomar foto</button>
+      <button class="btn btn-linea" id="bGal">🖼 De galería</button>
+    </div>
+    <p class="error" id="errFoto"></p>
+    ${fotos}
+    ${htmlGrabadora("gUnidad", "Resumen de voz · " + esc(apt.nombre), u.voz)}
+    ${st.apiKey ? '<button class="btn btn-ambar" id="bIA" style="margin-bottom:10px">✨ Redactar resumen técnico con Claude</button>' : ""}
+    <button class="btn btn-rojo-linea" id="bDelUnidad">Eliminar esta ${nv.comun ? "zona" : "unidad"}</button>`;
+  // cargar imágenes
+  (u.fotos || []).forEach(async (f) => {
+    const url = await urlFoto(f.id);
+    const im = document.getElementById("img_" + f.id);
+    if (im && url) { im.src = url; im.style.display = "block"; }
+  });
+  document.getElementById("atcUnidad").querySelectorAll("button").forEach((bt) => (bt.onclick = () => {
+    u.atc = u.atc === bt.dataset.atc ? "" : bt.dataset.atc; guardar(); rUnidad();
+  }));
+  const fCam = document.getElementById("fCam"), fGal = document.getElementById("fGal");
+  document.getElementById("bCam").onclick = () => fCam.click();
+  document.getElementById("bGal").onclick = () => fGal.click();
+  const onArchivos = async (e) => {
+    const files = Array.from(e.target.files || []);
+    e.target.value = "";
+    const err = document.getElementById("errFoto");
+    for (const file of files) {
+      try {
+        const blob = await comprimir(file);
+        const fid = uid();
+        await blobSet("photo:" + fid, blob);
+        u.fotos.push({ id: fid, desc: "", dano: "", atc: "", star: false });
+      } catch (ex) {
+        err.textContent = "No se pudo guardar una foto: " + (ex && ex.message ? ex.message : ex);
+      }
+    }
+    guardar(); rUnidad();
+  };
+  fCam.onchange = onArchivos; fGal.onchange = onArchivos;
+  $app.querySelectorAll("[data-desc]").forEach((t) => (t.oninput = () => {
+    const f = u.fotos.find((x) => x.id === t.dataset.desc); if (f) { f.desc = t.value; guardar(); }
+  }));
+  $app.querySelectorAll("[data-dano]").forEach((s) => (s.onchange = () => {
+    const f = u.fotos.find((x) => x.id === s.dataset.dano); if (f) { f.dano = s.value; guardar(); }
+  }));
+  $app.querySelectorAll("[data-fatc]").forEach((bt) => (bt.onclick = () => {
+    const [fid, a] = bt.dataset.fatc.split("|");
+    const f = u.fotos.find((x) => x.id === fid);
+    if (f) { f.atc = f.atc === a ? "" : a; guardar(); rUnidad(); }
+  }));
+  $app.querySelectorAll("[data-star]").forEach((bt) => (bt.onclick = () => {
+    const f = u.fotos.find((x) => x.id === bt.dataset.star);
+    if (f) { f.star = !f.star; guardar(); rUnidad(); }
+  }));
+  $app.querySelectorAll("[data-delfoto]").forEach((bt) => (bt.onclick = async () => {
+    if (!confirm("¿Eliminar esta foto?")) return;
+    const fid = bt.dataset.delfoto;
+    await blobDel("photo:" + fid);
+    if (st.urls[fid]) { URL.revokeObjectURL(st.urls[fid]); delete st.urls[fid]; }
+    u.fotos = u.fotos.filter((x) => x.id !== fid);
+    guardar(); rUnidad();
+  }));
+  document.getElementById("bRenombrar").onclick = () => {
+    const nuevo = prompt("Nuevo nombre de la unidad:", apt.nombre);
+    if (nuevo && nuevo.trim()) { apt.nombre = nuevo.trim(); guardar(); rUnidad(); }
+  };
+  document.getElementById("bDelUnidad").onclick = async () => {
+    if (!confirm(`¿Eliminar "${apt.nombre}" con sus fotos y grabaciones?`)) return;
+    for (const f of u.fotos || []) await blobDel("photo:" + f.id);
+    if (u.voz && u.voz.audio) await blobDel("audio:" + u.voz.audio);
+    nv.apts = nv.apts.filter((x) => x.id !== apt.id);
+    delete st.insp.unidades[apt.id];
+    guardar(); nav({ n: "nivel", nivelId: nv.id });
+  };
+  wireGrabadora("gUnidad", () => u.voz);
+  const bIA = document.getElementById("bIA");
+  if (bIA) bIA.onclick = () => asistirIA(nv, apt, u, bIA);
+}
+
+/* ================= Exportación ================= */
+function textoExport() {
+  const d = st.insp, b = d.edificio;
+  const L = [];
+  const idx = [];
+  let n = 0;
+  L.push(`INSPECCIÓN POST-SÍSMICA DE CAMPO — BSP-2026-${b.informe || "___"}`);
+  L.push(`Doblete Sísmico 24 de junio de 2026 · Mw 7,2 y Mw 7,5 · Yaracuy, Venezuela`);
+  L.push(`Inspector: Ing. Eduardo Lubo · CIV N.° 115.692`);
+  L.push("");
+  L.push("A. DATOS DEL EDIFICIO");
+  L.push(`Nombre: ${b.nombre || "-"}`);
+  L.push(`Dirección: ${b.direccion || "-"}`);
+  L.push(`Parroquia/Municipio/Estado: ${b.municipio || "-"}`);
+  L.push(`Año de construcción: ${b.anio || "-"}`);
+  L.push(`Sistema estructural: ${b.sistema || "-"}`);
+  L.push(`Parcela: ${b.parcela || "-"} m² · Construcción: ${b.construccion || "-"} m²`);
+  L.push(`Total unidades: ${b.unidades || "-"}`);
+  L.push(`Fecha de inspección: ${b.fecha || "-"}`);
+  if (b.notas) L.push(`Notas generales: ${b.notas}`);
+  L.push("");
+  L.push("B. HALLAZGOS POR NIVEL Y UNIDAD");
+  for (const nv of d.niveles) {
+    L.push("");
+    L.push(`===== ${nv.nombre.toUpperCase()} =====`);
+    for (const a of nv.apts) {
+      const u = d.unidades[a.id];
+      if (!unidadLista(u)) { L.push(`— ${a.nombre}: sin registro.`); continue; }
+      L.push("");
+      L.push(`>> ${a.nombre}${u.atc ? ` · Clasificación ATC-20: ${u.atc}` : ""}`);
+      for (const f of u.fotos || []) {
+        n++;
+        idx.push({ n, id: f.id, zona: nv.nombre + " / " + a.nombre, desc: f.desc, star: !!f.star });
+        L.push(`   Foto ${n}${f.star ? " [SELECCIONADA PARA EL INFORME]" : ""}: ${f.desc || "(sin descripción)"}${f.dano ? " · Daño: " + f.dano : ""}${f.atc ? " · ATC-20: " + f.atc : ""}`);
+      }
+      if (u.voz && u.voz.texto) L.push(`   Resumen de voz: ${u.voz.texto.replace(/\n/g, " ")}`);
+    }
+    if (nv.voz && nv.voz.texto) { L.push(""); L.push(`RESUMEN DEL NIVEL ${nv.nombre.toUpperCase()}: ${nv.voz.texto.replace(/\n/g, " ")}`); }
+  }
+  L.push("");
+  L.push("C. ÍNDICE DE FOTOGRAFÍAS");
+  for (const f of idx) L.push(`Foto ${f.n}${f.star ? " ★informe" : ""} · ${f.zona} · ${f.desc || "(sin descripción)"}`);
+  const nStar = idx.filter((f) => f.star).length;
+  L.push("");
+  L.push(`Total de fotografías: ${n} (${nStar} seleccionadas para el registro fotográfico del informe).`);
+  L.push("Fin del registro de campo. Generar informe profesional con la estructura estándar BSP 2026.");
+  return { texto: L.join("\n"), idx };
+}
+function nombreFoto(f) {
+  return `BSP-2026-${st.insp.edificio.informe || "X"}_foto_${String(f.n).padStart(2, "0")}.jpg`;
+}
+function rExport() {
+  const { texto, idx } = textoExport();
+  const starred = idx.filter((f) => f.star);
+  const filas = idx.map((f) => `
+    <div class="lista-foto">
+      <img class="mini" id="mini_${f.id}" alt="" />
+      <span style="flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">#${f.n}${f.star ? " ★" : ""} · ${esc(f.zona)}</span>
+      <button class="btn-gris" style="width:auto;padding:5px 9px;border-radius:8px;font-size:12px" data-dl="${f.n}">Guardar</button>
+    </div>`).join("");
+  $app.innerHTML = `
+    <h2>Exportar inspección</h2>
+    <ol class="sub" style="padding-left:18px">
+      <li>Copia el texto y pégalo en una conversación nueva del proyecto BSP 2026 en Claude.</li>
+      <li>Comparte las fotos ★ a esa conversación (en tandas de máx. 20 por mensaje).</li>
+      <li>Respalda el ZIP completo en Archivos/iCloud antes de borrar el edificio.</li>
+    </ol>
+    <button class="btn btn-negro" id="bCopiar">Copiar texto para Claude</button>
+    <div class="grid2" style="margin-top:8px">
+      <button class="btn btn-ambar" id="bShareStar">★ Compartir fotos del informe (${starred.length})</button>
+      <button class="btn btn-linea" id="bZip">💾 ZIP completo (${idx.length} fotos)</button>
+    </div>
+    <p class="aviso" id="msgExp"></p>
+    <details><summary>Ver texto exportado</summary>
+      <textarea rows="14" readonly class="mono">${esc(texto)}</textarea></details>
+    <div style="margin-top:12px"><div class="etiq">Fotos individuales</div>${filas || '<p class="sub">Sin fotos aún.</p>'}</div>`;
+  idx.forEach(async (f) => {
+    const url = await urlFoto(f.id);
+    const im = document.getElementById("mini_" + f.id);
+    if (im && url) im.src = url;
+  });
+  const msg = (t) => (document.getElementById("msgExp").textContent = t);
+  document.getElementById("bCopiar").onclick = async () => {
+    try { await navigator.clipboard.writeText(texto); msg("✓ Texto copiado. Pégalo en una conversación nueva del proyecto."); }
+    catch (e) {
+      const ta = document.createElement("textarea"); ta.value = texto; document.body.appendChild(ta);
+      ta.select(); document.execCommand("copy"); document.body.removeChild(ta);
+      msg("✓ Texto copiado.");
+    }
+  };
+  document.getElementById("bShareStar").onclick = async () => {
+    if (!starred.length) return msg("No hay fotos marcadas con ★ todavía.");
+    if (!navigator.canShare) return msg("Este navegador no permite compartir archivos; usa el ZIP.");
+    const lote = 10;
+    for (let i = 0; i < starred.length; i += lote) {
+      const files = [];
+      for (const f of starred.slice(i, i + lote)) {
+        const b = await blobGet("photo:" + f.id);
+        if (b) files.push(new File([b], nombreFoto(f), { type: "image/jpeg" }));
+      }
+      try { await navigator.share({ files }); } catch (e) { break; }
+    }
+    msg("Listo. Si son más de 10, se comparten por tandas.");
+  };
+  document.getElementById("bZip").onclick = async () => {
+    msg("Armando ZIP…");
+    const zip = new JSZip();
+    zip.file("registro_campo.txt", texto);
+    for (const f of idx) {
+      const b = await blobGet("photo:" + f.id);
+      if (b) zip.file(nombreFoto(f), b);
+    }
+    const blob = await zip.generateAsync({ type: "blob" });
+    const file = new File([blob], `BSP-2026-${st.insp.edificio.informe || "X"}_completo.zip`, { type: "application/zip" });
+    if (navigator.canShare && navigator.canShare({ files: [file] })) {
+      try { await navigator.share({ files: [file] }); msg("ZIP compartido. Guárdalo en Archivos → iCloud Drive."); return; } catch (e) {}
+    }
+    const a = document.createElement("a");
+    a.href = URL.createObjectURL(blob); a.download = file.name; a.click();
+    msg("ZIP descargado.");
+  };
+  $app.querySelectorAll("[data-dl]").forEach((bt) => (bt.onclick = async () => {
+    const f = idx.find((x) => x.n === +bt.dataset.dl);
+    const b = await blobGet("photo:" + f.id);
+    if (!b) return;
+    const file = new File([b], nombreFoto(f), { type: "image/jpeg" });
+    if (navigator.canShare && navigator.canShare({ files: [file] })) {
+      try { await navigator.share({ files: [file] }); return; } catch (e) {}
+    }
+    const a = document.createElement("a");
+    a.href = URL.createObjectURL(b); a.download = file.name; a.click();
+  }));
+}
+
+/* ================= Ajustes / API ================= */
+function rAjustes() {
+  const ses = nube.sesion;
+  $app.innerHTML = `
+    <h2>Ajustes</h2>
+    <div class="tarjeta">
+      <div class="etiq">☁ Cuenta en la nube (sincronización)</div>
+      ${ses ? `
+        <p class="aviso">Sesión activa: <b>${esc(ses.user.email)}</b>. Tus inspecciones se sincronizan automáticamente entre tus dispositivos.</p>
+        <button class="btn btn-negro" id="bSync">Sincronizar ahora</button>
+        <button class="btn btn-gris" id="bSalir" style="margin-top:8px">Cerrar sesión en este dispositivo</button>
+      ` : `
+        <label class="campo"><span>Correo</span><input id="inMail" type="email" autocomplete="username" placeholder="tu@correo.com" /></label>
+        <label class="campo"><span>Contraseña</span><input id="inPass" type="password" autocomplete="current-password" /></label>
+        <button class="btn btn-negro" id="bEntrar">Iniciar sesión</button>
+      `}
+      <p class="aviso" id="msgNube">${esc(nube.msg)}</p>
+    </div>
+    <p class="sub">Conexión opcional con Claude vía API para asistencia de redacción en campo.</p>
+    <div class="tarjeta">
+      <label class="campo"><span>Clave API de Anthropic (sk-ant-…)</span>
+        <input id="inKey" type="password" value="${esc(st.apiKey)}" placeholder="sk-ant-api03-…" /></label>
+      <p class="aviso">La clave se guarda solo en este teléfono. Se obtiene en console.anthropic.com (cuenta con crédito prepagado, se cobra por uso). Sin clave, la app funciona 100% igual; solo se desactiva el botón "✨ Redactar con Claude".</p>
+      <button class="btn btn-negro" id="bGuardarKey">Guardar</button>
+      <button class="btn btn-gris" id="bProbarKey" style="margin-top:8px">Probar conexión</button>
+      <p class="aviso" id="msgKey"></p>
+    </div>
+    <div class="tarjeta">
+      <div class="etiq">Almacenamiento del teléfono</div>
+      <p class="aviso" id="msgAlm">Calculando…</p>
+    </div>
+    <p class="aviso">BSP Inspecciones Post-Sísmica 2026 · Ing. Eduardo Lubo · CIV N.° 115.692 · App de campo v2.0 (nube)</p>`;
+  const mN = (t) => (document.getElementById("msgNube").textContent = t);
+  if (ses) {
+    document.getElementById("bSync").onclick = async () => { mN("Sincronizando…"); await sincronizar(false); mN(nube.estado === "ok" ? "✓ Sincronizado." : "✗ " + nube.msg); };
+    document.getElementById("bSalir").onclick = async () => {
+      if (!confirm("¿Cerrar sesión? Los datos locales se conservan; solo se detiene la sincronización.")) return;
+      await supa.auth.signOut(); rAjustes();
+    };
+  } else {
+    document.getElementById("bEntrar").onclick = async () => {
+      mN("Entrando…");
+      if (!supa) return mN("✗ Nube no configurada en esta versión.");
+      const { error } = await supa.auth.signInWithPassword({
+        email: document.getElementById("inMail").value.trim(),
+        password: document.getElementById("inPass").value
+      });
+      if (error) mN("✗ " + error.message);
+      else { mN("✓ Sesión iniciada."); rAjustes(); }
+    };
+  }
+  document.getElementById("bGuardarKey").onclick = async () => {
+    st.apiKey = document.getElementById("inKey").value.trim();
+    await kvSet("apikey", st.apiKey);
+    document.getElementById("msgKey").textContent = "✓ Guardada.";
+  };
+  document.getElementById("bProbarKey").onclick = async () => {
+    const m = document.getElementById("msgKey");
+    m.textContent = "Probando…";
+    try {
+      const r = await llamarClaude("Responde únicamente: OK", 20);
+      m.textContent = r.includes("OK") ? "✓ Conexión con Claude funcionando." : "Respuesta inesperada: " + r.slice(0, 80);
+    } catch (e) { m.textContent = "✗ " + e.message; }
+  };
+  if (navigator.storage && navigator.storage.estimate) {
+    navigator.storage.estimate().then((est) => {
+      const uso = (est.usage / 1048576).toFixed(1), tope = (est.quota / 1048576).toFixed(0);
+      document.getElementById("msgAlm").textContent = `En uso: ${uso} MB de ~${tope} MB disponibles para la app.`;
+    });
+  }
+}
+async function llamarClaude(prompt, maxTokens) {
+  if (!st.apiKey) throw new Error("Configura primero la clave API en Ajustes.");
+  const resp = await fetch("https://api.anthropic.com/v1/messages", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      "x-api-key": st.apiKey,
+      "anthropic-version": "2023-06-01",
+      "anthropic-dangerous-direct-browser-access": "true"
+    },
+    body: JSON.stringify({
+      model: "claude-sonnet-4-6",
+      max_tokens: maxTokens || 800,
+      messages: [{ role: "user", content: prompt }]
+    })
+  });
+  if (!resp.ok) {
+    const t = await resp.text();
+    throw new Error("API " + resp.status + ": " + t.slice(0, 120));
+  }
+  const data = await resp.json();
+  return (data.content || []).filter((c) => c.type === "text").map((c) => c.text).join("\n");
+}
+async function asistirIA(nv, apt, u, btn) {
+  btn.disabled = true; btn.textContent = "✨ Redactando…";
+  try {
+    const fotos = (u.fotos || []).map((f, i) => `Foto ${i + 1}: ${f.desc || "sin descripción"} (daño: ${f.dano || "?"}, ATC-20: ${f.atc || "?"})`).join("\n");
+    const prompt = `Eres asistente de un ingeniero estructural en inspección post-sísmica ATC-20 en Venezuela (doblete sísmico 24/06/2026, Yaracuy). Redacta en español técnico y conciso (máximo 120 palabras, sin markdown, sin guiones largos) el resumen de hallazgos de la unidad "${apt.nombre}" (${nv.nombre}), clasificación ATC-20 de la unidad: ${u.atc || "sin asignar"}.
+Observaciones de fotos:
+${fotos || "(sin fotos)"}
+Notas dictadas por el ingeniero: ${u.voz.texto || "(ninguna)"}
+Responde solo con el párrafo del resumen, sin preámbulos.`;
+    const r = await llamarClaude(prompt, 400);
+    u.voz.texto = (u.voz.texto ? u.voz.texto.trim() + "\n\n[Redacción asistida]\n" : "") + r.trim();
+    guardar(); rUnidad();
+  } catch (e) {
+    alert("No se pudo redactar: " + e.message);
+    btn.disabled = false; btn.textContent = "✨ Redactar resumen técnico con Claude";
+  }
+}
+
+/* ================= Inicio ================= */
+(async function init() {
+  try {
+    if (navigator.storage && navigator.storage.persist) navigator.storage.persist();
+    const idxRaw = await kvGet("index");
+    if (idxRaw) st.index = JSON.parse(idxRaw);
+    const k = await kvGet("apikey");
+    if (k) st.apiKey = k;
+    ponEstado("Guardado ✓", false);
+  } catch (e) {
+    ponEstado("⚠ ALMACÉN NO DISPONIBLE", true);
+  }
+  render();
+  iniciarNube();
+  document.getElementById("hdrNube").onclick = () => nav({ n: "ajustes" });
+  if ("serviceWorker" in navigator) navigator.serviceWorker.register("sw.js").catch(() => {});
+})();
+</script>
+</body>
+</html>
