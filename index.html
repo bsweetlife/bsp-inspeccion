@@ -267,14 +267,17 @@ async function sincronizar(soloActual) {
 }
 async function iniciarNube() {
   if (!supa) { ponNube("off", "Nube no configurada"); return; }
-  const { data } = await supa.auth.getSession();
-  nube.sesion = data && data.session;
+  try {
+    const { data } = await supa.auth.getSession();
+    nube.sesion = data && data.session;
+  } catch (e) { nube.sesion = null; }
   if (nube.sesion) { ponNube("ok", "Sesión activa"); sincronizar(false); }
   else ponNube("sin-sesion", "Sin sesión");
   supa.auth.onAuthStateChange((ev, ses) => {
+    const antes = !!nube.sesion;
     nube.sesion = ses;
-    if (ses) { ponNube("ok", ""); sincronizar(false); }
-    else ponNube("sin-sesion", "");
+    if (ses) { ponNube("ok", ""); if (!antes) { sincronizar(false); render(); } }
+    else { ponNube("sin-sesion", ""); render(); }
   });
   window.addEventListener("online", () => sincronizar(false));
 }
@@ -401,6 +404,11 @@ document.getElementById("btnVolver").onclick = () => {
 
 function render() {
   const p = st.pantalla;
+  if (supa && !nube.sesion && !st.omitirLogin) {
+    document.getElementById("btnVolver").style.display = "none";
+    document.getElementById("hdrTitulo").textContent = "Iniciar sesión";
+    return rLogin();
+  }
   document.getElementById("btnVolver").style.display = p.n === "lista" ? "none" : "block";
   const t = document.getElementById("hdrTitulo");
   if (p.n === "lista") t.textContent = "Mis inspecciones";
@@ -414,6 +422,43 @@ function render() {
   else if (p.n === "unidad") rUnidad();
   else if (p.n === "export") rExport();
   else if (p.n === "ajustes") rAjustes();
+}
+
+/* ================= Pantalla: login ================= */
+function rLogin() {
+  $app.innerHTML = `
+    <div style="text-align:center;margin:28px 0 18px">
+      <img src="icon-180.png" alt="" style="width:76px;height:76px;border-radius:18px" />
+      <h2 style="margin-top:12px">BSP Inspección de Campo</h2>
+      <p class="sub">Inspección post-sísmica · Doblete 24/06/2026 · Yaracuy</p>
+    </div>
+    <div class="tarjeta">
+      <label class="campo"><span>Correo</span>
+        <input id="lgMail" type="email" autocomplete="username" placeholder="tu@correo.com" /></label>
+      <label class="campo"><span>Contraseña</span>
+        <input id="lgPass" type="password" autocomplete="current-password" /></label>
+      <button class="btn btn-negro" id="lgEntrar">Iniciar sesión</button>
+      <p class="error" id="lgMsg"></p>
+      <p class="aviso">La sesión queda recordada en este dispositivo y la app funciona sin señal en campo.</p>
+    </div>
+    <button class="btn btn-gris" id="lgOffline">Usar sin cuenta en este dispositivo (sin sincronización)</button>`;
+  const msg = (t) => (document.getElementById("lgMsg").textContent = t);
+  const entrar = async () => {
+    msg("Entrando…");
+    if (!navigator.onLine) return msg("Sin conexión. Para el primer inicio de sesión se necesita internet; después la app funciona sin señal.");
+    const { error } = await supa.auth.signInWithPassword({
+      email: document.getElementById("lgMail").value.trim(),
+      password: document.getElementById("lgPass").value
+    });
+    if (error) msg("✗ " + (error.message === "Invalid login credentials" ? "Correo o contraseña incorrectos." : error.message));
+    else render();
+  };
+  document.getElementById("lgEntrar").onclick = entrar;
+  document.getElementById("lgPass").addEventListener("keydown", (e) => { if (e.key === "Enter") entrar(); });
+  document.getElementById("lgOffline").onclick = () => {
+    if (!confirm("Sin cuenta no hay sincronización ni respaldo en la nube: los datos quedan solo en este dispositivo hasta que inicies sesión. ¿Continuar?")) return;
+    st.omitirLogin = true; render();
+  };
 }
 
 /* ================= Pantalla: lista ================= */
@@ -1127,8 +1172,8 @@ Responde solo con el párrafo del resumen, sin preámbulos.`;
   } catch (e) {
     ponEstado("⚠ ALMACÉN NO DISPONIBLE", true);
   }
+  await iniciarNube();
   render();
-  iniciarNube();
   document.getElementById("hdrNube").onclick = () => nav({ n: "ajustes" });
   if ("serviceWorker" in navigator) navigator.serviceWorker.register("sw.js").catch(() => {});
 })();
