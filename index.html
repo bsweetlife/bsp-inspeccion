@@ -1100,12 +1100,14 @@ function rAjustes() {
     };
   }
   document.getElementById("bGuardarKey").onclick = async () => {
-    st.apiKey = document.getElementById("inKey").value.trim();
+    st.apiKey = document.getElementById("inKey").value.replace(/\s+/g, "");
     await kvSet("apikey", st.apiKey);
     document.getElementById("msgKey").textContent = "✓ Guardada.";
   };
   document.getElementById("bProbarKey").onclick = async () => {
     const m = document.getElementById("msgKey");
+    st.apiKey = document.getElementById("inKey").value.replace(/\s+/g, "");
+    await kvSet("apikey", st.apiKey);
     m.textContent = "Probando…";
     try {
       const r = await llamarClaude("Responde únicamente: OK", 20);
