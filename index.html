@@ -120,7 +120,7 @@
 <script>
 "use strict";
 /* ================= Constantes ================= */
-const VERSION = "2.3";
+const VERSION = "2.4";
 const ATC = ["INSPECCIONADO", "USO RESTRINGIDO", "NO HABITABLE"];
 const ATC_CLS = { "INSPECCIONADO": "v", "USO RESTRINGIDO": "a", "NO HABITABLE": "r" };
 const ATC_CORTO = { "INSPECCIONADO": "INSPECC.", "USO RESTRINGIDO": "USO RESTR.", "NO HABITABLE": "NO HABITABLE" };
@@ -1055,6 +1055,13 @@ function rAjustes() {
   const ses = nube.sesion;
   $app.innerHTML = `
     <h2>Ajustes</h2>
+    <div class="tarjeta" style="display:flex;align-items:center;gap:12px">
+      <div style="flex:1">
+        <div class="etiq" style="margin:0">Versión de la app</div>
+        <div style="font-size:26px;font-weight:800;font-family:ui-monospace,monospace">v${VERSION}</div>
+      </div>
+      <button class="btn btn-gris" style="width:auto" id="bActualizar">Buscar actualización</button>
+    </div>
     <div class="tarjeta">
       <div class="etiq">☁ Cuenta en la nube (sincronización)</div>
       ${ses ? `
@@ -1083,6 +1090,13 @@ function rAjustes() {
     </div>
     <p class="aviso">BSP Inspecciones Post-Sísmica 2026 · Ing. Eduardo Lubo · CIV N.° 115.692 · App de campo <b>v${VERSION}</b></p>`;
   const mN = (t) => (document.getElementById("msgNube").textContent = t);
+  document.getElementById("bActualizar").onclick = async () => {
+    if ("serviceWorker" in navigator) {
+      const reg = await navigator.serviceWorker.getRegistration();
+      if (reg) await reg.update();
+    }
+    location.reload();
+  };
   if (ses) {
     document.getElementById("bSync").onclick = async () => { mN("Sincronizando…"); await sincronizar(false); mN(nube.estado === "ok" ? "✓ Sincronizado." : "✗ " + nube.msg); };
     document.getElementById("bSalir").onclick = async () => {
@@ -1179,7 +1193,15 @@ Responde solo con el párrafo del resumen, sin preámbulos.`;
   await iniciarNube();
   render();
   document.getElementById("hdrNube").onclick = () => nav({ n: "ajustes" });
-  if ("serviceWorker" in navigator) navigator.serviceWorker.register("sw.js").catch(() => {});
+  if ("serviceWorker" in navigator) {
+    navigator.serviceWorker.register("sw.js").then((reg) => reg.update()).catch(() => {});
+    let recargado = false;
+    navigator.serviceWorker.addEventListener("controllerchange", () => {
+      if (recargado) return;
+      recargado = true;
+      location.reload();
+    });
+  }
 })();
 </script>
 </body>
