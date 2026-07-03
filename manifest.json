@@ -1,14 +1,26 @@
 {
-  "name": "BSL Inventory",
-  "short_name": "BSL",
-  "description": "Blooming Sweet Life inventory management",
-  "start_url": "/",
+  "name": "BSP Inspección de Campo",
+  "short_name": "BSP 2026",
+  "description": "Inspección post-sísmica de edificaciones - Doblete 24/06/2026 Yaracuy",
+  "start_url": "https://bsweetlife.github.io/bsp-inspeccion/index.html",
+  "scope": "https://bsweetlife.github.io/bsp-inspeccion/",
   "display": "standalone",
-  "background_color": "#111111",
-  "theme_color": "#111111",
-  "orientation": "portrait-primary",
+  "orientation": "portrait",
+  "background_color": "#111827",
+  "theme_color": "#111827",
+  "lang": "es",
   "icons": [
-    { "src": "/icons/icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any maskable" },
-    { "src": "/icons/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any maskable" }
-  ]
+    {
+      "src": "icon-180.png",
+      "sizes": "180x180",
+      "type": "image/png"
+    },
+    {
+      "src": "icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any maskable"
+    }
+  ],
+  "id": "https://bsweetlife.github.io/bsp-inspeccion/"
 }
