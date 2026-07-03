@@ -120,6 +120,7 @@
 <script>
 "use strict";
 /* ================= Constantes ================= */
+const VERSION = "2.3";
 const ATC = ["INSPECCIONADO", "USO RESTRINGIDO", "NO HABITABLE"];
 const ATC_CLS = { "INSPECCIONADO": "v", "USO RESTRINGIDO": "a", "NO HABITABLE": "r" };
 const ATC_CORTO = { "INSPECCIONADO": "INSPECC.", "USO RESTRINGIDO": "USO RESTR.", "NO HABITABLE": "NO HABITABLE" };
@@ -431,6 +432,7 @@ function rLogin() {
       <img src="icon-180.png" alt="" style="width:76px;height:76px;border-radius:18px" />
       <h2 style="margin-top:12px">BSP Inspección de Campo</h2>
       <p class="sub">Inspección post-sísmica · Doblete 24/06/2026 · Yaracuy</p>
+      <p class="aviso" style="margin-top:-6px">Versión ${VERSION}</p>
     </div>
     <div class="tarjeta">
       <label class="campo"><span>Correo</span>
@@ -1079,7 +1081,7 @@ function rAjustes() {
       <div class="etiq">Almacenamiento del teléfono</div>
       <p class="aviso" id="msgAlm">Calculando…</p>
     </div>
-    <p class="aviso">BSP Inspecciones Post-Sísmica 2026 · Ing. Eduardo Lubo · CIV N.° 115.692 · App de campo v2.0 (nube)</p>`;
+    <p class="aviso">BSP Inspecciones Post-Sísmica 2026 · Ing. Eduardo Lubo · CIV N.° 115.692 · App de campo <b>v${VERSION}</b></p>`;
   const mN = (t) => (document.getElementById("msgNube").textContent = t);
   if (ses) {
     document.getElementById("bSync").onclick = async () => { mN("Sincronizando…"); await sincronizar(false); mN(nube.estado === "ok" ? "✓ Sincronizado." : "✗ " + nube.msg); };
