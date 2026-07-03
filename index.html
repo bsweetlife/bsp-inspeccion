@@ -117,10 +117,11 @@
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
 <script>
 "use strict";
 /* ================= Constantes ================= */
-const VERSION = "2.5";
+const VERSION = "2.6";
 const ATC = ["INSPECCIONADO", "USO RESTRINGIDO", "NO HABITABLE"];
 const ATC_CLS = { "INSPECCIONADO": "v", "USO RESTRINGIDO": "a", "NO HABITABLE": "r" };
 const ATC_CORTO = { "INSPECCIONADO": "INSPECC.", "USO RESTRINGIDO": "USO RESTR.", "NO HABITABLE": "NO HABITABLE" };
@@ -326,15 +327,19 @@ const st = {
 };
 
 function nuevaInsp() {
+  const ahora = new Date();
   return {
-    edificio: { nombre: "", direccion: "", municipio: "", informe: "", anio: "", sistema: "",
-      parcela: "", construccion: "", unidades: "", notas: "", fecha: new Date().toISOString().slice(0, 10) },
+    edificio: { nombre: "", direccion: "", parroquia: "", municipio: "", estado: "", informe: "", anio: "", sistema: "",
+      parcela: "", construccion: "", unidades: "", pisos: "", notas: "", atcGlobal: "",
+      antecedentes: "", conserje: "", gps: null,
+      fecha: ahora.toISOString().slice(0, 10),
+      horaInicio: ahora.toTimeString().slice(0, 5) },
     niveles: [], unidades: {}, listo: false
   };
 }
 const mkNivel = (nombre, apts, comun) => ({ id: uid(), nombre, comun: !!comun,
   apts: apts.map((n) => ({ id: uid(), nombre: n })), voz: { audio: null, texto: "" } });
-const unidadVacia = () => ({ fotos: [], voz: { audio: null, texto: "" }, atc: "" });
+const unidadVacia = () => ({ fotos: [], voz: { audio: null, texto: "" }, atc: "", estado: "" });
 
 let _timerGuardar = null;
 function guardar() {
@@ -431,7 +436,7 @@ function rLogin() {
     <div style="text-align:center;margin:28px 0 18px">
       <img src="icon-180.png" alt="" style="width:76px;height:76px;border-radius:18px" />
       <h2 style="margin-top:12px">BSP Inspección de Campo</h2>
-      <p class="sub">Inspección post-sísmica · Doblete 24/06/2026 · Yaracuy</p>
+      <p class="sub">Building Safety Program · Inspección post-sísmica · Doblete 24/06/2026 · Yaracuy</p>
       <p class="aviso" style="margin-top:-6px">Versión ${VERSION}</p>
     </div>
     <div class="tarjeta">
@@ -532,12 +537,31 @@ function rSetup() {
     <p class="sub">Doblete sísmico 24/06/2026 · Mw 7,2 y 7,5 · Yaracuy</p>
     ${campo("Nombre del edificio / Residencias", "nombre", "text", "Residencias …")}
     ${campo("Dirección completa", "direccion")}
-    ${campo("Parroquia / Municipio / Estado", "municipio")}
     <div class="grid2">
+      ${campo("Parroquia", "parroquia")}
+      ${campo("Municipio", "municipio")}
+      ${campo("Estado", "estado", "text", "Distrito Capital")}
       ${campo("N.° informe BSP-2026-", "informe", "text", "003")}
       ${campo("Fecha de inspección", "fecha", "date")}
+      ${campo("Hora de inicio", "horaInicio", "time")}
       ${campo("Año de construcción", "anio")}
+      ${campo("N.° de pisos", "pisos", "number")}
       ${campo("Parcela (m²)", "parcela")}
+      ${campo("Construcción (m²)", "construccion")}
+    </div>
+    <div class="tarjeta" style="padding:12px">
+      <div class="etiq">Clasificación ATC-20 GLOBAL del edificio</div>
+      <div class="atc" id="atcGlobal">${ATC.map((a) => `<button class="${ATC_CLS[a]} ${b.atcGlobal === a ? "on" : ""}" data-atcg="${a}">${ATC_CORTO[a]}</button>`).join("")}</div>
+      <p class="aviso" style="margin-bottom:0">La clasificación general que se asigna a toda la edificación. Va en el informe y en el resumen PDF.</p>
+    </div>
+    <div class="tarjeta" style="padding:12px">
+      <div class="fila">
+        <div style="flex:1">
+          <div class="etiq" style="margin:0">Ubicación GPS</div>
+          <p class="aviso" style="margin:2px 0 0" id="gpsTxt">${b.gps ? `${b.gps.lat.toFixed(6)}, ${b.gps.lon.toFixed(6)} (±${Math.round(b.gps.acc)} m)` : "Sin capturar"}</p>
+        </div>
+        <button class="btn btn-linea" style="flex:0 0 auto;width:auto;padding:9px 12px;font-size:13px" id="bGps">📍 Capturar</button>
+      </div>
     </div>
     <label class="campo"><span>Sistema estructural</span>
       <select id="selSis">
@@ -547,8 +571,14 @@ function rSetup() {
       <input id="sisOtro" style="margin-top:8px;display:${otro ? "block" : "none"}" placeholder="Describe el sistema…" value="${otro ? esc(b.sistema) : ""}" />
     </label>
     <div class="grid2">
-      ${campo("Construcción (m²)", "construccion")}
       ${campo("Total apartamentos", "unidades")}
+    </div>
+    <div class="tarjeta" style="padding:12px">
+      <div class="etiq">Antecedentes e inspecciones previas</div>
+      <label class="campo" style="margin-top:8px"><span>Inspecciones previas de otros organismos (organismo, expediente, fecha, hallazgo)</span>
+        <textarea rows="3" data-b="antecedentes" placeholder="Ej: Bomberos de Caracas, Exp. 456-26, 28/06/2026, recomendó desalojo del piso 2…">${esc(b.antecedentes || "")}</textarea></label>
+      <label class="campo" style="margin-bottom:0"><span>Observaciones del conserje / residentes</span>
+        <textarea rows="2" data-b="conserje" placeholder="Lo reportado por el personal o los habitantes…">${esc(b.conserje || "")}</textarea></label>
     </div>
     <label class="campo"><span>Notas generales</span>
       <textarea rows="2" data-b="notas">${esc(b.notas)}</textarea></label>
@@ -578,6 +608,24 @@ function rSetup() {
       <button class="btn btn-negro" id="bCrear">Crear inspección</button>
     </div>`}`;
   $app.querySelectorAll("[data-b]").forEach((inp) => (inp.oninput = () => { b[inp.dataset.b] = inp.value; guardar(); }));
+  $app.querySelectorAll("[data-atcg]").forEach((bt) => (bt.onclick = () => {
+    b.atcGlobal = b.atcGlobal === bt.dataset.atcg ? "" : bt.dataset.atcg;
+    guardar(); rSetup();
+  }));
+  document.getElementById("bGps").onclick = () => {
+    const t = document.getElementById("gpsTxt");
+    if (!navigator.geolocation) { t.textContent = "GPS no disponible en este navegador."; return; }
+    t.textContent = "Obteniendo posición…";
+    navigator.geolocation.getCurrentPosition(
+      (pos) => {
+        b.gps = { lat: pos.coords.latitude, lon: pos.coords.longitude, acc: pos.coords.accuracy };
+        t.textContent = `${b.gps.lat.toFixed(6)}, ${b.gps.lon.toFixed(6)} (±${Math.round(b.gps.acc)} m)`;
+        guardar();
+      },
+      (err) => { t.textContent = "No se pudo obtener (" + err.message + "). Revisa permisos de ubicación."; },
+      { enableHighAccuracy: true, timeout: 15000 }
+    );
+  };
   const sel = document.getElementById("selSis"), sOtro = document.getElementById("sisOtro");
   sel.onchange = () => {
     if (sel.value === "__otro") { sOtro.style.display = "block"; b.sistema = sOtro.value; }
@@ -613,12 +661,13 @@ function rSetup() {
     }
     niveles.push(mkNivel("Zonas comunes", ZONAS.slice(), true));
     st.insp.niveles = niveles; st.insp.listo = true;
+    if (!b.pisos) b.pisos = String(n);
     guardar(); nav({ n: "casa" });
   };
 }
 
 /* ================= Progreso ================= */
-const unidadLista = (u) => !!(u && ((u.fotos && u.fotos.length) || (u.voz && (u.voz.texto || u.voz.audio)) || u.atc));
+const unidadLista = (u) => !!(u && ((u.fotos && u.fotos.length) || (u.voz && (u.voz.texto || u.voz.audio)) || u.atc || u.estado));
 
 /* ================= Pantalla: casa (niveles) ================= */
 function rCasa() {
@@ -780,7 +829,7 @@ function rNivel() {
     <button class="item" data-unidad="${a.id}" ${atc ? `style="border:2px solid var(--${ATC_CLS[atc] === "v" ? "verde" : ATC_CLS[atc] === "a" ? "ambar" : "rojo"})"` : ""}>
       <div class="cuerpo">
         <div class="nombre">${esc(a.nombre)}</div>
-        <div class="detalle">${nf ? nf + " foto" + (nf > 1 ? "s" : "") : "Sin fotos"}${u && u.voz && (u.voz.texto || u.voz.audio) ? " · 🎙" : ""}</div>
+        <div class="detalle">${u && u.estado === "sin-hallazgos" ? "✓ Sin hallazgos" : u && u.estado === "no-accedida" ? "🚫 No accedida" : nf ? nf + " foto" + (nf > 1 ? "s" : "") : "Sin fotos"}${u && u.voz && (u.voz.texto || u.voz.audio) ? " · 🎙" : ""}</div>
       </div>
       ${atc ? `<span class="chip ${ATC_CLS[atc]}">${ATC_CORTO[atc]}</span>` : unidadLista(u) ? '<span style="color:var(--verde);font-weight:700">✓</span>' : ""}
     </button>`;
@@ -817,6 +866,7 @@ function rUnidad() {
       <div class="cuerpo">
         <div class="fila" style="margin-bottom:8px">
           <span class="etiq" style="margin:0;flex:1">FOTO ${i + 1}</span>
+          <button class="btn-gris" style="width:auto;padding:5px 9px;border-radius:8px;font-size:12px" data-anotar="${f.id}">✏️ Anotar</button>
           <button class="btn-gris" style="width:auto;padding:5px 9px;border-radius:8px;font-size:12px;${f.star ? "background:#fbbf24;border-color:#f59e0b;color:var(--ink);font-weight:700" : ""}" data-star="${f.id}">${f.star ? "★ En el informe" : "☆ Incluir en informe"}</button>
           <button class="btn-rojo-linea" style="width:auto;padding:5px 9px;border-radius:8px;font-size:12px" data-delfoto="${f.id}">Eliminar</button>
         </div>
@@ -835,7 +885,11 @@ function rUnidad() {
     </div>
     <p class="sub">${esc(nv.nombre)}</p>
     <div class="etiq">Clasificación ATC-20 de esta zona</div>
-    <div class="atc" style="margin-bottom:14px" id="atcUnidad">${atcBtns}</div>
+    <div class="atc" style="margin-bottom:10px" id="atcUnidad">${atcBtns}</div>
+    <div class="grid2" style="margin-bottom:14px">
+      <button class="btn ${u.estado === "sin-hallazgos" ? "btn-negro" : "btn-gris"}" id="bSinHallazgos" style="font-size:13px;padding:9px">✓ Inspeccionada sin hallazgos</button>
+      <button class="btn ${u.estado === "no-accedida" ? "btn-negro" : "btn-gris"}" id="bNoAccedida" style="font-size:13px;padding:9px">🚫 No accedida / fuera de alcance</button>
+    </div>
     <input type="file" accept="image/*" capture="environment" id="fCam" style="display:none" />
     <input type="file" accept="image/*" multiple id="fGal" style="display:none" />
     <div class="grid2" style="margin-bottom:12px">
@@ -856,6 +910,12 @@ function rUnidad() {
   document.getElementById("atcUnidad").querySelectorAll("button").forEach((bt) => (bt.onclick = () => {
     u.atc = u.atc === bt.dataset.atc ? "" : bt.dataset.atc; guardar(); rUnidad();
   }));
+  document.getElementById("bSinHallazgos").onclick = () => {
+    u.estado = u.estado === "sin-hallazgos" ? "" : "sin-hallazgos"; guardar(); rUnidad();
+  };
+  document.getElementById("bNoAccedida").onclick = () => {
+    u.estado = u.estado === "no-accedida" ? "" : "no-accedida"; guardar(); rUnidad();
+  };
   const fCam = document.getElementById("fCam"), fGal = document.getElementById("fGal");
   document.getElementById("bCam").onclick = () => fCam.click();
   document.getElementById("bGal").onclick = () => fGal.click();
@@ -891,6 +951,7 @@ function rUnidad() {
     const f = u.fotos.find((x) => x.id === bt.dataset.star);
     if (f) { f.star = !f.star; guardar(); rUnidad(); }
   }));
+  $app.querySelectorAll("[data-anotar]").forEach((bt) => (bt.onclick = () => abrirEditorFoto(bt.dataset.anotar)));
   $app.querySelectorAll("[data-delfoto]").forEach((bt) => (bt.onclick = async () => {
     if (!confirm("¿Eliminar esta foto?")) return;
     const fid = bt.dataset.delfoto;
@@ -916,7 +977,104 @@ function rUnidad() {
   if (bIA) bIA.onclick = () => asistirIA(nv, apt, u, bIA);
 }
 
-/* ================= Exportación ================= */
+/* ================= Editor de anotaciones sobre fotos ================= */
+async function abrirEditorFoto(fid) {
+  const blob = await blobGet("photo:" + fid);
+  if (!blob) return;
+  const img = new Image();
+  const url = URL.createObjectURL(blob);
+  await new Promise((res) => { img.onload = res; img.src = url; });
+  const ov = document.createElement("div");
+  ov.style.cssText = "position:fixed;inset:0;z-index:100;background:rgba(10,12,16,.96);display:flex;flex-direction:column;padding:env(safe-area-inset-top) 0 env(safe-area-inset-bottom)";
+  ov.innerHTML = `
+    <div style="display:flex;gap:8px;align-items:center;padding:10px 14px">
+      <span style="color:#fff;font-weight:700;flex:1">Anotar foto</span>
+      <button id="edDeshacer" style="background:#374151;color:#fff;border:none;border-radius:8px;padding:8px 12px;font-weight:600">↩ Deshacer</button>
+      <button id="edCerrar" style="background:#374151;color:#fff;border:none;border-radius:8px;padding:8px 12px;font-weight:600">Cancelar</button>
+    </div>
+    <div style="flex:1;display:flex;align-items:center;justify-content:center;overflow:hidden;padding:0 8px">
+      <canvas id="edCanvas" style="max-width:100%;max-height:100%;touch-action:none;border-radius:8px"></canvas>
+    </div>
+    <div style="display:flex;gap:10px;align-items:center;padding:12px 14px">
+      <div style="display:flex;gap:8px" id="edColores">
+        <button data-c="#e11d48" style="width:34px;height:34px;border-radius:999px;background:#e11d48;border:3px solid #fff"></button>
+        <button data-c="#facc15" style="width:34px;height:34px;border-radius:999px;background:#facc15;border:3px solid transparent"></button>
+        <button data-c="#22c55e" style="width:34px;height:34px;border-radius:999px;background:#22c55e;border:3px solid transparent"></button>
+        <button data-c="#ffffff" style="width:34px;height:34px;border-radius:999px;background:#fff;border:3px solid transparent"></button>
+      </div>
+      <button id="edGuardar" style="flex:1;background:#fff;color:#111827;border:none;border-radius:10px;padding:12px;font-weight:800;font-size:15px">Guardar anotaciones</button>
+    </div>`;
+  document.body.appendChild(ov);
+  const canvas = ov.querySelector("#edCanvas");
+  canvas.width = img.naturalWidth; canvas.height = img.naturalHeight;
+  const ctx = canvas.getContext("2d");
+  let color = "#e11d48";
+  const trazos = [];
+  let actual = null;
+  const grosor = Math.max(4, Math.round(canvas.width / 220));
+  function redibujar() {
+    ctx.drawImage(img, 0, 0);
+    for (const t of trazos) {
+      ctx.strokeStyle = t.color; ctx.lineWidth = grosor; ctx.lineCap = "round"; ctx.lineJoin = "round";
+      ctx.beginPath();
+      t.pts.forEach((p, i) => (i ? ctx.lineTo(p[0], p[1]) : ctx.moveTo(p[0], p[1])));
+      ctx.stroke();
+    }
+  }
+  redibujar();
+  const pos = (e) => {
+    const r = canvas.getBoundingClientRect();
+    return [((e.clientX - r.left) / r.width) * canvas.width, ((e.clientY - r.top) / r.height) * canvas.height];
+  };
+  canvas.onpointerdown = (e) => { e.preventDefault(); canvas.setPointerCapture(e.pointerId); actual = { color, pts: [pos(e)] }; trazos.push(actual); };
+  canvas.onpointermove = (e) => { if (!actual) return; e.preventDefault(); actual.pts.push(pos(e)); redibujar(); };
+  canvas.onpointerup = () => { actual = null; };
+  ov.querySelector("#edColores").querySelectorAll("button").forEach((bt) => (bt.onclick = () => {
+    color = bt.dataset.c;
+    ov.querySelector("#edColores").querySelectorAll("button").forEach((x) => (x.style.borderColor = x === bt ? "#fff" : "transparent"));
+    if (color === "#ffffff") bt.style.borderColor = "#facc15";
+  }));
+  ov.querySelector("#edDeshacer").onclick = () => { trazos.pop(); redibujar(); };
+  const cerrar = () => { URL.revokeObjectURL(url); ov.remove(); };
+  ov.querySelector("#edCerrar").onclick = cerrar;
+  ov.querySelector("#edGuardar").onclick = () => {
+    canvas.toBlob(async (nuevo) => {
+      if (nuevo) {
+        await blobSet("photo:" + fid, nuevo);
+        if (st.urls[fid]) { URL.revokeObjectURL(st.urls[fid]); delete st.urls[fid]; }
+        const s = await subidosSet();
+        delete s["photo:" + fid];
+        await kvSet("subidos", JSON.stringify(s));
+        guardar();
+      }
+      cerrar(); render();
+    }, "image/jpeg", 0.85);
+  };
+}
+
+/* ================= Sello de fotos exportadas ================= */
+async function sellarFoto(blob, linea1, linea2) {
+  try {
+    const img = new Image();
+    const url = URL.createObjectURL(blob);
+    await new Promise((res, rej) => { img.onload = res; img.onerror = rej; img.src = url; });
+    const c = document.createElement("canvas");
+    c.width = img.naturalWidth; c.height = img.naturalHeight;
+    const ctx = c.getContext("2d");
+    ctx.drawImage(img, 0, 0);
+    const fs = Math.max(16, Math.round(c.width / 55));
+    const alto = fs * 2.9;
+    ctx.fillStyle = "rgba(17,24,39,0.62)";
+    ctx.fillRect(0, c.height - alto, c.width, alto);
+    ctx.fillStyle = "#ffffff";
+    ctx.font = `600 ${fs}px system-ui, sans-serif`;
+    ctx.fillText(linea1, fs * 0.7, c.height - alto + fs * 1.15);
+    ctx.font = `400 ${fs * 0.85}px system-ui, sans-serif`;
+    ctx.fillText(linea2, fs * 0.7, c.height - alto + fs * 2.35);
+    URL.revokeObjectURL(url);
+    return await new Promise((res) => c.toBlob((b) => res(b || blob), "image/jpeg", 0.85));
+  } catch (e) { return blob; }
+}
 function textoExport() {
   const d = st.insp, b = d.edificio;
   const L = [];
@@ -929,13 +1087,22 @@ function textoExport() {
   L.push("A. DATOS DEL EDIFICIO");
   L.push(`Nombre: ${b.nombre || "-"}`);
   L.push(`Dirección: ${b.direccion || "-"}`);
-  L.push(`Parroquia/Municipio/Estado: ${b.municipio || "-"}`);
+  L.push(`Parroquia: ${b.parroquia || "-"} · Municipio: ${b.municipio || "-"} · Estado: ${b.estado || "-"}`);
+  if (b.gps) L.push(`Coordenadas GPS: ${b.gps.lat.toFixed(6)}, ${b.gps.lon.toFixed(6)} (precisión ±${Math.round(b.gps.acc)} m)`);
   L.push(`Año de construcción: ${b.anio || "-"}`);
+  L.push(`N.° de pisos: ${b.pisos || "-"}`);
   L.push(`Sistema estructural: ${b.sistema || "-"}`);
   L.push(`Parcela: ${b.parcela || "-"} m² · Construcción: ${b.construccion || "-"} m²`);
   L.push(`Total unidades: ${b.unidades || "-"}`);
-  L.push(`Fecha de inspección: ${b.fecha || "-"}`);
+  L.push(`Fecha de inspección: ${b.fecha || "-"} · Hora de inicio: ${b.horaInicio || "-"}`);
+  L.push(`CLASIFICACIÓN ATC-20 GLOBAL DEL EDIFICIO: ${b.atcGlobal || "PENDIENTE DE ASIGNAR"}`);
   if (b.notas) L.push(`Notas generales: ${b.notas}`);
+  if (b.antecedentes || b.conserje) {
+    L.push("");
+    L.push("A2. ANTECEDENTES E INSPECCIONES PREVIAS");
+    if (b.antecedentes) L.push(`Inspecciones previas de otros organismos: ${b.antecedentes.replace(/\n/g, " | ")}`);
+    if (b.conserje) L.push(`Observaciones del conserje / residentes: ${b.conserje.replace(/\n/g, " | ")}`);
+  }
   L.push("");
   L.push("B. HALLAZGOS POR NIVEL Y UNIDAD");
   for (const nv of d.niveles) {
@@ -943,7 +1110,12 @@ function textoExport() {
     L.push(`===== ${nv.nombre.toUpperCase()} =====`);
     for (const a of nv.apts) {
       const u = d.unidades[a.id];
-      if (!unidadLista(u)) { L.push(`— ${a.nombre}: sin registro.`); continue; }
+      if (u && u.estado === "no-accedida") { L.push(`— ${a.nombre}: NO ACCEDIDA / fuera del alcance de esta inspección.`); continue; }
+      if (u && u.estado === "sin-hallazgos" && !(u.fotos || []).length && !(u.voz && u.voz.texto)) {
+        L.push(`— ${a.nombre}: inspeccionada SIN HALLAZGOS relevantes${u.atc ? ` · ATC-20: ${u.atc}` : ""}.`);
+        continue;
+      }
+      if (!unidadLista(u)) { L.push(`— ${a.nombre}: sin registro (estado no indicado por el inspector).`); continue; }
       L.push("");
       L.push(`>> ${a.nombre}${u.atc ? ` · Clasificación ATC-20: ${u.atc}` : ""}`);
       for (const f of u.fotos || []) {
@@ -967,6 +1139,89 @@ function textoExport() {
 function nombreFoto(f) {
   return `BSP-2026-${st.insp.edificio.informe || "X"}_foto_${String(f.n).padStart(2, "0")}.jpg`;
 }
+
+/* ================= Resumen PDF de campo ================= */
+async function generarResumenPDF() {
+  const d = st.insp, b = d.edificio;
+  const { jsPDF } = window.jspdf;
+  const pdf = new jsPDF({ unit: "mm", format: "letter" });
+  const W = pdf.internal.pageSize.getWidth();
+  const M = 18;
+  let y = 16;
+  // Cabecera
+  pdf.setFillColor(17, 24, 39);
+  pdf.rect(0, 0, W, 26, "F");
+  pdf.setTextColor(255, 255, 255);
+  pdf.setFont("helvetica", "bold"); pdf.setFontSize(13);
+  pdf.text("BSP · Building Safety Program", M, 11);
+  pdf.setFont("helvetica", "normal"); pdf.setFontSize(9);
+  pdf.text("Resumen de campo · Inspección post-sísmica · Doblete 24/06/2026 (Mw 7,2 y 7,5, Yaracuy)", M, 18);
+  y = 34;
+  pdf.setTextColor(17, 24, 39);
+  pdf.setFont("helvetica", "bold"); pdf.setFontSize(15);
+  pdf.text(`${b.nombre || "Edificio"} · Informe BSP-2026-${b.informe || "___"}`, M, y); y += 7;
+  pdf.setFont("helvetica", "normal"); pdf.setFontSize(10);
+  const dir = [b.direccion, b.parroquia, b.municipio, b.estado].filter(Boolean).join(", ");
+  if (dir) { pdf.text(pdf.splitTextToSize("Dirección: " + dir, W - 2 * M), M, y); y += 5.5 * pdf.splitTextToSize("Dirección: " + dir, W - 2 * M).length; }
+  pdf.text(`Fecha: ${b.fecha || "-"} · Hora de inicio: ${b.horaInicio || "-"} · Año de construcción: ${b.anio || "-"} · Pisos: ${b.pisos || "-"}`, M, y); y += 5.5;
+  if (b.sistema) { pdf.text("Sistema estructural: " + b.sistema, M, y); y += 5.5; }
+  if (b.gps) { pdf.text(`GPS: ${b.gps.lat.toFixed(6)}, ${b.gps.lon.toFixed(6)}`, M, y); y += 5.5; }
+  y += 3;
+  // Clasificación global
+  const colores = { "INSPECCIONADO": [21, 128, 61], "USO RESTRINGIDO": [180, 83, 9], "NO HABITABLE": [185, 28, 28] };
+  const cg = b.atcGlobal || "PENDIENTE";
+  const col = colores[cg] || [107, 114, 128];
+  pdf.setFillColor(col[0], col[1], col[2]);
+  pdf.roundedRect(M, y, W - 2 * M, 16, 2, 2, "F");
+  pdf.setTextColor(255, 255, 255);
+  pdf.setFont("helvetica", "bold"); pdf.setFontSize(13);
+  pdf.text(`CLASIFICACIÓN ATC-20: ${cg}`, W / 2, y + 10, { align: "center" });
+  y += 24;
+  // Hallazgos principales
+  pdf.setTextColor(17, 24, 39);
+  pdf.setFont("helvetica", "bold"); pdf.setFontSize(11);
+  pdf.text("Hallazgos principales", M, y); y += 6;
+  pdf.setFont("helvetica", "normal"); pdf.setFontSize(9.5);
+  let lineas = 0;
+  for (const nv of d.niveles) {
+    for (const a of nv.apts) {
+      const u = d.unidades[a.id];
+      if (!u || !unidadLista(u) || u.estado === "no-accedida") continue;
+      if (u.estado === "sin-hallazgos" && !(u.fotos || []).length) continue;
+      const danos = (u.fotos || []).map((f) => f.dano).filter(Boolean);
+      const linea = `• ${nv.nombre} / ${a.nombre}${u.atc ? ` [${u.atc}]` : ""}${danos.length ? ": " + [...new Set(danos)].join(", ") : ""}`;
+      const wrapped = pdf.splitTextToSize(linea, W - 2 * M);
+      if (y + wrapped.length * 4.6 > 235 || lineas > 24) { pdf.text("… (detalle completo en el informe formal)", M, y); y += 5; break; }
+      pdf.text(wrapped, M, y); y += wrapped.length * 4.6 + 1;
+      lineas++;
+    }
+  }
+  const noAcc = [];
+  for (const nv of d.niveles) for (const a of nv.apts) {
+    const u = d.unidades[a.id];
+    if (u && u.estado === "no-accedida") noAcc.push(a.nombre);
+  }
+  if (noAcc.length) {
+    y += 2;
+    const t = pdf.splitTextToSize("Zonas no accedidas: " + noAcc.join(", "), W - 2 * M);
+    pdf.setFont("helvetica", "italic");
+    pdf.text(t, M, y); y += t.length * 4.6;
+    pdf.setFont("helvetica", "normal");
+  }
+  let totF = 0, totS = 0;
+  for (const u of Object.values(d.unidades)) { totF += (u.fotos || []).length; totS += (u.fotos || []).filter((f) => f.star).length; }
+  y += 3;
+  pdf.text(`Registro fotográfico: ${totF} fotografías (${totS} seleccionadas para el informe).`, M, y); y += 8;
+  // Pie
+  pdf.setDrawColor(200); pdf.line(M, 246, W - M, 246);
+  pdf.setFontSize(9); pdf.setTextColor(70, 80, 95);
+  pdf.text("Este es un resumen preliminar de campo. El informe formal de inspección BSP se encuentra en elaboración", M, 252);
+  pdf.text("y prevalece sobre este documento.", M, 257);
+  pdf.setFont("helvetica", "bold"); pdf.setTextColor(17, 24, 39);
+  pdf.text("Ing. Eduardo Lubo · CIV N.° 115.692 · Colegio de Ingenieros de Venezuela", M, 265);
+  const blob = pdf.output("blob");
+  return new File([blob], `BSP-2026-${b.informe || "X"}_resumen_campo.pdf`, { type: "application/pdf" });
+}
 function rExport() {
   const { texto, idx } = textoExport();
   const starred = idx.filter((f) => f.star);
@@ -984,6 +1239,7 @@ function rExport() {
       <li>Respalda el ZIP completo en Archivos/iCloud antes de borrar el edificio.</li>
     </ol>
     <button class="btn btn-negro" id="bCopiar">Copiar texto para Claude</button>
+    <button class="btn btn-linea" id="bPdf" style="margin-top:8px">📄 Resumen PDF de campo (WhatsApp / correo)</button>
     <div class="grid2" style="margin-top:8px">
       <button class="btn btn-ambar" id="bShareStar">★ Compartir fotos del informe (${starred.length})</button>
       <button class="btn btn-linea" id="bZip">💾 ZIP completo (${idx.length} fotos)</button>
@@ -997,7 +1253,29 @@ function rExport() {
     const im = document.getElementById("mini_" + f.id);
     if (im && url) im.src = url;
   });
+  const sellar = async (f) => {
+    const b = await blobGet("photo:" + f.id);
+    if (!b) return null;
+    return await sellarFoto(
+      b,
+      `BSP-2026-${st.insp.edificio.informe || "X"} · Foto ${f.n} · ${st.insp.edificio.fecha || ""}`,
+      `${st.insp.edificio.nombre || ""} · ${f.zona}`
+    );
+  };
+
   const msg = (t) => (document.getElementById("msgExp").textContent = t);
+  document.getElementById("bPdf").onclick = async () => {
+    msg("Generando PDF…");
+    try {
+      const file = await generarResumenPDF();
+      if (navigator.canShare && navigator.canShare({ files: [file] })) {
+        try { await navigator.share({ files: [file] }); msg("PDF compartido."); return; } catch (e) {}
+      }
+      const a = document.createElement("a");
+      a.href = URL.createObjectURL(file); a.download = file.name; a.click();
+      msg("PDF descargado.");
+    } catch (e) { msg("✗ No se pudo generar el PDF: " + e.message); }
+  };
   document.getElementById("bCopiar").onclick = async () => {
     try { await navigator.clipboard.writeText(texto); msg("✓ Texto copiado. Pégalo en una conversación nueva del proyecto."); }
     catch (e) {
@@ -1013,7 +1291,7 @@ function rExport() {
     for (let i = 0; i < starred.length; i += lote) {
       const files = [];
       for (const f of starred.slice(i, i + lote)) {
-        const b = await blobGet("photo:" + f.id);
+        const b = await sellar(f);
         if (b) files.push(new File([b], nombreFoto(f), { type: "image/jpeg" }));
       }
       try { await navigator.share({ files }); } catch (e) { break; }
@@ -1025,7 +1303,7 @@ function rExport() {
     const zip = new JSZip();
     zip.file("registro_campo.txt", texto);
     for (const f of idx) {
-      const b = await blobGet("photo:" + f.id);
+      const b = await sellar(f);
       if (b) zip.file(nombreFoto(f), b);
     }
     const blob = await zip.generateAsync({ type: "blob" });
@@ -1039,7 +1317,7 @@ function rExport() {
   };
   $app.querySelectorAll("[data-dl]").forEach((bt) => (bt.onclick = async () => {
     const f = idx.find((x) => x.n === +bt.dataset.dl);
-    const b = await blobGet("photo:" + f.id);
+    const b = await sellar(f);
     if (!b) return;
     const file = new File([b], nombreFoto(f), { type: "image/jpeg" });
     if (navigator.canShare && navigator.canShare({ files: [file] })) {
@@ -1088,7 +1366,7 @@ function rAjustes() {
       <div class="etiq">Almacenamiento del teléfono</div>
       <p class="aviso" id="msgAlm">Calculando…</p>
     </div>
-    <p class="aviso">BSP Inspecciones Post-Sísmica 2026 · Ing. Eduardo Lubo · CIV N.° 115.692 · App de campo <b>v${VERSION}</b></p>`;
+    <p class="aviso">BSP (Building Safety Program) 2026 · Ing. Eduardo Lubo · CIV N.° 115.692 · App de campo <b>v${VERSION}</b></p>`;
   const mN = (t) => (document.getElementById("msgNube").textContent = t);
   document.getElementById("bActualizar").onclick = async () => {
     if ("serviceWorker" in navigator) {

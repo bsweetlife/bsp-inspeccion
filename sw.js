@@ -1,4 +1,4 @@
-const CACHE = "bsp-v7";
+const CACHE = "bsp-v8";
 const SHELL = [
   "./",
   "./index.html",
@@ -6,7 +6,8 @@ const SHELL = [
   "./icon-180.png",
   "./icon-512.png",
   "https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js",
-  "https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"
+  "https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js",
+  "https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"
 ];
 
 self.addEventListener("install", (e) => {
