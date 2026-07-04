@@ -121,7 +121,7 @@
 <script>
 "use strict";
 /* ================= Constantes ================= */
-const VERSION = "2.9";
+const VERSION = "3.0";
 const ATC = ["INSPECCIONADO", "USO RESTRINGIDO", "NO HABITABLE"];
 const ATC_CLS = { "INSPECCIONADO": "v", "USO RESTRINGIDO": "a", "NO HABITABLE": "r" };
 const ATC_CORTO = { "INSPECCIONADO": "INSPECC.", "USO RESTRINGIDO": "USO RESTR.", "NO HABITABLE": "NO HABITABLE" };
@@ -1533,6 +1533,14 @@ function rAjustes() {
       <p class="aviso" id="msgKey"></p>
     </div>
     <div class="tarjeta">
+      <div class="etiq">☁ Almacenamiento en la nube (Supabase)</div>
+      <p class="aviso" id="msgNube2">Toca "Calcular" para medir tus archivos en la nube.</p>
+      <div id="barraNube" style="display:none;height:10px;background:#e5e7eb;border-radius:999px;overflow:hidden;margin:6px 0">
+        <div id="barraNubeFill" style="height:100%;width:0%;background:var(--verde)"></div>
+      </div>
+      <button class="btn btn-gris" id="bCalcNube">Calcular uso en la nube</button>
+    </div>
+    <div class="tarjeta">
       <div class="etiq">Almacenamiento del teléfono</div>
       <p class="aviso" id="msgAlm">Calculando…</p>
     </div>
@@ -1584,6 +1592,33 @@ function rAjustes() {
       document.getElementById("msgAlm").textContent = `En uso: ${uso} MB de ~${tope} MB disponibles para la app.`;
     });
   }
+  const bCalc = document.getElementById("bCalcNube");
+  if (bCalc) bCalc.onclick = async () => {
+    const m = document.getElementById("msgNube2");
+    if (!supa || !nube.sesion) { m.textContent = "Inicia sesión en la nube para medir el uso."; return; }
+    m.textContent = "Calculando… (puede tardar unos segundos)";
+    try {
+      const uidUser = nube.sesion.user.id;
+      let total = 0, n = 0;
+      const { data, error } = await supa.storage.from("archivos").list(uidUser, { limit: 5000 });
+      if (error) throw new Error(error.message);
+      for (const f of data || []) {
+        const sz = f.metadata && (f.metadata.size || f.metadata.contentLength);
+        if (sz) { total += sz; n++; }
+      }
+      const mb = total / 1048576;
+      const LIMITE = 1024; // 1 GB plan gratuito
+      const pct = Math.min(100, (mb / LIMITE) * 100);
+      const barra = document.getElementById("barraNube");
+      const fill = document.getElementById("barraNubeFill");
+      barra.style.display = "block";
+      fill.style.width = pct.toFixed(1) + "%";
+      fill.style.background = pct > 85 ? "var(--rojo)" : pct > 60 ? "var(--ambar)" : "var(--verde)";
+      m.innerHTML = `<b>${mb.toFixed(1)} MB</b> usados de 1024 MB (plan gratuito) · ${pct.toFixed(1)}%<br>${n} archivos en la nube · quedan ~${Math.max(0, Math.round((LIMITE - mb) / 0.6))} fotos disponibles.`;
+    } catch (e) {
+      m.textContent = "No se pudo calcular: " + e.message;
+    }
+  };
 }
 async function llamarClaude(prompt, maxTokens) {
   if (!st.apiKey) throw new Error("Configura primero la clave API en Ajustes.");
