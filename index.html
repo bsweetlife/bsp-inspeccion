@@ -121,11 +121,21 @@
 <script>
 "use strict";
 /* ================= Constantes ================= */
-const VERSION = "2.7";
+const VERSION = "2.8";
 const ATC = ["INSPECCIONADO", "USO RESTRINGIDO", "NO HABITABLE"];
 const ATC_CLS = { "INSPECCIONADO": "v", "USO RESTRINGIDO": "a", "NO HABITABLE": "r" };
 const ATC_CORTO = { "INSPECCIONADO": "INSPECC.", "USO RESTRINGIDO": "USO RESTR.", "NO HABITABLE": "NO HABITABLE" };
 const DANOS = ["Sin daño", "Mampostería menor", "Mampostería mayor", "Daño estructural", "Preexistente no sísmico"];
+const FRASES = [
+  "Grieta diagonal en mampostería",
+  "Fisura en junta viga-columna",
+  "Grieta vertical en pared",
+  "Desprendimiento de friso",
+  "Fisura por retracción (no estructural)",
+  "Grieta en escalón/rellano de escalera",
+  "Humedad/filtración preexistente",
+  "Sin daño aparente"
+];
 const SISTEMAS = [
   "Pórticos de concreto armado",
   "Pórticos de concreto armado con paredes de mampostería",
@@ -926,6 +936,9 @@ function rUnidad() {
           <button class="btn-rojo-linea" style="width:auto;padding:5px 9px;border-radius:8px;font-size:12px" data-delfoto="${f.id}">Eliminar</button>
         </div>
         <textarea rows="2" placeholder="Descripción de lo observado…" data-desc="${f.id}">${esc(f.desc)}</textarea>
+        <div class="pildoras" style="margin:6px 0 2px">
+          ${FRASES.map((fr) => `<button data-frase="${f.id}|${esc(fr)}" style="font-size:12px;padding:5px 9px">${esc(fr)}</button>`).join("")}
+        </div>
         <select data-dano="${f.id}" style="margin:8px 0">
           <option value="">Tipo de daño…</option>
           ${DANOS.map((dm) => `<option ${f.dano === dm ? "selected" : ""}>${dm}</option>`).join("")}
@@ -994,6 +1007,15 @@ function rUnidad() {
   $app.querySelectorAll("[data-desc]").forEach((t) => (t.oninput = () => {
     const f = u.fotos.find((x) => x.id === t.dataset.desc); if (f) { f.desc = t.value; guardar(); }
   }));
+  $app.querySelectorAll("[data-frase]").forEach((bt) => (bt.onclick = () => {
+    const sep = bt.dataset.frase.indexOf("|");
+    const fid = bt.dataset.frase.slice(0, sep);
+    const frase = bt.dataset.frase.slice(sep + 1);
+    const f = u.fotos.find((x) => x.id === fid);
+    if (!f) return;
+    f.desc = f.desc && f.desc.trim() ? f.desc.trim().replace(/[.\s]*$/, "") + ". " + frase : frase;
+    guardar(); rUnidad();
+  }));
   $app.querySelectorAll("[data-dano]").forEach((s) => (s.onchange = () => {
     const f = u.fotos.find((x) => x.id === s.dataset.dano); if (f) { f.dano = s.value; guardar(); }
   }));
@@ -1007,7 +1029,7 @@ function rUnidad() {
     if (f) { f.star = !f.star; guardar(); rUnidad(); }
   }));
   $app.querySelectorAll("[data-anotar]").forEach((bt) => (bt.onclick = () => abrirEditorFoto(bt.dataset.anotar)));
-  $app.querySelectorAll("[data-ver]").forEach((im) => (im.onclick = () => verFoto(im.dataset.ver)));
+  activarZoom($app);
   $app.querySelectorAll("[data-delfoto]").forEach((bt) => (bt.onclick = async () => {
     if (!confirm("¿Eliminar esta foto?")) return;
     const fid = bt.dataset.delfoto;
@@ -1034,6 +1056,18 @@ function rUnidad() {
 }
 
 /* ================= Visor de foto a pantalla completa ================= */
+function activarZoom(scope) {
+  (scope || document).querySelectorAll("[data-ver]").forEach((im) => {
+    if (im._zoomOn) return;
+    im._zoomOn = true;
+    let x0 = 0, y0 = 0, moved = false, touched = false;
+    im.addEventListener("touchstart", (e) => { const t = e.touches[0]; x0 = t.clientX; y0 = t.clientY; moved = false; }, { passive: true });
+    im.addEventListener("touchmove", (e) => { const t = e.touches[0]; if (Math.abs(t.clientX - x0) > 12 || Math.abs(t.clientY - y0) > 12) moved = true; }, { passive: true });
+    im.addEventListener("touchend", (e) => { touched = true; if (!moved) { e.preventDefault(); verFoto(im.dataset.ver); } setTimeout(() => (touched = false), 400); });
+    im.addEventListener("click", () => { if (!touched) verFoto(im.dataset.ver); });
+  });
+}
+
 async function verFoto(fid) {
   const src = st.urls[fid] || (await urlFoto(fid));
   if (!src) return;
@@ -1305,6 +1339,8 @@ function rExport() {
     </div>`).join("");
   $app.innerHTML = `
     <h2>Exportar inspección</h2>
+    <button class="btn btn-linea" id="bRevisar" style="margin-bottom:10px">🔍 Revisar antes de exportar</button>
+    <div id="panelRevision"></div>
     <ol class="sub" style="padding-left:18px">
       <li>Copia el texto y pégalo en una conversación nueva del proyecto BSP 2026 en Claude.</li>
       <li>Comparte las fotos ★ a esa conversación (en tandas de máx. 20 por mensaje).</li>
@@ -1331,7 +1367,7 @@ function rExport() {
     const im = document.getElementById("mini_" + f.id);
     if (im && url) im.src = url;
   });
-  $app.querySelectorAll("[data-ver]").forEach((im) => (im.onclick = () => verFoto(im.dataset.ver)));
+  activarZoom($app);
   const sellar = async (f) => {
     const b = await blobGet("photo:" + f.id);
     if (!b) return null;
@@ -1343,6 +1379,44 @@ function rExport() {
   };
 
   const msg = (t) => (document.getElementById("msgExp").textContent = t);
+  document.getElementById("bRevisar").onclick = () => {
+    const d = st.insp, b = d.edificio;
+    const alertas = [];
+    if (!b.atcGlobal) alertas.push({ t: "El edificio no tiene clasificación ATC-20 GLOBAL asignada.", ir: { n: "setup" } });
+    if (!b.informe) alertas.push({ t: "Falta el número de informe (BSP-2026-___).", ir: { n: "setup" } });
+    if (!b.direccion) alertas.push({ t: "Falta la dirección del edificio.", ir: { n: "setup" } });
+    let sinClasif = 0, sinDesc = 0, sinEstado = 0, fotosTotal = 0;
+    const nivelesSinClasif = [];
+    for (const nv of d.niveles) {
+      for (const a of nv.apts) {
+        const u = d.unidades[a.id];
+        const tieneAlgo = unidadLista(u);
+        if (u && (u.fotos || []).length) {
+          for (const f of u.fotos) { fotosTotal++; if (!f.desc || !f.desc.trim()) sinDesc++; }
+          if (!u.atc) { sinClasif++; nivelesSinClasif.push(nv.nombre + " / " + a.nombre); }
+        } else if (!tieneAlgo && !nv.comun) {
+          sinEstado++;
+        }
+      }
+    }
+    if (sinClasif) alertas.push({ t: `${sinClasif} unidad(es) con fotos pero SIN clasificación ATC-20: ${nivelesSinClasif.slice(0, 5).join("; ")}${nivelesSinClasif.length > 5 ? "…" : ""}.` });
+    if (sinDesc) alertas.push({ t: `${sinDesc} foto(s) sin descripción.` });
+    if (sinEstado) alertas.push({ t: `${sinEstado} unidad(es) sin registro ni estado (marca "sin hallazgos" o "no accedida" si corresponde).` });
+    const starred2 = [];
+    for (const u of Object.values(d.unidades)) for (const f of u.fotos || []) if (f.star) starred2.push(f);
+    if (fotosTotal > 0 && starred2.length === 0) alertas.push({ t: "Ninguna foto está marcada con ★ para el registro fotográfico del informe." });
+    const panel = document.getElementById("panelRevision");
+    if (!alertas.length) {
+      panel.innerHTML = `<div class="tarjeta" style="border:2px solid var(--verde);background:var(--verde-bg)"><b style="color:var(--verde-tx)">✓ Todo en orden.</b><p class="aviso" style="margin:4px 0 0;color:var(--verde-tx)">${fotosTotal} fotos · ${starred2.length} para el informe. Puedes exportar con confianza.</p></div>`;
+    } else {
+      panel.innerHTML = `<div class="tarjeta" style="border:2px solid var(--ambar)">
+        <b style="color:var(--ambar-tx)">⚠ ${alertas.length} punto(s) por revisar:</b>
+        <ul style="margin:8px 0 0;padding-left:18px;font-size:13px;color:#374151">${alertas.map((a) => `<li style="margin-bottom:5px">${a.t}</li>`).join("")}</ul>
+        <p class="aviso" style="margin:8px 0 0">Son avisos, no bloqueos: puedes exportar igual si ya lo revisaste.</p>
+      </div>`;
+    }
+    panel.scrollIntoView({ behavior: "smooth", block: "nearest" });
+  };
   document.getElementById("bPdf").onclick = async () => {
     msg("Generando PDF…");
     try {
