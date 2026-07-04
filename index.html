@@ -121,7 +121,7 @@
 <script>
 "use strict";
 /* ================= Constantes ================= */
-const VERSION = "2.8";
+const VERSION = "2.9";
 const ATC = ["INSPECCIONADO", "USO RESTRINGIDO", "NO HABITABLE"];
 const ATC_CLS = { "INSPECCIONADO": "v", "USO RESTRINGIDO": "a", "NO HABITABLE": "r" };
 const ATC_CORTO = { "INSPECCIONADO": "INSPECC.", "USO RESTRINGIDO": "USO RESTR.", "NO HABITABLE": "NO HABITABLE" };
@@ -129,12 +129,12 @@ const DANOS = ["Sin daño", "Mampostería menor", "Mampostería mayor", "Daño e
 const FRASES = [
   "Grieta diagonal en mampostería",
   "Fisura en junta viga-columna",
+  "Grieta en interfaz viga-mampostería por movimiento diferencial",
+  "Grieta en interfaz columna-mampostería por movimiento diferencial",
   "Grieta vertical en pared",
   "Desprendimiento de friso",
   "Fisura por retracción (no estructural)",
-  "Grieta en escalón/rellano de escalera",
-  "Humedad/filtración preexistente",
-  "Sin daño aparente"
+  "Humedad/filtración preexistente"
 ];
 const SISTEMAS = [
   "Pórticos de concreto armado",
