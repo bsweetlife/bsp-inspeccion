@@ -121,7 +121,7 @@
 <script>
 "use strict";
 /* ================= Constantes ================= */
-const VERSION = "2.6";
+const VERSION = "2.7";
 const ATC = ["INSPECCIONADO", "USO RESTRINGIDO", "NO HABITABLE"];
 const ATC_CLS = { "INSPECCIONADO": "v", "USO RESTRINGIDO": "a", "NO HABITABLE": "r" };
 const ATC_CORTO = { "INSPECCIONADO": "INSPECC.", "USO RESTRINGIDO": "USO RESTR.", "NO HABITABLE": "NO HABITABLE" };
@@ -693,10 +693,41 @@ function rCasa() {
       <button class="btn-gris" style="width:auto;border-radius:10px" id="bEditar">Editar datos</button>
     </div>
     ${items}
-    <button class="btn btn-negro" id="bExport" style="margin-top:8px">Exportar inspección (${totalFotos} fotos)</button>
+    <div class="tarjeta" style="padding:12px;margin-top:10px">
+      <div class="etiq">Agregar nivel</div>
+      <div class="pildoras" style="margin-bottom:8px">
+        <button id="bAddSotano">+ Sótano</button>
+        <button id="bAddPiso">+ Piso</button>
+        <button id="bAddPH">+ Pent-house (PH)</button>
+        <button id="bAddOtro">+ Otro nivel</button>
+      </div>
+      <p class="aviso" style="margin:0">Los sótanos y el PH se crean sin unidades; agrégalas dentro con "+ Agregar". Para eliminar o renombrar un nivel, entra en él.</p>
+    </div>
+    <button class="btn btn-negro" id="bExport" style="margin-top:10px">Exportar inspección (${totalFotos} fotos)</button>
     <button class="btn btn-rojo-linea" id="bBorrarInsp" style="margin-top:8px">Eliminar esta inspección (al terminar)</button>`;
   document.getElementById("bEditar").onclick = () => nav({ n: "setup" });
   document.getElementById("bExport").onclick = () => nav({ n: "export" });
+  const agregarNivel = (prefijo, insertarAlInicio) => {
+    const n = d.niveles.filter((x) => x.nombre.startsWith(prefijo)).length;
+    let nombre;
+    if (prefijo === "Sótano") nombre = "Sótano " + (n + 1);
+    else if (prefijo === "Piso") {
+      const maxPiso = d.niveles.filter((x) => /^Piso \d+$/.test(x.nombre)).map((x) => parseInt(x.nombre.slice(5))).reduce((a, b) => Math.max(a, b), 0);
+      nombre = "Piso " + (maxPiso + 1);
+    } else if (prefijo === "PH") nombre = n === 0 ? "Pent-house (PH)" : "PH " + (n + 1);
+    else { const nm = prompt("Nombre del nivel:", ""); if (!nm || !nm.trim()) return; nombre = nm.trim(); }
+    const nivel = mkNivel(nombre, []);
+    // Insertar antes de "Zonas comunes" para mantenerlas al final
+    const idxComun = d.niveles.findIndex((x) => x.comun);
+    if (insertarAlInicio) d.niveles.unshift(nivel);
+    else if (idxComun >= 0) d.niveles.splice(idxComun, 0, nivel);
+    else d.niveles.push(nivel);
+    guardar(); rCasa();
+  };
+  document.getElementById("bAddSotano").onclick = () => agregarNivel("Sótano", true);
+  document.getElementById("bAddPiso").onclick = () => agregarNivel("Piso", false);
+  document.getElementById("bAddPH").onclick = () => agregarNivel("PH", false);
+  document.getElementById("bAddOtro").onclick = () => agregarNivel("Otro", false);
   document.getElementById("bBorrarInsp").onclick = () => {
     if (!confirm("¿Exportaste el texto y respaldaste el ZIP de fotos? Esta acción borra todo el edificio y no se puede deshacer.")) return;
     const id = st.inspId;
@@ -835,13 +866,37 @@ function rNivel() {
     </button>`;
   }).join("");
   $app.innerHTML = `
-    <h2 style="margin-bottom:12px">${esc(nv.nombre)}</h2>
+    <div class="fila" style="margin-bottom:12px">
+      <h2 style="flex:1;margin:0">${esc(nv.nombre)}</h2>
+      <button class="btn-gris" style="width:auto;border-radius:10px" id="bRenNivel">Renombrar</button>
+    </div>
     ${items}
     <div class="fila" style="margin:10px 0">
       <input id="inNueva" placeholder="${nv.comun ? "Nombre de la zona…" : "Ej: Apto 2-C, Conserjería…"}" />
       <button class="btn btn-negro" style="flex:0 0 auto;width:auto;padding:10px 16px" id="bAgregar">+ Agregar</button>
     </div>
-    ${htmlGrabadora("gNivel", "Resumen de voz · " + esc(nv.nombre), nv.voz)}`;
+    ${htmlGrabadora("gNivel", "Resumen de voz · " + esc(nv.nombre), nv.voz)}
+    ${nv.comun ? "" : `<button class="btn btn-rojo-linea" id="bDelNivel" style="margin-top:8px">Eliminar este nivel</button>`}`;
+  document.getElementById("bRenNivel").onclick = () => {
+    const nm = prompt("Nuevo nombre del nivel:", nv.nombre);
+    if (nm && nm.trim()) { nv.nombre = nm.trim(); guardar(); rNivel(); }
+  };
+  const bDel = document.getElementById("bDelNivel");
+  if (bDel) bDel.onclick = async () => {
+    const conFotos = nv.apts.some((a) => { const u = st.insp.unidades[a.id]; return u && (u.fotos || []).length; });
+    if (!confirm(`¿Eliminar el nivel "${nv.nombre}"${conFotos ? " con todas las fotos y grabaciones de sus unidades" : ""}? No se puede deshacer.`)) return;
+    for (const a of nv.apts) {
+      const u = st.insp.unidades[a.id];
+      if (u) {
+        for (const f of u.fotos || []) { blobDel("photo:" + f.id); if (f.thumbKey) blobDel(f.thumbKey); }
+        if (u.voz && u.voz.audio) blobDel("audio:" + u.voz.audio);
+      }
+      delete st.insp.unidades[a.id];
+    }
+    if (nv.voz && nv.voz.audio) blobDel("audio:" + nv.voz.audio);
+    st.insp.niveles = st.insp.niveles.filter((x) => x.id !== nv.id);
+    guardar(); nav({ n: "casa" });
+  };
   document.getElementById("bAgregar").onclick = () => {
     const v = document.getElementById("inNueva").value.trim();
     if (!v) return;
@@ -862,7 +917,7 @@ function rUnidad() {
   const atcBtns = ATC.map((a) => `<button class="${ATC_CLS[a]} ${u.atc === a ? "on" : ""}" data-atc="${a}">${ATC_CORTO[a]}</button>`).join("");
   const fotos = (u.fotos || []).map((f, i) => `
     <div class="foto-card" data-fid="${f.id}">
-      <img id="img_${f.id}" alt="Foto ${i + 1}" style="display:none" />
+      <img id="img_${f.id}" alt="Foto ${i + 1}" style="display:none;cursor:zoom-in" data-ver="${f.id}" />
       <div class="cuerpo">
         <div class="fila" style="margin-bottom:8px">
           <span class="etiq" style="margin:0;flex:1">FOTO ${i + 1}</span>
@@ -952,6 +1007,7 @@ function rUnidad() {
     if (f) { f.star = !f.star; guardar(); rUnidad(); }
   }));
   $app.querySelectorAll("[data-anotar]").forEach((bt) => (bt.onclick = () => abrirEditorFoto(bt.dataset.anotar)));
+  $app.querySelectorAll("[data-ver]").forEach((im) => (im.onclick = () => verFoto(im.dataset.ver)));
   $app.querySelectorAll("[data-delfoto]").forEach((bt) => (bt.onclick = async () => {
     if (!confirm("¿Eliminar esta foto?")) return;
     const fid = bt.dataset.delfoto;
@@ -975,6 +1031,22 @@ function rUnidad() {
   wireGrabadora("gUnidad", () => u.voz);
   const bIA = document.getElementById("bIA");
   if (bIA) bIA.onclick = () => asistirIA(nv, apt, u, bIA);
+}
+
+/* ================= Visor de foto a pantalla completa ================= */
+async function verFoto(fid) {
+  const src = st.urls[fid] || (await urlFoto(fid));
+  if (!src) return;
+  const ov = document.createElement("div");
+  ov.style.cssText = "position:fixed;inset:0;z-index:110;background:rgba(0,0,0,.94);display:flex;align-items:center;justify-content:center;padding:env(safe-area-inset-top) 10px env(safe-area-inset-bottom)";
+  ov.innerHTML = `
+    <button style="position:absolute;top:calc(env(safe-area-inset-top) + 10px);right:14px;background:rgba(255,255,255,.15);color:#fff;border:none;border-radius:999px;width:44px;height:44px;font-size:22px;font-weight:700">✕</button>
+    <img src="${src}" style="max-width:100%;max-height:100%;object-fit:contain;border-radius:6px" />`;
+  const cerrar = () => ov.remove();
+  ov.onclick = cerrar;
+  ov.querySelector("button").onclick = (e) => { e.stopPropagation(); cerrar(); };
+  ov.querySelector("img").onclick = (e) => e.stopPropagation();
+  document.body.appendChild(ov);
 }
 
 /* ================= Editor de anotaciones sobre fotos ================= */
@@ -1227,7 +1299,7 @@ function rExport() {
   const starred = idx.filter((f) => f.star);
   const filas = idx.map((f) => `
     <div class="lista-foto">
-      <img class="mini" id="mini_${f.id}" alt="" />
+      <img class="mini" id="mini_${f.id}" alt="" style="cursor:zoom-in" data-ver="${f.id}" />
       <span style="flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">#${f.n}${f.star ? " ★" : ""} · ${esc(f.zona)}</span>
       <button class="btn-gris" style="width:auto;padding:5px 9px;border-radius:8px;font-size:12px" data-dl="${f.n}">Guardar</button>
     </div>`).join("");
@@ -1247,12 +1319,19 @@ function rExport() {
     <p class="aviso" id="msgExp"></p>
     <details><summary>Ver texto exportado</summary>
       <textarea rows="14" readonly class="mono">${esc(texto)}</textarea></details>
-    <div style="margin-top:12px"><div class="etiq">Fotos individuales</div>${filas || '<p class="sub">Sin fotos aún.</p>'}</div>`;
+    <div style="margin-top:12px">
+      <div class="fila" style="align-items:center;margin-bottom:6px">
+        <div class="etiq" style="margin:0;flex:1">Fotos individuales</div>
+        ${idx.length ? `<button class="btn-gris" style="width:auto;padding:6px 10px;border-radius:8px;font-size:12px" id="bZipFotos">⬇ Todas en ZIP</button>` : ""}
+      </div>
+      ${filas || '<p class="sub">Sin fotos aún.</p>'}
+    </div>`;
   idx.forEach(async (f) => {
     const url = await urlFoto(f.id);
     const im = document.getElementById("mini_" + f.id);
     if (im && url) im.src = url;
   });
+  $app.querySelectorAll("[data-ver]").forEach((im) => (im.onclick = () => verFoto(im.dataset.ver)));
   const sellar = async (f) => {
     const b = await blobGet("photo:" + f.id);
     if (!b) return null;
@@ -1314,6 +1393,23 @@ function rExport() {
     const a = document.createElement("a");
     a.href = URL.createObjectURL(blob); a.download = file.name; a.click();
     msg("ZIP descargado.");
+  };
+  const bZipFotos = document.getElementById("bZipFotos");
+  if (bZipFotos) bZipFotos.onclick = async () => {
+    msg("Armando ZIP de fotos…");
+    const zip = new JSZip();
+    for (const f of idx) {
+      const b = await sellar(f);
+      if (b) zip.file(nombreFoto(f), b);
+    }
+    const blob = await zip.generateAsync({ type: "blob" });
+    const file = new File([blob], `BSP-2026-${st.insp.edificio.informe || "X"}_fotos.zip`, { type: "application/zip" });
+    if (navigator.canShare && navigator.canShare({ files: [file] })) {
+      try { await navigator.share({ files: [file] }); msg("ZIP de fotos compartido."); return; } catch (e) {}
+    }
+    const a = document.createElement("a");
+    a.href = URL.createObjectURL(blob); a.download = file.name; a.click();
+    msg(`ZIP con ${idx.length} fotos descargado.`);
   };
   $app.querySelectorAll("[data-dl]").forEach((bt) => (bt.onclick = async () => {
     const f = idx.find((x) => x.n === +bt.dataset.dl);
