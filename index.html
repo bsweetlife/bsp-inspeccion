@@ -121,7 +121,7 @@
 <script>
 "use strict";
 /* ================= Constantes ================= */
-const VERSION = "3.2";
+const VERSION = "3.3";
 const ATC = ["INSPECCIONADO", "USO RESTRINGIDO", "NO HABITABLE"];
 const ATC_CLS = { "INSPECCIONADO": "v", "USO RESTRINGIDO": "a", "NO HABITABLE": "r" };
 const ATC_CORTO = { "INSPECCIONADO": "INSPECC.", "USO RESTRINGIDO": "USO RESTR.", "NO HABITABLE": "NO HABITABLE" };
@@ -251,6 +251,7 @@ async function sincronizar(soloActual) {
       if (error) throw new Error(error.message);
       let cambioIndex = false;
       for (const fila of filas || []) {
+        if (fila.id.startsWith("_ajustes_")) continue;
         const localRaw = await kvGet("insp:" + fila.id);
         const local = localRaw ? JSON.parse(localRaw) : null;
         const tsLocal = local && local._ts ? local._ts : "1970";
@@ -277,13 +278,28 @@ async function sincronizar(soloActual) {
   }
   _sincronizando = false;
 }
+async function sincronizarContador() {
+  if (!supa || !nube.sesion) return;
+  try {
+    // Fila especial de ajustes con id fijo
+    const { data } = await supa.from("inspecciones").select("data").eq("id", "_ajustes_" + nube.sesion.user.id).maybeSingle();
+    const remoto = data && data.data && data.data.proxInforme;
+    const local = parseInt(await kvGet("proxInforme")) || 0;
+    const mayor = Math.max(remoto || 0, local, 10);
+    await kvSet("proxInforme", mayor);
+    if (mayor !== remoto) {
+      await supa.from("inspecciones").upsert({ id: "_ajustes_" + nube.sesion.user.id, user_id: nube.sesion.user.id, data: { proxInforme: mayor }, updated_at: new Date().toISOString() });
+    }
+  } catch (e) {}
+}
+
 async function iniciarNube() {
   if (!supa) { ponNube("off", "Nube no configurada"); return; }
   try {
     const { data } = await supa.auth.getSession();
     nube.sesion = data && data.session;
   } catch (e) { nube.sesion = null; }
-  if (nube.sesion) { ponNube("ok", "Sesión activa"); sincronizar(false); }
+  if (nube.sesion) { ponNube("ok", "Sesión activa"); sincronizar(false); sincronizarContador(); }
   else ponNube("sin-sesion", "Sin sesión");
   supa.auth.onAuthStateChange((ev, ses) => {
     const antes = !!nube.sesion;
@@ -505,10 +521,21 @@ function rLista() {
     <hr class="sep" />
     <button class="btn btn-gris" id="bAjustes">⚙️ Ajustes y conexión con Claude</button>
     ${nube.sesion ? `<button class="btn btn-gris" id="bSalirLista" style="margin-top:8px">🚪 Cerrar sesión (${esc(nube.sesion.user.email)})</button>` : ""}`;
-  document.getElementById("bNueva").onclick = async () => {
+  const bNueva = document.getElementById("bNueva");
+  if (bNueva) bNueva.onclick = async () => {
     const id = uid();
     st.insp = nuevaInsp(); st.inspId = id;
-    st.index.push({ id, nombre: "", informe: "", fecha: st.insp.edificio.fecha });
+    // Proponer el siguiente número de informe
+    let prox = await kvGet("proxInforme");
+    if (!prox) {
+      // Primera vez: tomar el más alto usado + 1, mínimo 10
+      let max = 9;
+      for (const e of st.index) { const n = parseInt(e.informe); if (!isNaN(n) && n > max) max = n; }
+      prox = max + 1;
+      await kvSet("proxInforme", prox);
+    }
+    st.insp.edificio.informe = String(prox).padStart(3, "0");
+    st.index.push({ id, nombre: "", informe: st.insp.edificio.informe, fecha: st.insp.edificio.fecha });
     await kvSet("insp:" + id, JSON.stringify(st.insp));
     await kvSet("index", JSON.stringify(st.index));
     nav({ n: "setup" });
@@ -634,7 +661,19 @@ function rSetup() {
       <p class="error" id="msgSetup"></p>
       <button class="btn btn-negro" id="bCrear">Crear inspección</button>
     </div>`}`;
-  $app.querySelectorAll("[data-b]").forEach((inp) => (inp.oninput = () => { b[inp.dataset.b] = inp.value; guardar(); }));
+  $app.querySelectorAll("[data-b]").forEach((inp) => (inp.oninput = () => {
+    b[inp.dataset.b] = inp.value;
+    if (inp.dataset.b === "informe") {
+      const n = parseInt(inp.value);
+      if (!isNaN(n)) kvGet("proxInforme").then((prox) => {
+        if (!prox || n >= prox) {
+          kvSet("proxInforme", n + 1);
+          if (supa && nube.sesion) supa.from("inspecciones").upsert({ id: "_ajustes_" + nube.sesion.user.id, user_id: nube.sesion.user.id, data: { proxInforme: n + 1 }, updated_at: new Date().toISOString() }).then(() => {}, () => {});
+        }
+      });
+    }
+    guardar();
+  }));
   $app.querySelectorAll("[data-atcg]").forEach((bt) => (bt.onclick = () => {
     b.atcGlobal = b.atcGlobal === bt.dataset.atcg ? "" : bt.dataset.atcg;
     guardar(); rSetup();
