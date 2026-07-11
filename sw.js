@@ -1,10 +1,10 @@
-const CACHE = "bsp-v12";
+const CACHE = "bsp-v13";
 const SHELL = [
   "./",
   "./index.html",
   "./manifest.json",
-  "./icon-180.png",
-  "./icon-512.png",
+  "./bsp-icon-192.png?v=31",
+  "./bsp-icon-512.png?v=31",
   "https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js",
   "https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js",
   "https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"

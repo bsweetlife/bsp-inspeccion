@@ -7,7 +7,7 @@
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
 <meta name="theme-color" content="#111827" />
 <link rel="manifest" href="manifest.json" />
-<link rel="apple-touch-icon" href="icon-180.png" />
+<link rel="apple-touch-icon" href="bsp-icon-192.png?v=31" />
 <title>BSP Inspección de Campo</title>
 <style>
   :root {
@@ -121,7 +121,7 @@
 <script>
 "use strict";
 /* ================= Constantes ================= */
-const VERSION = "3.0";
+const VERSION = "3.1";
 const ATC = ["INSPECCIONADO", "USO RESTRINGIDO", "NO HABITABLE"];
 const ATC_CLS = { "INSPECCIONADO": "v", "USO RESTRINGIDO": "a", "NO HABITABLE": "r" };
 const ATC_CORTO = { "INSPECCIONADO": "INSPECC.", "USO RESTRINGIDO": "USO RESTR.", "NO HABITABLE": "NO HABITABLE" };
@@ -132,8 +132,8 @@ const FRASES = [
   "Grieta en interfaz viga-mampostería por movimiento diferencial",
   "Grieta en interfaz columna-mampostería por movimiento diferencial",
   "Grieta vertical en pared",
+  "Grieta horizontal en pared",
   "Desprendimiento de friso",
-  "Fisura por retracción (no estructural)",
   "Humedad/filtración preexistente"
 ];
 const SISTEMAS = [
@@ -444,7 +444,7 @@ function render() {
 function rLogin() {
   $app.innerHTML = `
     <div style="text-align:center;margin:28px 0 18px">
-      <img src="icon-180.png" alt="" style="width:76px;height:76px;border-radius:18px" />
+      <img src="bsp-icon-192.png?v=31" alt="" style="width:76px;height:76px;border-radius:18px" />
       <h2 style="margin-top:12px">BSP Inspección de Campo</h2>
       <p class="sub">Building Safety Program · Inspección post-sísmica · Doblete 24/06/2026 · Yaracuy</p>
       <p class="aviso" style="margin-top:-6px">Versión ${VERSION}</p>
@@ -494,7 +494,8 @@ function rLista() {
     ${items || '<p class="sub" style="text-align:center;padding:24px 0">No hay inspecciones activas. Crea la primera.</p>'}
     <button class="btn btn-negro" id="bNueva" style="margin-top:8px">+ Nueva inspección</button>
     <hr class="sep" />
-    <button class="btn btn-gris" id="bAjustes">⚙️ Ajustes y conexión con Claude</button>`;
+    <button class="btn btn-gris" id="bAjustes">⚙️ Ajustes y conexión con Claude</button>
+    ${nube.sesion ? `<button class="btn btn-gris" id="bSalirLista" style="margin-top:8px">🚪 Cerrar sesión (${esc(nube.sesion.user.email)})</button>` : ""}`;
   document.getElementById("bNueva").onclick = async () => {
     const id = uid();
     st.insp = nuevaInsp(); st.inspId = id;
@@ -504,6 +505,13 @@ function rLista() {
     nav({ n: "setup" });
   };
   document.getElementById("bAjustes").onclick = () => nav({ n: "ajustes" });
+  const bSalirLista = document.getElementById("bSalirLista");
+  if (bSalirLista) bSalirLista.onclick = async () => {
+    if (!confirm("¿Cerrar sesión en este dispositivo? Tus datos quedan en la nube; vuelves a entrar con tu correo cuando quieras.")) return;
+    await supa.auth.signOut();
+    st.omitirLogin = false;
+    render();
+  };
   $app.querySelectorAll("[data-abrir]").forEach((b) => (b.onclick = async () => {
     const id = b.dataset.abrir;
     const raw = await kvGet("insp:" + id);
@@ -667,6 +675,7 @@ function rSetup() {
         else nm = "" + (a + 1);
         apts.push((setupTmp.prefijo + nm).trim());
       }
+      apts.push("Pasillo Piso " + p);
       niveles.push(mkNivel("Piso " + p, apts));
     }
     niveles.push(mkNivel("Zonas comunes", ZONAS.slice(), true));
@@ -925,7 +934,7 @@ function rUnidad() {
   if (!st.insp.unidades[apt.id]) st.insp.unidades[apt.id] = unidadVacia();
   const u = st.insp.unidades[apt.id];
   const atcBtns = ATC.map((a) => `<button class="${ATC_CLS[a]} ${u.atc === a ? "on" : ""}" data-atc="${a}">${ATC_CORTO[a]}</button>`).join("");
-  const fotos = (u.fotos || []).map((f, i) => `
+  const fotos = (u.fotos || []).map((f, i) => ({ f, i })).reverse().map(({ f, i }) => `
     <div class="foto-card" data-fid="${f.id}">
       <img id="img_${f.id}" alt="Foto ${i + 1}" style="display:none;cursor:zoom-in" data-ver="${f.id}" />
       <div class="cuerpo">
