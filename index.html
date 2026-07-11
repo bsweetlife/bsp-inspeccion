@@ -121,7 +121,7 @@
 <script>
 "use strict";
 /* ================= Constantes ================= */
-const VERSION = "3.1";
+const VERSION = "3.2";
 const ATC = ["INSPECCIONADO", "USO RESTRINGIDO", "NO HABITABLE"];
 const ATC_CLS = { "INSPECCIONADO": "v", "USO RESTRINGIDO": "a", "NO HABITABLE": "r" };
 const ATC_CORTO = { "INSPECCIONADO": "INSPECC.", "USO RESTRINGIDO": "USO RESTR.", "NO HABITABLE": "NO HABITABLE" };
@@ -408,6 +408,14 @@ async function urlFoto(pid) {
 const $app = document.getElementById("app");
 function nav(p) { st.pantalla = p; render(); window.scrollTo(0, 0); }
 function esc(s) { return String(s == null ? "" : s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/"/g, "&quot;"); }
+function activarCorrector() {
+  document.querySelectorAll("textarea, input[type='text'], input:not([type])").forEach((el) => {
+    el.setAttribute("spellcheck", "true");
+    el.setAttribute("autocorrect", "on");
+    el.setAttribute("autocapitalize", "sentences");
+    el.setAttribute("lang", "es");
+  });
+}
 
 document.getElementById("btnVolver").onclick = () => {
   const p = st.pantalla;
@@ -438,6 +446,7 @@ function render() {
   else if (p.n === "unidad") rUnidad();
   else if (p.n === "export") rExport();
   else if (p.n === "ajustes") rAjustes();
+  activarCorrector();
 }
 
 /* ================= Pantalla: login ================= */
