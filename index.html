@@ -121,7 +121,7 @@
 <script>
 "use strict";
 /* ================= Constantes ================= */
-const VERSION = "3.4";
+const VERSION = "3.5";
 const ATC = ["INSPECCIONADO", "USO RESTRINGIDO", "NO HABITABLE"];
 const ATC_CLS = { "INSPECCIONADO": "v", "USO RESTRINGIDO": "a", "NO HABITABLE": "r" };
 const ATC_CORTO = { "INSPECCIONADO": "INSPECC.", "USO RESTRINGIDO": "USO RESTR.", "NO HABITABLE": "NO HABITABLE" };
@@ -1389,11 +1389,18 @@ function rExport() {
   const { texto, idx } = textoExport();
   const starred = idx.filter((f) => f.star);
   const filas = idx.map((f) => `
-    <div class="lista-foto">
+    <div class="lista-foto" style="flex-wrap:wrap">
       <img class="mini" id="mini_${f.id}" alt="" style="cursor:zoom-in" data-ver="${f.id}" />
-      <span style="flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">#${f.n} · ${esc(f.zona)}</span>
+      <span style="flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">#${f.n} · ${esc(f.zona)}${f.desc && f.desc.trim() ? "" : ' <b style="color:var(--ambar)">· sin descripción</b>'}</span>
+      <button class="btn-gris" style="width:auto;padding:5px 8px;border-radius:8px;font-size:14px" data-editdesc="${f.id}" title="Editar descripción">✏️</button>
       <button class="btn-gris" style="width:auto;padding:5px 8px;border-radius:8px;font-size:15px;${f.star ? "background:#fbbf24;border-color:#f59e0b;color:#111827" : ""}" data-starlist="${f.id}" title="Incluir en el informe">${f.star ? "★" : "☆"}</button>
       <button class="btn-gris" style="width:auto;padding:5px 9px;border-radius:8px;font-size:12px" data-dl="${f.n}">Guardar</button>
+      <div id="editrow_${f.id}" style="display:none;width:100%;margin-top:6px">
+        <textarea data-descinput="${f.id}" rows="2" placeholder="Descripción de la foto #${f.n}…" style="width:100%">${esc(f.desc || "")}</textarea>
+        <div class="pildoras" style="margin-top:4px">
+          ${FRASES.map((fr) => `<button data-fraseexp="${f.id}|${esc(fr)}" style="font-size:11px;padding:4px 8px">${esc(fr)}</button>`).join("")}
+        </div>
+      </div>
     </div>`).join("");
   $app.innerHTML = `
     <h2>Exportar inspección</h2>
@@ -1433,6 +1440,36 @@ function rExport() {
       if (f) { f.star = !f.star; break; }
     }
     guardar(); rExport();
+  }));
+  const buscarFoto = (fid) => {
+    for (const u of Object.values(st.insp.unidades)) {
+      const f = (u.fotos || []).find((x) => x.id === fid);
+      if (f) return f;
+    }
+    return null;
+  };
+  $app.querySelectorAll("[data-editdesc]").forEach((bt) => (bt.onclick = () => {
+    const fila = document.getElementById("editrow_" + bt.dataset.editdesc);
+    if (fila) {
+      const abierto = fila.style.display !== "none";
+      fila.style.display = abierto ? "none" : "block";
+      if (!abierto) { const ta = fila.querySelector("textarea"); if (ta) ta.focus(); }
+    }
+  }));
+  $app.querySelectorAll("[data-descinput]").forEach((ta) => (ta.oninput = () => {
+    const f = buscarFoto(ta.dataset.descinput);
+    if (f) { f.desc = ta.value; guardar(); }
+  }));
+  $app.querySelectorAll("[data-fraseexp]").forEach((bt) => (bt.onclick = () => {
+    const sep = bt.dataset.fraseexp.indexOf("|");
+    const fid = bt.dataset.fraseexp.slice(0, sep);
+    const frase = bt.dataset.fraseexp.slice(sep + 1);
+    const f = buscarFoto(fid);
+    if (!f) return;
+    f.desc = f.desc && f.desc.trim() ? f.desc.trim().replace(/[.\s]*$/, "") + ". " + frase : frase;
+    guardar();
+    const ta = document.querySelector(`[data-descinput="${fid}"]`);
+    if (ta) ta.value = f.desc;
   }));
   const sellar = async (f) => {
     const b = await blobGet("photo:" + f.id);
