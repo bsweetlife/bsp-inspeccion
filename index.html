@@ -121,7 +121,7 @@
 <script>
 "use strict";
 /* ================= Constantes ================= */
-const VERSION = "3.5";
+const VERSION = "3.6";
 const ATC = ["INSPECCIONADO", "USO RESTRINGIDO", "NO HABITABLE"];
 const ATC_CLS = { "INSPECCIONADO": "v", "USO RESTRINGIDO": "a", "NO HABITABLE": "r" };
 const ATC_CORTO = { "INSPECCIONADO": "INSPECC.", "USO RESTRINGIDO": "USO RESTR.", "NO HABITABLE": "NO HABITABLE" };
@@ -1048,6 +1048,7 @@ function rUnidad() {
     const files = Array.from(e.target.files || []);
     e.target.value = "";
     const err = document.getElementById("errFoto");
+    if (files.length) { err.textContent = "Procesando foto…"; err.style.color = "var(--gris)"; }
     for (const file of files) {
       try {
         const blob = await comprimir(file);
@@ -1056,9 +1057,12 @@ function rUnidad() {
         u.fotos.push({ id: fid, desc: "", dano: "", atc: "", star: false });
       } catch (ex) {
         err.textContent = "No se pudo guardar una foto: " + (ex && ex.message ? ex.message : ex);
+        err.style.color = "var(--rojo)";
       }
     }
-    guardar(); rUnidad();
+    guardar();
+    // Forzar repintado inmediato (Android/Chrome a veces no refresca solo)
+    requestAnimationFrame(() => requestAnimationFrame(() => rUnidad()));
   };
   fCam.onchange = onArchivos; fGal.onchange = onArchivos;
   $app.querySelectorAll("[data-desc]").forEach((t) => (t.oninput = () => {
