@@ -121,7 +121,7 @@
 <script>
 "use strict";
 /* ================= Constantes ================= */
-const VERSION = "3.6";
+const VERSION = "3.7";
 const ATC = ["INSPECCIONADO", "USO RESTRINGIDO", "NO HABITABLE"];
 const ATC_CLS = { "INSPECCIONADO": "v", "USO RESTRINGIDO": "a", "NO HABITABLE": "r" };
 const ATC_CORTO = { "INSPECCIONADO": "INSPECC.", "USO RESTRINGIDO": "USO RESTR.", "NO HABITABLE": "NO HABITABLE" };
@@ -148,8 +148,11 @@ const SISTEMAS = [
 ];
 const ZONAS = ["Fachada principal","Fachada posterior","Fachada lateral izquierda","Fachada lateral derecha",
   "Columnas visibles","Vigas interiores visibles","Vigas perimetrales exteriores","Escalera principal",
-  "Escalera de emergencia","Áreas comunes PB","Sótano / estacionamiento","Acceso al sótano",
+  "Áreas comunes PB","Sótano / estacionamiento","Acceso al sótano",
   "Fosa del ascensor","Azotea: cuarto de máquinas","Azotea: tanque elevado","Azotea: muro perimetral"];
+const ZONAS_OPCIONALES = ["Escalera de emergencia", "Escalera secundaria", "Rampa vehicular", "Cuarto de bombas",
+  "Planta eléctrica", "Piscina", "Cancha / área deportiva", "Parque infantil", "Muro de contención",
+  "Tanque subterráneo", "Pozo / cisterna", "Depósito"];
 const uid = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
 
 /* ================= Nube (Supabase) ================= */
@@ -927,7 +930,7 @@ function rNivel() {
     <button class="item" data-unidad="${a.id}" ${atc ? `style="border:2px solid var(--${ATC_CLS[atc] === "v" ? "verde" : ATC_CLS[atc] === "a" ? "ambar" : "rojo"})"` : ""}>
       <div class="cuerpo">
         <div class="nombre">${esc(a.nombre)}</div>
-        <div class="detalle">${u && u.estado === "sin-hallazgos" ? "✓ Sin hallazgos" : u && u.estado === "no-accedida" ? "🚫 No accedida" : nf ? nf + " foto" + (nf > 1 ? "s" : "") : "Sin fotos"}${u && u.voz && (u.voz.texto || u.voz.audio) ? " · 🎙" : ""}</div>
+        <div class="detalle">${u && u.estado === "sin-hallazgos" ? "✓ Sin hallazgos" : u && u.estado === "no-accedida" ? "🚫 No accedida" : u && u.estado === "no-existe" ? "⊘ No existe" : nf ? nf + " foto" + (nf > 1 ? "s" : "") : "Sin fotos"}${u && u.voz && (u.voz.texto || u.voz.audio) ? " · 🎙" : ""}</div>
       </div>
       ${atc ? `<span class="chip ${ATC_CLS[atc]}">${ATC_CORTO[atc]}</span>` : unidadLista(u) ? '<span style="color:var(--verde);font-weight:700">✓</span>' : ""}
     </button>`;
@@ -942,6 +945,13 @@ function rNivel() {
       <input id="inNueva" placeholder="${nv.comun ? "Nombre de la zona…" : "Ej: Apto 2-C, Conserjería…"}" />
       <button class="btn btn-negro" style="flex:0 0 auto;width:auto;padding:10px 16px" id="bAgregar">+ Agregar</button>
     </div>
+    ${nv.comun ? `
+    <div class="tarjeta" style="padding:12px;margin-bottom:10px">
+      <div class="etiq">Zonas opcionales (agrégalas solo si el edificio las tiene)</div>
+      <div class="pildoras" style="margin:8px 0 0" id="pilOpcionales">
+        ${ZONAS_OPCIONALES.filter((z) => !nv.apts.some((a) => a.nombre === z)).map((z) => `<button data-zop="${esc(z)}" style="font-size:12px;padding:6px 10px">+ ${esc(z)}</button>`).join("") || '<span class="aviso">Ya agregaste todas las zonas opcionales.</span>'}
+      </div>
+    </div>` : ""}
     ${htmlGrabadora("gNivel", "Resumen de voz · " + esc(nv.nombre), nv.voz)}
     ${nv.comun ? "" : `<button class="btn btn-rojo-linea" id="bDelNivel" style="margin-top:8px">Eliminar este nivel</button>`}`;
   document.getElementById("bRenNivel").onclick = () => {
@@ -970,6 +980,11 @@ function rNivel() {
     nv.apts.push({ id: uid(), nombre: v });
     guardar(); rNivel();
   };
+  const pilOp = document.getElementById("pilOpcionales");
+  if (pilOp) pilOp.querySelectorAll("[data-zop]").forEach((bt) => (bt.onclick = () => {
+    nv.apts.push({ id: uid(), nombre: bt.dataset.zop });
+    guardar(); rNivel();
+  }));
   $app.querySelectorAll("[data-unidad]").forEach((b) => (b.onclick = () => nav({ n: "unidad", nivelId: nv.id, unidadId: b.dataset.unidad })));
   wireGrabadora("gNivel", () => nv.voz);
 }
@@ -1011,10 +1026,11 @@ function rUnidad() {
     <p class="sub">${esc(nv.nombre)}</p>
     <div class="etiq">Clasificación ATC-20 de esta zona</div>
     <div class="atc" style="margin-bottom:10px" id="atcUnidad">${atcBtns}</div>
-    <div class="grid2" style="margin-bottom:14px">
+    <div class="grid2" style="margin-bottom:6px">
       <button class="btn ${u.estado === "sin-hallazgos" ? "btn-negro" : "btn-gris"}" id="bSinHallazgos" style="font-size:13px;padding:9px">✓ Inspeccionada sin hallazgos</button>
       <button class="btn ${u.estado === "no-accedida" ? "btn-negro" : "btn-gris"}" id="bNoAccedida" style="font-size:13px;padding:9px">🚫 No accedida / fuera de alcance</button>
     </div>
+    <button class="btn ${u.estado === "no-existe" ? "btn-negro" : "btn-gris"}" id="bNoExiste" style="font-size:13px;padding:9px;margin-bottom:14px">⊘ No existe en esta edificación</button>
     <input type="file" accept="image/*" capture="environment" id="fCam" style="display:none" />
     <input type="file" accept="image/*" multiple id="fGal" style="display:none" />
     <div class="grid2" style="margin-bottom:12px">
@@ -1040,6 +1056,9 @@ function rUnidad() {
   };
   document.getElementById("bNoAccedida").onclick = () => {
     u.estado = u.estado === "no-accedida" ? "" : "no-accedida"; guardar(); rUnidad();
+  };
+  document.getElementById("bNoExiste").onclick = () => {
+    u.estado = u.estado === "no-existe" ? "" : "no-existe"; guardar(); rUnidad();
   };
   const fCam = document.getElementById("fCam"), fGal = document.getElementById("fGal");
   document.getElementById("bCam").onclick = () => fCam.click();
@@ -1277,6 +1296,7 @@ function textoExport() {
     L.push(`===== ${nv.nombre.toUpperCase()} =====`);
     for (const a of nv.apts) {
       const u = d.unidades[a.id];
+      if (u && u.estado === "no-existe") { L.push(`— ${a.nombre}: NO EXISTE en esta edificación (omitir del informe).`); continue; }
       if (u && u.estado === "no-accedida") { L.push(`— ${a.nombre}: NO ACCEDIDA / fuera del alcance de esta inspección.`); continue; }
       if (u && u.estado === "sin-hallazgos" && !(u.fotos || []).length && !(u.voz && u.voz.texto)) {
         L.push(`— ${a.nombre}: inspeccionada SIN HALLAZGOS relevantes${u.atc ? ` · ATC-20: ${u.atc}` : ""}.`);
@@ -1353,7 +1373,7 @@ async function generarResumenPDF() {
   for (const nv of d.niveles) {
     for (const a of nv.apts) {
       const u = d.unidades[a.id];
-      if (!u || !unidadLista(u) || u.estado === "no-accedida") continue;
+      if (!u || !unidadLista(u) || u.estado === "no-accedida" || u.estado === "no-existe") continue;
       if (u.estado === "sin-hallazgos" && !(u.fotos || []).length) continue;
       const danos = (u.fotos || []).map((f) => f.dano).filter(Boolean);
       const linea = `• ${nv.nombre} / ${a.nombre}${u.atc ? ` [${u.atc}]` : ""}${danos.length ? ": " + [...new Set(danos)].join(", ") : ""}`;
