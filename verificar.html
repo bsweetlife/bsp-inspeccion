@@ -1,0 +1,520 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Verificación de informes | BSP 2026</title>
+<meta name="description" content="Compruebe si un informe de inspección post-sísmica BSP es auténtico y no ha sido alterado.">
+<meta name="robots" content="noindex">
+<meta name="theme-color" content="#1F4E79">
+<style>
+  :root{
+    --tinta:#0F2C4C;
+    --azul:#1F4E79;
+    --azul-claro:#D6E4F0;
+    --papel:#EDF1F5;
+    --blanco:#FFFFFF;
+    --verde:#2E7D32;
+    --ambar:#B7791F;
+    --rojo:#C0261F;
+    --gris:#5A6B7C;
+    --linea:#C9D6E2;
+
+    --sans:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,"Helvetica Neue",Arial,sans-serif;
+    --mono:ui-monospace,SFMono-Regular,"SF Mono","Cascadia Mono",Menlo,Consolas,monospace;
+
+    --sombra:0 1px 2px rgba(15,44,76,.06),0 8px 28px rgba(15,44,76,.08);
+  }
+
+  *{box-sizing:border-box;}
+  html,body{margin:0;padding:0;}
+
+  body{
+    background:var(--papel);
+    color:var(--tinta);
+    font-family:var(--sans);
+    font-size:16px;
+    line-height:1.55;
+    -webkit-font-smoothing:antialiased;
+    padding:0 20px 72px;
+  }
+
+  .envoltura{max-width:680px;margin:0 auto;}
+
+  /* ---------- encabezado ---------- */
+  .cabecera{padding:44px 0 30px;border-bottom:2px solid var(--azul);}
+  .eyebrow{
+    font-family:var(--mono);font-size:11px;font-weight:600;
+    letter-spacing:.18em;text-transform:uppercase;color:var(--gris);
+    margin:0 0 12px;
+  }
+  .cabecera h1{
+    font-size:clamp(28px,6vw,40px);line-height:1.1;font-weight:700;
+    letter-spacing:-.02em;margin:0 0 14px;color:var(--azul);
+  }
+  .lede{margin:0;color:var(--gris);font-size:16.5px;max-width:52ch;}
+
+  /* ---------- aviso de configuración ---------- */
+  .demo{
+    display:none;margin:22px 0 0;padding:12px 16px;
+    border-left:4px solid var(--ambar);background:#FDF6E7;
+    font-size:14px;color:#7A5308;border-radius:0 4px 4px 0;
+  }
+  .demo.activo{display:block;}
+
+  /* ---------- buscador ---------- */
+  .buscador{margin:32px 0 0;}
+  label{
+    display:block;font-family:var(--mono);font-size:11px;font-weight:600;
+    letter-spacing:.14em;text-transform:uppercase;color:var(--gris);margin-bottom:9px;
+  }
+  .fila{display:flex;gap:10px;flex-wrap:wrap;}
+  #codigo{
+    flex:1 1 260px;min-width:0;
+    font-family:var(--mono);font-size:17px;letter-spacing:.06em;
+    padding:14px 16px;border:1.5px solid var(--linea);border-radius:6px;
+    background:var(--blanco);color:var(--tinta);text-transform:uppercase;
+  }
+  #codigo::placeholder{color:#9DAEBF;letter-spacing:.04em;}
+  #codigo:focus-visible{outline:3px solid var(--azul);outline-offset:1px;border-color:var(--azul);}
+  .btn{
+    flex:0 0 auto;padding:14px 26px;border:0;border-radius:6px;cursor:pointer;
+    background:var(--azul);color:#fff;font-family:var(--sans);
+    font-size:15px;font-weight:600;letter-spacing:.01em;
+    transition:background .15s ease;
+  }
+  .btn:hover{background:#173D5F;}
+  .btn:focus-visible{outline:3px solid var(--tinta);outline-offset:2px;}
+  .btn[disabled]{opacity:.55;cursor:progress;}
+  .pista{margin:10px 0 0;font-size:13.5px;color:var(--gris);}
+
+  /* ---------- resultado ---------- */
+  #resultado{margin-top:30px;}
+  #resultado:empty{margin-top:0;}
+
+  .ficha{
+    background:var(--blanco);border:1px solid var(--linea);
+    border-radius:8px;box-shadow:var(--sombra);overflow:hidden;
+  }
+
+  /* ---------- sello ---------- */
+  .sello-zona{padding:34px 24px 30px;text-align:center;border-bottom:1px solid var(--linea);}
+  .sello{
+    display:inline-block;padding:12px 30px;
+    border:3px double currentColor;border-radius:5px;
+    font-family:var(--mono);font-size:clamp(19px,4.6vw,26px);font-weight:700;
+    letter-spacing:.1em;text-transform:uppercase;
+    transform:rotate(-1.6deg);
+  }
+  .sello-anim{animation:sellar .42s cubic-bezier(.2,1.5,.4,1) both;}
+  @keyframes sellar{
+    from{transform:rotate(-1.6deg) scale(1.5);opacity:0;}
+    to  {transform:rotate(-1.6deg) scale(1);opacity:1;}
+  }
+  .sello-nota{margin:16px auto 0;max-width:46ch;font-size:14.5px;color:var(--gris);}
+
+  .v-ok        {color:var(--verde);}
+  .v-mal       {color:var(--rojo);}
+  .v-neutro    {color:var(--azul);}
+  .v-aviso     {color:var(--ambar);}
+
+  /* ---------- datos ---------- */
+  .datos{padding:6px 24px 20px;}
+  .dato{
+    display:grid;grid-template-columns:minmax(120px,150px) 1fr;gap:8px 18px;
+    padding:13px 0;border-bottom:1px solid var(--papel);
+  }
+  .dato:last-child{border-bottom:0;}
+  .dato dt{
+    font-family:var(--mono);font-size:10.5px;font-weight:600;
+    letter-spacing:.12em;text-transform:uppercase;color:var(--gris);
+    padding-top:3px;margin:0;
+  }
+  .dato dd{margin:0;font-size:15.5px;}
+  dl{margin:0;}
+
+  .etiqueta{
+    display:inline-block;padding:3px 11px;border-radius:3px;
+    font-family:var(--mono);font-size:11.5px;font-weight:700;letter-spacing:.07em;
+  }
+  .e-verde{background:#E6F2E7;color:var(--verde);}
+  .e-ambar{background:#FDF3E0;color:#8A5D08;}
+  .e-rojo {background:#FBE9E8;color:var(--rojo);}
+  .e-azul {background:var(--azul-claro);color:var(--azul);}
+
+  /* ---------- huella ---------- */
+  .huellas{padding:22px 24px 26px;border-top:1px solid var(--linea);background:#F7FAFC;}
+  .huellas h2{
+    font-family:var(--mono);font-size:11px;font-weight:600;letter-spacing:.14em;
+    text-transform:uppercase;color:var(--gris);margin:0 0 4px;
+  }
+  .huellas p.expl{margin:0 0 18px;font-size:14px;color:var(--gris);max-width:56ch;}
+
+  .huella-bloque{margin-bottom:16px;}
+  .huella-tit{
+    font-family:var(--mono);font-size:10.5px;font-weight:600;letter-spacing:.1em;
+    text-transform:uppercase;color:var(--gris);margin:0 0 6px;
+  }
+  .huella{
+    font-family:var(--mono);font-size:13px;line-height:1.85;
+    word-break:break-all;color:var(--tinta);
+    background:var(--blanco);border:1px solid var(--linea);border-radius:5px;
+    padding:11px 13px;
+  }
+  .huella span{margin-right:.62em;}
+  .huella.ok  {border-color:var(--verde);background:#F3F9F3;}
+  .huella.mal {border-color:var(--rojo);background:#FDF4F3;}
+  .huella.vacia{color:#9DAEBF;font-style:normal;}
+
+  /* ---------- zona de archivo ---------- */
+  .soltar{
+    border:2px dashed var(--linea);border-radius:7px;background:var(--blanco);
+    padding:24px 18px;text-align:center;cursor:pointer;
+    transition:border-color .15s ease,background .15s ease;
+  }
+  .soltar:hover,.soltar.encima{border-color:var(--azul);background:var(--azul-claro);}
+  .soltar:focus-visible{outline:3px solid var(--azul);outline-offset:2px;}
+  .soltar strong{display:block;font-size:15.5px;margin-bottom:5px;color:var(--azul);}
+  .soltar span{font-size:13.5px;color:var(--gris);}
+  #archivo{position:absolute;width:1px;height:1px;opacity:0;pointer-events:none;}
+
+  .privado{
+    margin:12px 0 0;font-size:13px;color:var(--gris);
+    display:flex;gap:7px;align-items:flex-start;justify-content:center;text-align:left;
+  }
+  .privado svg{flex:0 0 auto;margin-top:2px;}
+
+  /* ---------- estado / errores ---------- */
+  .aviso{
+    padding:14px 18px;font-size:14.5px;border-radius:6px;margin:0 0 20px;
+  }
+  .aviso-rojo{background:#FBE9E8;color:#8A1C16;border-left:4px solid var(--rojo);}
+  .aviso-ambar{background:#FDF3E0;color:#7A5308;border-left:4px solid var(--ambar);}
+
+  .cargando{
+    text-align:center;padding:38px 20px;color:var(--gris);
+    font-family:var(--mono);font-size:13px;letter-spacing:.1em;text-transform:uppercase;
+  }
+
+  /* ---------- pie ---------- */
+  .pie{
+    margin-top:40px;padding-top:22px;border-top:1px solid var(--linea);
+    font-size:13px;color:var(--gris);
+  }
+  .pie p{margin:0 0 7px;}
+  .pie strong{color:var(--tinta);}
+
+  @media (max-width:520px){
+    .dato{grid-template-columns:1fr;gap:3px;}
+    .dato dt{padding-top:0;}
+    .btn{width:100%;}
+  }
+  @media (prefers-reduced-motion:reduce){
+    *{animation:none!important;transition:none!important;}
+    .sello{transform:none;}
+  }
+</style>
+</head>
+<body>
+<div class="envoltura">
+
+  <header class="cabecera">
+    <p class="eyebrow">Registro BSP 2026</p>
+    <h1>Verificación de informes</h1>
+    <p class="lede">Compruebe si un informe de inspección post-sísmica fue realmente emitido por el Ing. Eduardo Lubo y si el archivo que usted tiene conserva su contenido original.</p>
+  </header>
+
+  <div class="demo" id="demo">
+    <strong>Modo demostración.</strong> Esta página todavía no está conectada al registro. Los datos que muestra son de prueba. Complete <code>SUPABASE_KEY</code> con la clave publishable para activarla.
+  </div>
+
+  <section class="buscador">
+    <label for="codigo">Código de verificación</label>
+    <div class="fila">
+      <input id="codigo" type="text" inputmode="latin" autocomplete="off"
+             spellcheck="false" placeholder="BSP-2026-010-K7M2QX" aria-describedby="pista">
+      <button class="btn" id="btn" type="button">Verificar</button>
+    </div>
+    <p class="pista" id="pista">Lo encuentra al pie de la última página del informe, junto al código QR.</p>
+  </section>
+
+  <main id="resultado" aria-live="polite"></main>
+
+  <footer class="pie">
+    <p><strong>Ing. Eduardo Lubo</strong> | CIV N.° 115.692 | Colegio de Ingenieros de Venezuela</p>
+    <p>Building Safety Program (BSP) 2026 | Evaluación rápida de habitabilidad post-sísmica</p>
+    <p>Este registro confirma la autenticidad y la integridad del documento. No sustituye ni modifica el contenido técnico del informe ni su cláusula de responsabilidad profesional.</p>
+  </footer>
+
+</div>
+
+<input type="file" id="archivo" accept="application/pdf,.pdf">
+
+<script>
+/* =====================================================================
+   CONFIGURACIÓN
+
+   Solo falta la clave. Supabase > Settings > API Keys.
+
+   Use la clave PUBLISHABLE  (sb_publishable_...)
+   antes se llamaba          anon / public
+
+   NO use la SECRET (sb_secret_...), antes service_role. Esa pasa por
+   encima del RLS y permitiría inscribir informes falsos en el registro.
+   Nunca debe salir de su computadora.
+
+   La publishable es pública por diseño: va dentro de esta página y
+   cualquiera puede leerla. Eso no es una filtración. Lo que protege el
+   registro es el RLS, no el secreto de la clave: la tabla está cerrada
+   y solo se expone verificar_informe(), que exige el código exacto.
+   ===================================================================== */
+const SUPABASE_URL = "https://vismrinosmyevgirrhsb.supabase.co";
+const SUPABASE_KEY = "sb_publishable__bm_woG64a8I2gNmIDohEw_l1lOmk57";
+/* ===================================================================== */
+
+// Tolera que se pegue la URL del endpoint REST en lugar de la Project URL
+const API = SUPABASE_URL.trim().replace(/\/+$/, "").replace(/\/rest\/v1$/, "");
+
+const MODO_DEMO = /SU_CLAVE|TU_CLAVE|TU-PROYECTO/.test(SUPABASE_URL + SUPABASE_KEY);
+
+const FIXTURE = {
+  codigo:"BSP-2026-000-PRUEBA", numero_informe:"BSP-2026-000",
+  edificacion:"Residencias El Ejemplo",
+  direccion:"Avenida Principal con Calle Sur, Urbanización La Muestra, Municipio Ejemplo, Estado Miranda",
+  fecha_inspeccion:"2026-07-08",
+  clasificacion:"INSPECCIONADO, con USO RESTRINGIDO localizado en azotea",
+  firmante:"Ing. Eduardo Lubo", civ:"CIV N.° 115.692",
+  sha256:"0000000000000000000000000000000000000000000000000000000000000000",
+  estado:"vigente", nota_estado:null, reemplazado_por:null,
+  fecha_emision:"2026-07-08T14:30:00Z"
+};
+
+const $ = (s) => document.querySelector(s);
+const salida = $("#resultado");
+let registro = null;   // ficha traída del registro
+let huellaArchivo = null;
+
+if (MODO_DEMO) $("#demo").classList.add("activo");
+
+const esc = (s) => String(s ?? "").replace(/[&<>"']/g, c =>
+  ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+
+const normalizar = (s) => String(s || "").toUpperCase().replace(/[^A-Z0-9]/g, "");
+
+function fecha(iso){
+  if(!iso) return "";
+  const d = new Date(iso.length <= 10 ? iso + "T12:00:00Z" : iso);
+  if (isNaN(d)) return esc(iso);
+  return d.toLocaleDateString("es-VE", {day:"numeric", month:"long", year:"numeric", timeZone:"UTC"});
+}
+
+// La huella se muestra en ocho grupos de ocho, para poder cotejarla a simple vista
+function grupos(hex){
+  return (hex.match(/.{1,8}/g) || []).map(g => `<span>${esc(g)}</span>`).join("");
+}
+
+async function consultar(codigo){
+  if (MODO_DEMO){
+    await new Promise(r => setTimeout(r, 450));
+    return normalizar(codigo) === normalizar(FIXTURE.codigo) ? FIXTURE : null;
+  }
+  const r = await fetch(`${API}/rest/v1/rpc/verificar_informe`, {
+    method:"POST",
+    headers:{
+      "apikey": SUPABASE_KEY,
+      "Authorization": `Bearer ${SUPABASE_KEY}`,
+      "Content-Type": "application/json"
+    },
+    body: JSON.stringify({ p_codigo: codigo })
+  });
+  if (!r.ok) throw new Error(`El registro respondió ${r.status}`);
+  const filas = await r.json();
+  return (Array.isArray(filas) && filas.length) ? filas[0] : null;
+}
+
+async function sha256(file){
+  const buf = await file.arrayBuffer();
+  const hash = await crypto.subtle.digest("SHA-256", buf);
+  return [...new Uint8Array(hash)].map(b => b.toString(16).padStart(2,"0")).join("");
+}
+
+/* ---------- veredicto ---------- */
+function veredicto(){
+  if (!registro) return {texto:"No registrado", clase:"v-mal",
+    nota:"Ningún informe emitido por el Ing. Eduardo Lubo lleva este código. Si el documento en su poder muestra este código, no proviene de este despacho."};
+
+  if (huellaArchivo && huellaArchivo !== registro.sha256)
+    return {texto:"Alterado", clase:"v-mal",
+      nota:"El código existe, pero el archivo que usted cargó no coincide con el documento registrado. Su contenido fue modificado después de la emisión."};
+
+  if (registro.estado === "anulado")
+    return {texto:"Anulado", clase:"v-mal",
+      nota:"El documento es auténtico, pero el informe fue anulado por el inspector y no debe utilizarse."};
+
+  if (registro.estado === "reemplazado")
+    return {texto:"Reemplazado", clase:"v-aviso",
+      nota:"El documento es auténtico, pero existe una edición posterior que lo sustituye. Solicite la versión vigente."};
+
+  if (huellaArchivo && huellaArchivo === registro.sha256)
+    return {texto:"Auténtico", clase:"v-ok",
+      nota:"El informe fue emitido por el Ing. Eduardo Lubo y el archivo conserva íntegro su contenido original."};
+
+  return {texto:"Registrado", clase:"v-neutro",
+    nota:"El código corresponde a un informe emitido. Para confirmar que su archivo no fue alterado, cárguelo más abajo."};
+}
+
+function etiquetaEstado(e){
+  const m = {vigente:["Vigente","e-verde"], anulado:["Anulado","e-rojo"], reemplazado:["Reemplazado","e-ambar"]};
+  const [txt, cls] = m[e] || [e, "e-azul"];
+  return `<span class="etiqueta ${cls}">${esc(txt)}</span>`;
+}
+
+function pintar({animar=false} = {}){
+  const v = veredicto();
+
+  if (!registro){
+    salida.innerHTML = `
+      <div class="ficha">
+        <div class="sello-zona">
+          <div class="sello ${v.clase} ${animar?"sello-anim":""}">${esc(v.texto)}</div>
+          <p class="sello-nota">${esc(v.nota)}</p>
+        </div>
+        <div class="datos">
+          <div class="aviso aviso-rojo" style="margin:18px 0 4px">
+            Revise que haya transcrito el código completo, incluidos los guiones.
+            Si el código está bien copiado y aun así no aparece, comuníquese con el inspector antes de usar el documento.
+          </div>
+        </div>
+      </div>`;
+    return;
+  }
+
+  const alerta = registro.estado !== "vigente" && registro.nota_estado
+    ? `<div class="aviso ${registro.estado==="anulado"?"aviso-rojo":"aviso-ambar"}">${esc(registro.nota_estado)}${
+        registro.reemplazado_por ? ` Código vigente: <strong>${esc(registro.reemplazado_por)}</strong>.` : ""}</div>`
+    : "";
+
+  const claseHuella = huellaArchivo ? (huellaArchivo === registro.sha256 ? "ok" : "mal") : "vacia";
+
+  salida.innerHTML = `
+    <div class="ficha">
+      <div class="sello-zona">
+        <div class="sello ${v.clase} ${animar?"sello-anim":""}">${esc(v.texto)}</div>
+        <p class="sello-nota">${esc(v.nota)}</p>
+      </div>
+
+      <div class="datos">
+        ${alerta}
+        <dl>
+          <div class="dato"><dt>Informe</dt><dd><strong>${esc(registro.numero_informe)}</strong></dd></div>
+          <div class="dato"><dt>Edificación</dt><dd>${esc(registro.edificacion)}</dd></div>
+          ${registro.direccion ? `<div class="dato"><dt>Dirección</dt><dd>${esc(registro.direccion)}</dd></div>` : ""}
+          <div class="dato"><dt>Inspección</dt><dd>${fecha(registro.fecha_inspeccion)}</dd></div>
+          <div class="dato"><dt>Clasificación</dt><dd>${esc(registro.clasificacion)}</dd></div>
+          <div class="dato"><dt>Firmante</dt><dd>${esc(registro.firmante)}<br><span style="color:var(--gris);font-size:14px">${esc(registro.civ)}</span></dd></div>
+          <div class="dato"><dt>Emitido</dt><dd>${fecha(registro.fecha_emision)}</dd></div>
+          <div class="dato"><dt>Estado</dt><dd>${etiquetaEstado(registro.estado)}</dd></div>
+        </dl>
+      </div>
+
+      <div class="huellas">
+        <h2>Comprobación del archivo</h2>
+        <p class="expl">Cada informe tiene una huella única, como una impresión digital. Si cambia una sola letra del documento, la huella cambia por completo.</p>
+
+        <div class="huella-bloque">
+          <p class="huella-tit">Huella del informe registrado</p>
+          <div class="huella">${grupos(registro.sha256)}</div>
+        </div>
+
+        <div class="huella-bloque">
+          <p class="huella-tit">Huella del archivo que usted cargó</p>
+          <div class="huella ${claseHuella}">${huellaArchivo ? grupos(huellaArchivo) : "Todavía no ha cargado ningún archivo"}</div>
+        </div>
+
+        <div class="soltar" id="soltar" tabindex="0" role="button"
+             aria-label="Cargar el archivo PDF del informe para comprobarlo">
+          <strong>Cargue aquí el PDF del informe</strong>
+          <span>Arrástrelo sobre este recuadro o toque para elegirlo</span>
+        </div>
+
+        <p class="privado">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+            <rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0110 0v4"/>
+          </svg>
+          <span>El archivo no se envía a ningún servidor. La huella se calcula dentro de su propio teléfono o computadora.</span>
+        </p>
+      </div>
+    </div>`;
+
+  conectarZona();
+}
+
+/* ---------- carga de archivo ---------- */
+function conectarZona(){
+  const zona = $("#soltar");
+  const input = $("#archivo");
+  if (!zona) return;
+
+  const abrir = () => input.click();
+  zona.addEventListener("click", abrir);
+  zona.addEventListener("keydown", e => {
+    if (e.key === "Enter" || e.key === " "){ e.preventDefault(); abrir(); }
+  });
+
+  ["dragenter","dragover"].forEach(ev =>
+    zona.addEventListener(ev, e => { e.preventDefault(); zona.classList.add("encima"); }));
+  ["dragleave","drop"].forEach(ev =>
+    zona.addEventListener(ev, e => { e.preventDefault(); zona.classList.remove("encima"); }));
+
+  zona.addEventListener("drop", e => {
+    const f = e.dataTransfer?.files?.[0];
+    if (f) procesar(f);
+  });
+  input.onchange = () => { if (input.files[0]) procesar(input.files[0]); };
+}
+
+async function procesar(file){
+  try{
+    huellaArchivo = await sha256(file);
+    pintar({animar:true});
+  }catch(err){
+    huellaArchivo = null;
+    salida.insertAdjacentHTML("afterbegin",
+      `<div class="aviso aviso-rojo">No se pudo leer el archivo. Cargue el PDF tal como lo recibió, sin abrirlo y volverlo a guardar.</div>`);
+  }
+}
+
+/* ---------- búsqueda ---------- */
+async function buscar(){
+  const codigo = $("#codigo").value.trim();
+  if (!codigo){ $("#codigo").focus(); return; }
+
+  $("#btn").disabled = true;
+  huellaArchivo = null;
+  salida.innerHTML = `<div class="cargando">Consultando el registro</div>`;
+
+  try{
+    registro = await consultar(codigo);
+    pintar({animar:true});
+    const u = new URL(location);
+    u.searchParams.set("c", codigo.toUpperCase());
+    history.replaceState(null, "", u);
+  }catch(err){
+    registro = null;
+    salida.innerHTML = `<div class="aviso aviso-ambar">
+      No fue posible consultar el registro en este momento (${esc(err.message)}).
+      Revise su conexión e inténtelo de nuevo. Si el problema persiste, comuníquese con el inspector.</div>`;
+  }finally{
+    $("#btn").disabled = false;
+  }
+}
+
+$("#btn").addEventListener("click", buscar);
+$("#codigo").addEventListener("keydown", e => { if (e.key === "Enter") buscar(); });
+
+// Llegada desde el QR: ?c=BSP-2026-010-K7M2QX
+const inicial = new URLSearchParams(location.search).get("c");
+if (inicial){ $("#codigo").value = inicial.toUpperCase(); buscar(); }
+</script>
+</body>
+</html>
