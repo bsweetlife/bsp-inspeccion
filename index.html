@@ -121,7 +121,7 @@
 <script>
 "use strict";
 /* ================= Constantes ================= */
-const VERSION = "3.9";
+const VERSION = "3.10";
 const ATC = ["INSPECCIONADO", "USO RESTRINGIDO", "NO HABITABLE"];
 const ATC_CLS = { "INSPECCIONADO": "v", "USO RESTRINGIDO": "a", "NO HABITABLE": "r" };
 const ATC_CORTO = { "INSPECCIONADO": "INSPECC.", "USO RESTRINGIDO": "USO RESTR.", "NO HABITABLE": "NO HABITABLE" };
@@ -502,6 +502,14 @@ function cmpDe(insp) {
   return insp.computos;
 }
 let cmpBorrador = { origen: "sitio", fotos: [] };
+function cmpDescartar() {
+  if (cmpBorrador.fotos && cmpBorrador.fotos.length) {
+    if (!confirm("Hay fotos adjuntas a una línea que no ha guardado. ¿Salir y descartarlas?")) return false;
+    for (const f of cmpBorrador.fotos) blobDel("photo:" + f.id).catch(() => {});
+  }
+  cmpBorrador = { origen: "sitio", fotos: [] };
+  return true;
+}
 
 
 let _timerGuardar = null;
@@ -574,6 +582,7 @@ document.getElementById("btnVolver").onclick = () => {
   const p = st.pantalla;
   if (p.n === "unidad") nav({ n: "nivel", nivelId: p.nivelId });
   else if (p.n === "nivel" || p.n === "export") nav({ n: "casa" });
+  else if (p.n === "computos") { if (cmpDescartar()) nav({ n: "casa" }); }
   else if (p.n === "casa") nav({ n: "lista" });
   else if (p.n === "setup") nav(st.insp && st.insp.listo ? { n: "casa" } : { n: "lista" });
   else if (p.n === "ajustes") nav({ n: "lista" });
