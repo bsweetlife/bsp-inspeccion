@@ -121,7 +121,7 @@
 <script>
 "use strict";
 /* ================= Constantes ================= */
-const VERSION = "3.8";
+const VERSION = "3.9";
 const ATC = ["INSPECCIONADO", "USO RESTRINGIDO", "NO HABITABLE"];
 const ATC_CLS = { "INSPECCIONADO": "v", "USO RESTRINGIDO": "a", "NO HABITABLE": "r" };
 const ATC_CORTO = { "INSPECCIONADO": "INSPECC.", "USO RESTRINGIDO": "USO RESTR.", "NO HABITABLE": "NO HABITABLE" };
@@ -212,6 +212,7 @@ function blobsDeInsp(d) {
     if (u.voz && u.voz.audio) ids.push(["audio", u.voz.audio]);
   }
   for (const nv of d.niveles || []) if (nv.voz && nv.voz.audio) ids.push(["audio", nv.voz.audio]);
+  for (const l of ((d.computos && d.computos.lineas) || [])) for (const f of (l.fotos || [])) ids.push(["photo", f.id]);
   return ids;
 }
 async function subirInsp(id) {
@@ -370,6 +371,139 @@ const mkNivel = (nombre, apts, comun) => ({ id: uid(), nombre, comun: !!comun,
   apts: apts.map((n) => ({ id: uid(), nombre: n })), voz: { audio: null, texto: "" } });
 const unidadVacia = () => ({ fotos: [], voz: { audio: null, texto: "" }, atc: "", estado: "" });
 
+/* ================= Cómputos métricos ================= */
+const CMP_UNI = { m: "m", m2: "m²", m3: "m³", kg: "kg", und: "und", gbl: "gbl" };
+const CMP_TXT = { cantidad: "Cantidad", largo: "Largo (m)", ancho: "Ancho (m)", alto: "Alto (m)", diametro: "Diámetro" };
+const CMP_UNI_CAMPOS = {
+  m: ["cantidad", "largo"], m2: ["cantidad", "largo", "ancho"],
+  m3: ["cantidad", "largo", "ancho", "alto"], kg: ["cantidad", "largo", "diametro"],
+  und: ["cantidad"], gbl: ["cantidad"]
+};
+const CMP_CABILLA = {
+  '3/8"': 0.560, '1/2"': 0.994, '5/8"': 1.552, '3/4"': 2.235, '7/8"': 3.042, '1"': 3.973,
+  "8 mm": 0.395, "10 mm": 0.617, "12 mm": 0.888, "16 mm": 1.578, "20 mm": 2.466, "25 mm": 3.854
+};
+const CMP_PARED = { campos: ["cantidad", "largo", "alto"] };
+const CMP_DESAR = { campos: ["cantidad", "largo", "ancho"], etiquetas: { largo: "Longitud (m)", ancho: "Perímetro de sección (m)" } };
+const CMP_MEDIDA = {
+  "01.02": CMP_PARED, "02.01": CMP_DESAR, "02.02": CMP_PARED, "02.03": CMP_PARED, "02.05": CMP_PARED,
+  "03.01": { campos: ["cantidad", "largo", "ancho"], etiquetas: { largo: "Longitud tratada (m)", ancho: "Perímetro de sección (m)" } },
+  "03.02": { etiquetas: { cantidad: "N.° de barras", largo: "Longitud por barra (m)" } },
+  "03.06": { etiquetas: { largo: "Longitud de columna (m)" } },
+  "03.07": { etiquetas: { largo: "Longitud de viga (m)" } },
+  "04.01": CMP_PARED, "04.03": CMP_DESAR, "04.04": CMP_PARED, "04.05": CMP_PARED,
+  "05.01": { etiquetas: { largo: "Largo en planta (m)", ancho: "Ancho en planta (m)" } }
+};
+const CMP_CAT = [
+  ["01.01", "01 Obras preliminares", "Apuntalamiento provisional de elementos estructurales", "und", "Se mide por elemento apuntalado, no por puntal."],
+  ["01.02", "01 Obras preliminares", "Andamio tubular para trabajos en altura", "m2", "Proyección vertical del paramento servido."],
+  ["01.03", "01 Obras preliminares", "Protección de áreas de trabajo, pisos y mobiliario", "m2", "Superficie efectivamente cubierta."],
+  ["01.04", "01 Obras preliminares", "Carga, transporte y disposición de escombros", "m3", "Volumen suelto estimado a partir de las demoliciones."],
+  ["02.01", "02 Demoliciones", "Demolición de friso en elementos estructurales", "m2", "Superficie desarrollada: perímetro de sección por longitud."],
+  ["02.02", "02 Demoliciones", "Demolición de friso en paredes", "m2", "Largo por alto del paño. Se descuentan vanos mayores de 2,00 m²."],
+  ["02.03", "02 Demoliciones", "Demolición de paredes de bloque", "m2", "Largo por alto del paño a demoler."],
+  ["02.04", "02 Demoliciones", "Picado y saneamiento de concreto deteriorado", "m2", "Área saneada hasta concreto sano, medida después del picado."],
+  ["02.05", "02 Demoliciones", "Remoción de revestimiento desprendido o inestable", "m2", "Área efectivamente removida."],
+  ["02.06", "02 Demoliciones", "Demolición de recubrimiento en losa", "m2", "Área en planta."],
+  ["03.01", "03 Reparación estructural", "Limpieza y tratamiento anticorrosivo de cabillas expuestas", "m2", "Superficie desarrollada de la cabilla tratada."],
+  ["03.02", "03 Reparación estructural", "Suministro y colocación de cabillas de refuerzo", "kg", "Barras por longitud por peso teórico según diámetro."],
+  ["03.03", "03 Reparación estructural", "Inyección de grietas con resina epóxica", "m", "Longitud real de la grieta inyectada."],
+  ["03.04", "03 Reparación estructural", "Sellado superficial de grietas con mortero de reparación", "m", "Longitud real de la grieta sellada."],
+  ["03.05", "03 Reparación estructural", "Mortero de reparación estructural tixotrópico", "m2", "Superficie reparada. El espesor va en la observación."],
+  ["03.06", "03 Reparación estructural", "Encamisado de columnas en concreto armado", "m", "Longitud encamisada. La sección va en la observación."],
+  ["03.07", "03 Reparación estructural", "Encamisado de vigas en concreto armado", "m", "Longitud de viga encamisada."],
+  ["03.08", "03 Reparación estructural", "Puente de adherencia entre concreto nuevo y existente", "m2", "Superficie de contacto tratada."],
+  ["03.09", "03 Reparación estructural", "Anclajes químicos en concreto existente", "und", "Cantidad de anclajes. Diámetro y profundidad en la observación."],
+  ["03.10", "03 Reparación estructural", "Confinamiento de nodo viga-columna", "und", "Cantidad de nodos intervenidos."],
+  ["04.01", "04 Mampostería y acabados", "Construcción de paredes de bloque de arcilla", "m2", "Largo por alto del paño construido."],
+  ["04.02", "04 Mampostería y acabados", "Sellado de grietas en paredes de mampostería", "m", "Longitud real de la grieta."],
+  ["04.03", "04 Mampostería y acabados", "Friso liso sobre elementos estructurales", "m2", "Superficie desarrollada del elemento."],
+  ["04.04", "04 Mampostería y acabados", "Friso liso sobre paredes", "m2", "Largo por alto del paño frisado."],
+  ["04.05", "04 Mampostería y acabados", "Pintura de caucho sobre superficies frisadas", "m2", "Superficie pintada, dos manos."],
+  ["04.06", "04 Mampostería y acabados", "Reposición de revestimiento cerámico", "m2", "Área repuesta."],
+  ["04.07", "04 Mampostería y acabados", "Anclaje de paredes no estructurales a la estructura", "m", "Longitud de encuentro pared-estructura tratado."],
+  ["05.01", "05 Impermeabilización e instalaciones", "Impermeabilización de losa de azotea", "m2", "Área en planta más medias cañas y remates."],
+  ["05.02", "05 Impermeabilización e instalaciones", "Reparación de juntas de dilatación", "m", "Longitud de junta intervenida."],
+  ["05.03", "05 Impermeabilización e instalaciones", "Desincorporación de tanque elevado", "und", "Se computa por tanque. No incluye el sistema sustituto."],
+  ["05.04", "05 Impermeabilización e instalaciones", "Reubicación o reposición de tuberías afectadas", "m", "Longitud intervenida. Diámetro en la observación."]
+].map(([codigo, grupo, descripcion, unidad, notas]) =>
+  Object.assign({ codigo, grupo, descripcion, unidad, notas }, CMP_MEDIDA[codigo] || {}));
+
+const cmpPartida = (cod) => CMP_CAT.find((p) => p.codigo === cod) || null;
+const cmpCampos = (p) => (p && p.campos) || (p && CMP_UNI_CAMPOS[p.unidad]) || [];
+const cmpEtiq = (p, c) => (p && p.etiquetas && p.etiquetas[c]) || CMP_TXT[c] || c;
+function cmpNum(v, d) {
+  const def = d === undefined ? 0 : d;
+  if (v === null || v === undefined || v === "") return def;
+  const n = typeof v === "string" ? parseFloat(v.replace(",", ".")) : Number(v);
+  return Number.isFinite(n) ? n : def;
+}
+const cmpRed = (v, d) => { const f = Math.pow(10, d === undefined ? 3 : d); return Math.round((v + Number.EPSILON) * f) / f; };
+const cmpFmt = (v, d) => Number.isFinite(v)
+  ? v.toLocaleString("es-VE", { minimumFractionDigits: d === undefined ? 2 : d, maximumFractionDigits: d === undefined ? 2 : d })
+  : "0,00";
+
+function cmpParcial(l, p) {
+  if (!p) return 0;
+  let v = cmpNum(l.cantidad, 1);
+  for (const c of cmpCampos(p)) {
+    if (c === "cantidad") continue;
+    if (c === "diametro") { v *= (CMP_CABILLA[l.diametro] || 0); continue; }
+    v *= cmpNum(l[c]);
+  }
+  return cmpRed(v);
+}
+function cmpValidar(l, p) {
+  const e = [];
+  if (!String(l.zona || "").trim()) e.push("Indique la zona donde tomó la medida.");
+  for (const c of cmpCampos(p)) {
+    if (c === "diametro") {
+      if (!l.diametro || !(l.diametro in CMP_CABILLA)) e.push("Seleccione el diámetro de la cabilla.");
+      continue;
+    }
+    const v = cmpNum(l[c], NaN);
+    if (!Number.isFinite(v) || v <= 0) e.push(cmpEtiq(p, c) + " debe ser mayor que cero.");
+  }
+  if (l.origen !== "sitio" && !String(l.obs || "").trim())
+    e.push("Una medida estimada requiere una observación que explique el criterio.");
+  return e;
+}
+function cmpPie(l, p, iso) {
+  const t = ["Partida " + p.codigo + ", " + p.descripcion.charAt(0).toLowerCase() + p.descripcion.slice(1)];
+  const u = [l.elemento, l.zona, l.nivel].filter(Boolean).join(", ");
+  if (u) t.push(u);
+  if (p.unidad === "kg" && l.diametro) t.push("Cabilla " + l.diametro);
+  const mag = { m: "Longitud medida", m2: "Superficie medida", m3: "Volumen medido", kg: "Peso computado" }[p.unidad] || "Cantidad";
+  t.push(mag + ": " + cmpFmt(cmpParcial(l, p)) + " " + CMP_UNI[p.unidad]);
+  if (l.origen === "planos") t.push("Cantidad tomada de planos");
+  if (l.origen === "muestreo") t.push("Cantidad estimada por muestreo");
+  if (iso) {
+    const d = new Date(iso), z = (n) => String(n).padStart(2, "0");
+    t.push("Fotografía tomada el " + z(d.getDate()) + "/" + z(d.getMonth() + 1) + "/" + d.getFullYear() +
+      " a las " + z(d.getHours()) + ":" + z(d.getMinutes()) + " h");
+  }
+  return t.join(". ") + ".";
+}
+function cmpAgrupar(lineas) {
+  const m = new Map();
+  for (const l of lineas) {
+    const p = cmpPartida(l.partida);
+    if (!p) continue;
+    if (!m.has(p.codigo)) m.set(p.codigo, { codigo: p.codigo, descripcion: p.descripcion, unidad: p.unidad, total: 0, n: 0, estimada: false });
+    const a = m.get(p.codigo);
+    a.total += cmpNum(l.parcial); a.n++;
+    if (l.origen && l.origen !== "sitio") a.estimada = true;
+  }
+  return Array.from(m.values()).sort((a, b) => a.codigo.localeCompare(b.codigo));
+}
+function cmpDe(insp) {
+  if (!insp.computos) insp.computos = { fecha: new Date().toISOString().slice(0, 10), responsable: "", rev: 1, lineas: [] };
+  if (!insp.computos.lineas) insp.computos.lineas = [];
+  return insp.computos;
+}
+let cmpBorrador = { origen: "sitio", fotos: [] };
+
+
 let _timerGuardar = null;
 function guardar() {
   ponEstado("Guardando…", false);
@@ -463,6 +597,7 @@ function render() {
   else if (p.n === "casa") rCasa();
   else if (p.n === "nivel") rNivel();
   else if (p.n === "unidad") rUnidad();
+  else if (p.n === "computos") rComputos();
   else if (p.n === "export") rExport();
   else if (p.n === "ajustes") rAjustes();
   activarCorrector();
@@ -773,9 +908,11 @@ function rCasa() {
       </div>
       <p class="aviso" style="margin:0">Los sótanos y el PH se crean sin unidades; agrégalas dentro con "+ Agregar". Para eliminar o renombrar un nivel, entra en él.</p>
     </div>
+    <button class="btn btn-linea" id="bComputos" style="margin-top:10px">Cómputos métricos (${((st.insp.computos && st.insp.computos.lineas) || []).length} líneas)</button>
     <button class="btn btn-negro" id="bExport" style="margin-top:10px">Exportar inspección (${totalFotos} fotos)</button>
     <button class="btn btn-rojo-linea" id="bBorrarInsp" style="margin-top:8px">Eliminar esta inspección (al terminar)</button>`;
   document.getElementById("bEditar").onclick = () => nav({ n: "setup" });
+  document.getElementById("bComputos").onclick = () => nav({ n: "computos" });
   document.getElementById("bExport").onclick = () => nav({ n: "export" });
   const agregarNivel = (prefijo, insertarAlInicio) => {
     const n = d.niveles.filter((x) => x.nombre.startsWith(prefijo)).length;
@@ -1698,6 +1835,277 @@ function rExport() {
 }
 
 /* ================= Ajustes / API ================= */
+function cmpPintarDims() {
+  const p = cmpPartida(cmpBorrador.partida);
+  const cont = document.getElementById("cmDims");
+  if (!cont || !p) return;
+  const crit = document.getElementById("cmCrit");
+  if (crit) crit.textContent = p.notas || "";
+  cont.innerHTML = cmpCampos(p).map((c) => {
+    if (c === "diametro") {
+      const op = Object.keys(CMP_CABILLA).map((k) =>
+        `<option value="${esc(k)}">${esc(k)} · ${cmpFmt(CMP_CABILLA[k], 3)} kg/m</option>`).join("");
+      return `<label class="campo"><span>${esc(cmpEtiq(p, c))}</span>
+        <select id="cmD_${c}"><option value="">Seleccione</option>${op}</select></label>`;
+    }
+    return `<label class="campo"><span>${esc(cmpEtiq(p, c))}</span>
+      <input id="cmD_${c}" inputmode="decimal" style="text-align:right;font-weight:600"
+        value="${c === "cantidad" ? "1" : ""}" placeholder="${c === "cantidad" ? "1" : "0,00"}" /></label>`;
+  }).join("");
+  for (const c of cmpCampos(p)) {
+    const el = document.getElementById("cmD_" + c);
+    if (el) el.addEventListener(c === "diametro" ? "change" : "input", cmpCinta);
+  }
+  if (cmpBorrador.repetir) {
+    const u = cmpBorrador.repetir;
+    delete cmpBorrador.repetir;
+    for (const c of cmpCampos(p)) {
+      const el = document.getElementById("cmD_" + c);
+      if (el) el.value = u[c] == null ? "" : u[c];
+    }
+  }
+  cmpCinta();
+}
+
+function cmpLeer() {
+  const p = cmpPartida(cmpBorrador.partida);
+  const g = (id) => { const e = document.getElementById(id); return e ? e.value : ""; };
+  const l = {
+    partida: cmpBorrador.partida, zona: g("cmZona").trim(), nivel: g("cmNivel").trim(),
+    elemento: g("cmElem").trim(), obs: g("cmObs").trim(), origen: cmpBorrador.origen
+  };
+  for (const c of cmpCampos(p)) l[c] = g("cmD_" + c);
+  return l;
+}
+
+function cmpCinta() {
+  const p = cmpPartida(cmpBorrador.partida);
+  const el = document.getElementById("cmCinta");
+  if (!el || !p) return;
+  const l = cmpLeer();
+  const piezas = [];
+  for (const c of cmpCampos(p)) {
+    if (c === "cantidad") {
+      const n = cmpNum(l.cantidad, 1);
+      piezas.push(cmpFmt(n, Number.isInteger(n) ? 0 : 2));
+    } else if (c === "diametro") {
+      if (l.diametro) piezas.push(cmpFmt(CMP_CABILLA[l.diametro] || 0, 3));
+    } else if (l[c]) piezas.push(cmpFmt(cmpNum(l[c])));
+  }
+  el.innerHTML = `<span style="opacity:.65">${piezas.join(" × ")}</span>
+    <b style="font-size:20px">${cmpFmt(cmpParcial(l, p))} <span style="font-size:13px;opacity:.75">${CMP_UNI[p.unidad]}</span></b>`;
+}
+
+async function cmpPintarFotos() {
+  const cont = document.getElementById("cmFotos");
+  if (!cont) return;
+  if (!cmpBorrador.fotos.length) {
+    cont.innerHTML = `<p class="aviso" style="margin:4px 0">Marque en la foto el tramo o el área medida. Sin foto, la cantidad queda sin respaldo.</p>`;
+    return;
+  }
+  cont.innerHTML = "";
+  for (let i = 0; i < cmpBorrador.fotos.length; i++) {
+    const f = cmpBorrador.fotos[i];
+    const u = await urlFoto(f.id);
+    const d = document.createElement("div");
+    d.className = "lista-foto";
+    d.innerHTML = `<img class="mini" src="${u || ""}" alt="" />
+      <span style="flex:1">Foto ${i + 1}</span>
+      <button class="btn btn-rojo-linea" style="width:auto;padding:6px 12px" data-quitar="${i}">Quitar</button>`;
+    cont.appendChild(d);
+  }
+  cont.querySelectorAll("[data-quitar]").forEach((b) => {
+    b.onclick = async () => {
+      const i = Number(b.dataset.quitar);
+      await blobDel("photo:" + cmpBorrador.fotos[i].id);
+      cmpBorrador.fotos.splice(i, 1);
+      cmpPintarFotos();
+    };
+  });
+}
+
+function rComputos() {
+  const c = cmpDe(st.insp);
+  const b = st.insp.edificio;
+  if (!cmpBorrador.partida) cmpBorrador.partida = CMP_CAT[0].codigo;
+
+  let grupo = "", opts = "";
+  for (const p of CMP_CAT) {
+    if (p.grupo !== grupo) { if (grupo) opts += "</optgroup>"; grupo = p.grupo; opts += `<optgroup label="${esc(grupo)}">`; }
+    opts += `<option value="${p.codigo}" ${p.codigo === cmpBorrador.partida ? "selected" : ""}>${p.codigo} ${esc(p.descripcion)}</option>`;
+  }
+  if (grupo) opts += "</optgroup>";
+
+  const res = cmpAgrupar(c.lineas);
+  const resHtml = res.length ? res.map((r) => `
+    <div class="lista-foto">
+      <span style="flex:1"><b>${r.codigo}</b> ${esc(r.descripcion)}${r.estimada ? ' <span class="chip a">estimada</span>' : ""}</span>
+      <b class="mono" style="font-size:14px">${cmpFmt(r.total)} ${CMP_UNI[r.unidad]}</b>
+    </div>`).join("") : `<p class="aviso">Aún no hay cantidades computadas.</p>`;
+
+  const linHtml = c.lineas.length ? c.lineas.slice().reverse().map((l) => {
+    const p2 = cmpPartida(l.partida) || { descripcion: "" };
+    const meta = [l.elemento, l.zona, l.nivel].filter(Boolean).join(" · ");
+    const nf = (l.fotos || []).length;
+    return `<div class="lista-foto">
+      <span style="flex:1"><b>${l.partida}</b> ${esc(p2.descripcion)}
+        <br /><span class="aviso">${esc(meta)} · ${nf ? nf + (nf === 1 ? " foto" : " fotos") : "sin foto"}</span></span>
+      <b class="mono" style="font-size:14px">${cmpFmt(l.parcial)} ${CMP_UNI[l.unidad]}</b>
+      <button class="btn btn-rojo-linea" style="width:auto;padding:6px 10px" data-borrar="${l.id}">✕</button>
+    </div>`;
+  }).join("") : `<p class="aviso">Las líneas que guarde aparecerán aquí.</p>`;
+
+  const orig = [["sitio", "Medida en sitio"], ["planos", "De planos"], ["muestreo", "Por muestreo"]];
+
+  $app.innerHTML = `
+    <h2>Cómputos métricos</h2>
+    <p class="sub">${esc(b.nombre || "Sin edificación")}${b.informe ? " · BSP-2026-" + esc(b.informe) : ""} · Visita de medición</p>
+    <div class="grid2">
+      <label class="campo"><span>Fecha de medición</span><input type="date" id="cmFecha" value="${esc(c.fecha)}" /></label>
+      <label class="campo"><span>Responsable</span><input id="cmResp" value="${esc(c.responsable)}" placeholder="Ing. Eduardo Lubo" /></label>
+    </div>
+
+    <div class="tarjeta">
+      <div class="etiq">Nueva línea</div>
+      <label class="campo"><span>Partida</span><select id="cmPart">${opts}</select></label>
+      <p class="aviso" id="cmCrit" style="margin-top:-6px"></p>
+      <div class="grid2">
+        <label class="campo"><span>Zona</span><input id="cmZona" value="${esc(cmpBorrador.zona || "")}" placeholder="Sótano 1, fachada norte" /></label>
+        <label class="campo"><span>Nivel</span><input id="cmNivel" value="${esc(cmpBorrador.nivel || "")}" placeholder="Piso 3" /></label>
+      </div>
+      <label class="campo"><span>Elemento</span><input id="cmElem" placeholder="Columna C-4" /></label>
+      <div class="etiq">Medidas</div>
+      <div class="grid2" id="cmDims"></div>
+      <div id="cmCinta" style="background:var(--ink);color:#fff;border-radius:10px;padding:11px 13px;
+        display:flex;align-items:baseline;justify-content:space-between;gap:12px;margin-bottom:12px;
+        font-variant-numeric:tabular-nums"></div>
+      <div class="etiq">Origen de la medida</div>
+      <div class="pildoras" id="cmOrigen">
+        ${orig.map(([v, t]) => `<button data-org="${v}" class="${cmpBorrador.origen === v ? "on" : ""}">${t}</button>`).join("")}
+      </div>
+      <label class="campo"><span>Observación</span><textarea id="cmObs" rows="2" placeholder="Espesor, sección, criterio de estimación"></textarea></label>
+      <input type="file" accept="image/*" capture="environment" id="cmCam" style="display:none" />
+      <input type="file" accept="image/*" multiple id="cmGal" style="display:none" />
+      <div class="grid2" style="margin-bottom:8px">
+        <button class="btn btn-negro" id="cmBCam">📷 Tomar foto</button>
+        <button class="btn btn-linea" id="cmBGal">🖼 De galería</button>
+      </div>
+      <div id="cmFotos"></div>
+      <p class="error" id="cmErr"></p>
+      <div class="grid2">
+        <button class="btn btn-negro" id="cmGuardar">Guardar línea</button>
+        <button class="btn btn-linea" id="cmRepetir" ${c.lineas.length ? "" : "disabled"}>Repetir última</button>
+      </div>
+    </div>
+
+    <div class="etiq">Resumen por partida</div>
+    ${resHtml}
+    <hr class="sep" />
+    <div class="etiq">Líneas capturadas (${c.lineas.length})</div>
+    ${linHtml}
+    ${c.lineas.length ? `<button class="btn btn-gris" id="cmExport" style="margin-top:12px">Exportar cómputos (JSON)</button>` : ""}`;
+
+  cmpPintarDims();
+  cmpPintarFotos();
+
+  document.getElementById("cmPart").onchange = (e) => { cmpBorrador.partida = e.target.value; cmpPintarDims(); };
+  document.getElementById("cmFecha").onchange = (e) => { c.fecha = e.target.value; guardar(); };
+  document.getElementById("cmResp").oninput = (e) => { c.responsable = e.target.value; guardar(); };
+
+  document.getElementById("cmOrigen").querySelectorAll("[data-org]").forEach((btn) => {
+    btn.onclick = () => {
+      cmpBorrador.origen = btn.dataset.org;
+      document.getElementById("cmOrigen").querySelectorAll("[data-org]").forEach((x) => x.classList.toggle("on", x === btn));
+    };
+  });
+
+  const cam = document.getElementById("cmCam"), gal = document.getElementById("cmGal");
+  document.getElementById("cmBCam").onclick = () => cam.click();
+  document.getElementById("cmBGal").onclick = () => gal.click();
+  const onFotos = async (e) => {
+    const files = Array.from(e.target.files || []);
+    e.target.value = "";
+    const err = document.getElementById("cmErr");
+    if (files.length) { err.textContent = "Procesando foto…"; err.style.color = "var(--gris)"; }
+    for (const file of files) {
+      try {
+        const blob = await comprimir(file);
+        const fid = uid();
+        await blobSet("photo:" + fid, blob);
+        cmpBorrador.fotos.push({ id: fid, ts: new Date().toISOString() });
+        err.textContent = "";
+      } catch (ex) {
+        err.textContent = "No se pudo guardar una foto: " + (ex && ex.message ? ex.message : ex);
+        err.style.color = "var(--rojo)";
+      }
+    }
+    cmpPintarFotos();
+  };
+  cam.onchange = onFotos; gal.onchange = onFotos;
+
+  document.getElementById("cmGuardar").onclick = () => {
+    const p = cmpPartida(cmpBorrador.partida);
+    const l = cmpLeer();
+    const errs = cmpValidar(l, p);
+    const box = document.getElementById("cmErr");
+    if (errs.length) {
+      box.style.color = "var(--rojo)";
+      box.innerHTML = errs.map(esc).join("<br />");
+      box.scrollIntoView({ behavior: "smooth", block: "center" });
+      return;
+    }
+    l.id = uid();
+    l.unidad = p.unidad;
+    l.factor = p.unidad === "kg" ? (CMP_CABILLA[l.diametro] || 1) : 1;
+    l.parcial = cmpParcial(l, p);
+    l.ts = new Date().toISOString();
+    l.fotos = cmpBorrador.fotos.map((f) => ({ id: f.id, pie: cmpPie(l, p, f.ts) }));
+    c.lineas.push(l);
+    cmpBorrador = { partida: cmpBorrador.partida, origen: cmpBorrador.origen, zona: l.zona, nivel: l.nivel, fotos: [] };
+    guardar();
+    rComputos();
+  };
+
+  document.getElementById("cmRepetir").onclick = () => {
+    const u = c.lineas[c.lineas.length - 1];
+    if (!u) return;
+    cmpBorrador = { partida: u.partida, origen: u.origen, zona: u.zona, nivel: u.nivel, repetir: u, fotos: [] };
+    rComputos();
+  };
+
+  $app.querySelectorAll("[data-borrar]").forEach((btn) => {
+    btn.onclick = async () => {
+      if (!confirm("¿Eliminar esta línea de cómputo?")) return;
+      const i = c.lineas.findIndex((x) => x.id === btn.dataset.borrar);
+      if (i < 0) return;
+      for (const f of (c.lineas[i].fotos || [])) await blobDel("photo:" + f.id);
+      c.lineas.splice(i, 1);
+      guardar();
+      rComputos();
+    };
+  });
+
+  const bx = document.getElementById("cmExport");
+  if (bx) bx.onclick = () => {
+    const salida = {
+      informe: b.informe ? "BSP-2026-" + b.informe : "",
+      edificacion: b.nombre, direccion: b.direccion,
+      fecha_medicion: c.fecha, responsable: c.responsable, revision: c.rev || 1,
+      generado_en: new Date().toISOString(),
+      resumen: cmpAgrupar(c.lineas).map((r) => ({
+        codigo: r.codigo, descripcion: r.descripcion, unidad: r.unidad,
+        cantidad_total: cmpRed(r.total, 2), lineas: r.n, tiene_estimaciones: r.estimada
+      })),
+      lineas: c.lineas
+    };
+    const a = document.createElement("a");
+    a.href = URL.createObjectURL(new Blob([JSON.stringify(salida, null, 2)], { type: "application/json" }));
+    a.download = (b.informe ? "BSP-2026-" + b.informe : "BSP-2026") + "-computos.json";
+    a.click();
+    URL.revokeObjectURL(a.href);
+  };
+}
+
 function rAjustes() {
   const ses = nube.sesion;
   $app.innerHTML = `

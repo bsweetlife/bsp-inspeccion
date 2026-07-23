@@ -1,4 +1,4 @@
-const CACHE = "bsp-v20";
+const CACHE = "bsp-v21";
 const SHELL = [
   "./",
   "./index.html",
