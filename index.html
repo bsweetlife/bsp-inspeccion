@@ -121,7 +121,7 @@
 <script>
 "use strict";
 /* ================= Constantes ================= */
-const VERSION = "3.11";
+const VERSION = "3.12";
 const ATC = ["INSPECCIONADO", "USO RESTRINGIDO", "NO HABITABLE"];
 const ATC_CLS = { "INSPECCIONADO": "v", "USO RESTRINGIDO": "a", "NO HABITABLE": "r" };
 const ATC_CORTO = { "INSPECCIONADO": "INSPECC.", "USO RESTRINGIDO": "USO RESTR.", "NO HABITABLE": "NO HABITABLE" };
@@ -392,6 +392,8 @@ const CMP_MEDIDA = {
   "03.06": { etiquetas: { largo: "Longitud de columna (m)" } },
   "03.07": { etiquetas: { largo: "Longitud de viga (m)" } },
   "04.01": CMP_PARED, "04.03": CMP_DESAR, "04.04": CMP_PARED, "04.05": CMP_PARED,
+  "04.06": { campos: ["cantidad", "largo", "alto"], etiquetas: { largo: "Largo o perímetro del paño (m)" } },
+  "04.07": { etiquetas: { largo: "Largo en planta (m)", ancho: "Ancho en planta (m)" } },
   "05.01": { etiquetas: { largo: "Largo en planta (m)", ancho: "Ancho en planta (m)" } }
 };
 const CMP_CAT = [
@@ -420,8 +422,9 @@ const CMP_CAT = [
   ["04.03", "04 Mampostería y acabados", "Friso liso sobre elementos estructurales", "m2", "Superficie desarrollada del elemento."],
   ["04.04", "04 Mampostería y acabados", "Friso liso sobre paredes", "m2", "Largo por alto del paño frisado."],
   ["04.05", "04 Mampostería y acabados", "Pintura de caucho sobre superficies frisadas", "m2", "Superficie pintada, dos manos."],
-  ["04.06", "04 Mampostería y acabados", "Reposición de revestimiento cerámico", "m2", "Área repuesta."],
-  ["04.07", "04 Mampostería y acabados", "Anclaje de paredes no estructurales a la estructura", "m", "Longitud de encuentro pared-estructura tratado."],
+  ["04.06", "04 Mampostería y acabados", "Reposición de revestimiento cerámico en paredes", "m2", "Largo o perímetro desarrollado del paño por su altura."],
+  ["04.07", "04 Mampostería y acabados", "Reposición de revestimiento cerámico en pisos", "m2", "Área en planta."],
+  ["04.08", "04 Mampostería y acabados", "Anclaje de paredes no estructurales a la estructura", "m", "Longitud de encuentro pared-estructura tratado."],
   ["05.01", "05 Impermeabilización e instalaciones", "Impermeabilización de losa de azotea", "m2", "Área en planta más medias cañas y remates."],
   ["05.02", "05 Impermeabilización e instalaciones", "Reparación de juntas de dilatación", "m", "Longitud de junta intervenida."],
   ["05.03", "05 Impermeabilización e instalaciones", "Desincorporación de tanque elevado", "und", "Se computa por tanque. No incluye el sistema sustituto."],
