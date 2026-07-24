@@ -121,7 +121,7 @@
 <script>
 "use strict";
 /* ================= Constantes ================= */
-const VERSION = "3.17";
+const VERSION = "3.18";
 const ATC = ["INSPECCIONADO", "USO RESTRINGIDO", "NO HABITABLE"];
 const ATC_CLS = { "INSPECCIONADO": "v", "USO RESTRINGIDO": "a", "NO HABITABLE": "r" };
 const ATC_CORTO = { "INSPECCIONADO": "INSPECC.", "USO RESTRINGIDO": "USO RESTR.", "NO HABITABLE": "NO HABITABLE" };
@@ -696,6 +696,8 @@ document.getElementById("btnVolver").onclick = () => {
   else if (p.n === "nivel" || p.n === "export") nav({ n: "casa" });
   else if (p.n === "computos") { if (cmpDescartar()) nav({ n: "casa" }); }
   else if (p.n === "medir") nav({ n: "computos" });
+  else if (p.n === "mover") { const nv = st.insp.niveles.find((x) => x.apts.some((a) => a.id === st.pantalla.moverApt)); nav(nv ? { n: "unidad", nivelId: nv.id, unidadId: st.pantalla.moverApt } : { n: "casa" }); }
+  else if (p.n === "renumerar") nav({ n: "nivel", nivelId: st.pantalla.nivelId });
   else if (p.n === "casa") nav({ n: "lista" });
   else if (p.n === "setup") nav(st.insp && st.insp.listo ? { n: "casa" } : { n: "lista" });
   else if (p.n === "ajustes") nav({ n: "lista" });
@@ -721,6 +723,8 @@ function render() {
   else if (p.n === "unidad") rUnidad();
   else if (p.n === "computos") rComputos();
   else if (p.n === "medir") rMedir();
+  else if (p.n === "mover") rMover();
+  else if (p.n === "renumerar") rRenumerar();
   else if (p.n === "export") rExport();
   else if (p.n === "ajustes") rAjustes();
   activarCorrector();
@@ -910,6 +914,7 @@ function rSetup() {
         <button data-f="letra" class="${setupTmp.formato === "letra" ? "on" : ""}">1-A, 1-B, 2-A…</button>
         <button data-f="pisonum" class="${setupTmp.formato === "pisonum" ? "on" : ""}">11, 12, 21, 22…</button>
         <button data-f="cien" class="${setupTmp.formato === "cien" ? "on" : ""}">101, 102, 201…</button>
+        <button data-f="corrida" class="${setupTmp.formato === "corrida" ? "on" : ""}">1, 2, 3, 4, 5, 6…</button>
         <button data-f="simple" class="${setupTmp.formato === "simple" ? "on" : ""}">1, 2, 3 por piso</button>
       </div>
       <label class="campo"><span>Prefijo (opcional)</span>
@@ -982,6 +987,7 @@ function rSetup() {
         if (setupTmp.formato === "letra") nm = p + "-" + (letras[a] || a + 1);
         else if (setupTmp.formato === "pisonum") nm = "" + p + (a + 1);
         else if (setupTmp.formato === "cien") nm = "" + (p * 100 + a + 1);
+        else if (setupTmp.formato === "corrida") nm = "" + ((p - 1) * k + a + 1);
         else nm = "" + (a + 1);
         apts.push((setupTmp.prefijo + nm).trim());
       }
@@ -1201,6 +1207,7 @@ function rNivel() {
       <h2 style="flex:1;margin:0">${esc(nv.nombre)}</h2>
       <button class="btn-gris" style="width:auto;border-radius:10px" id="bRenNivel">Renombrar</button>
     </div>
+    ${nv.comun ? "" : `<button class="btn-gris" id="bRenumerar" style="margin-bottom:10px">Renumerar unidades de este nivel</button>`}
     ${items}
     <div class="fila" style="margin:10px 0">
       <input id="inNueva" placeholder="${nv.comun ? "Nombre de la zona…" : "Ej: Apto 2-C, Conserjería…"}" />
@@ -1219,6 +1226,8 @@ function rNivel() {
     const nm = prompt("Nuevo nombre del nivel:", nv.nombre);
     if (nm && nm.trim()) { nv.nombre = nm.trim(); guardar(); rNivel(); }
   };
+  const bRn = document.getElementById("bRenumerar");
+  if (bRn) bRn.onclick = () => { st.pantalla.renum = null; nav({ n: "renumerar", nivelId: nv.id }); };
   const bDel = document.getElementById("bDelNivel");
   if (bDel) bDel.onclick = async () => {
     const conFotos = nv.apts.some((a) => { const u = st.insp.unidades[a.id]; return u && (u.fotos || []).length; });
@@ -1251,6 +1260,178 @@ function rNivel() {
 }
 
 /* ================= Pantalla: unidad ================= */
+/* Mueve una unidad ya inspeccionada a otro nivel, conservando sus fotos,
+   grabaciones y clasificación. Opcionalmente intercambia con una unidad
+   del nivel destino y deja una unidad nueva vacía en el nivel de origen. */
+function moverUnidad(apt, origen, destinoId, opciones) {
+  const destino = st.insp.niveles.find((x) => x.id === destinoId);
+  if (!destino || destino.id === origen.id) return false;
+  opciones = opciones || {};
+
+  origen.apts = origen.apts.filter((x) => x.id !== apt.id);
+
+  if (opciones.dejarVacia) {
+    origen.apts.push({ id: uid(), nombre: opciones.dejarVacia });
+  }
+
+  if (opciones.intercambiarId) {
+    const otra = destino.apts.find((x) => x.id === opciones.intercambiarId);
+    if (otra) {
+      destino.apts = destino.apts.filter((x) => x.id !== otra.id);
+      origen.apts.push(otra);
+    }
+  }
+
+  destino.apts.push(apt);
+  guardar();
+  return true;
+}
+
+function rMover() {
+  const nivOrigen = st.insp.niveles.find((nv) => nv.apts.some((a) => a.id === st.pantalla.moverApt));
+  const apt = nivOrigen && nivOrigen.apts.find((a) => a.id === st.pantalla.moverApt);
+  if (!apt) return nav({ n: "casa" });
+  const u = st.insp.unidades[apt.id] || {};
+  const nFotos = (u.fotos || []).length;
+
+  if (!st.pantalla.movDestino) st.pantalla.movDestino = "";
+  if (st.pantalla.movDejar === undefined) st.pantalla.movDejar = true;
+  if (st.pantalla.movIntercambiar === undefined) st.pantalla.movIntercambiar = "";
+
+  const destinos = st.insp.niveles.filter((nv) => !nv.comun && nv.id !== nivOrigen.id);
+  const destino = st.insp.niveles.find((nv) => nv.id === st.pantalla.movDestino);
+  const aptsDestino = destino ? destino.apts.filter((a) => !/^Pasillo /.test(a.nombre)) : [];
+
+  $app.innerHTML = `
+    <div class="fila" style="margin-bottom:2px">
+      <button class="btn-gris" style="width:auto;border-radius:10px" id="movVolver">‹ Volver</button>
+    </div>
+    <h2>Mover unidad</h2>
+    <p class="sub">${esc(apt.nombre)} · ${esc(nivOrigen.nombre)}${nFotos ? " · " + nFotos + (nFotos === 1 ? " foto" : " fotos") : ""}</p>
+
+    <div class="tarjeta">
+      <div class="etiq">Llevar a</div>
+      <label class="campo"><span>Nivel de destino</span>
+        <select id="movDest">
+          <option value="">Seleccione</option>
+          ${destinos.map((nv) => `<option value="${nv.id}" ${nv.id === st.pantalla.movDestino ? "selected" : ""}>${esc(nv.nombre)}</option>`).join("")}
+        </select></label>
+
+      ${destino ? `
+      <div class="etiq">En el nivel de origen</div>
+      <label class="fila" style="align-items:center;gap:10px;margin-bottom:12px;cursor:pointer">
+        <button id="movDejar" style="background:none;border:none;font-size:20px;padding:0;line-height:1">${st.pantalla.movDejar ? "☑" : "☐"}</button>
+        <span style="flex:1;font-size:14px">Crear una unidad nueva vacía que reemplace a la que se va, con el nombre <b>${esc(apt.nombre)}</b></span>
+      </label>
+
+      ${aptsDestino.length ? `
+      <div class="etiq">Intercambio (opcional)</div>
+      <p class="aviso" style="margin-top:0">Si en ${esc(destino.nombre)} ya existe la unidad que en realidad correspondía a este piso, elíjala: se moverá al nivel de origen a cambio.</p>
+      <label class="campo"><span>Intercambiar con</span>
+        <select id="movInt">
+          <option value="">No intercambiar</option>
+          ${aptsDestino.map((a) => `<option value="${a.id}" ${a.id === st.pantalla.movIntercambiar ? "selected" : ""}>${esc(a.nombre)}${(st.insp.unidades[a.id] && (st.insp.unidades[a.id].fotos || []).length) ? " · inspeccionada" : " · vacía"}</option>`).join("")}
+        </select></label>` : ""}
+
+      <div class="tarjeta" style="padding:12px;background:var(--fondo);margin-bottom:12px">
+        <div class="etiq" style="margin-top:0">Resumen</div>
+        <p class="aviso" style="margin:0">${esc(apt.nombre)} pasa de ${esc(nivOrigen.nombre)} a ${esc(destino.nombre)}, con sus ${nFotos} foto(s) y su clasificación.
+        ${st.pantalla.movDejar ? "Se crea " + esc(apt.nombre) + " vacío en " + esc(nivOrigen.nombre) + "." : ""}
+        ${st.pantalla.movIntercambiar ? "La unidad elegida baja a " + esc(nivOrigen.nombre) + "." : ""}</p>
+      </div>
+
+      <button class="btn btn-negro" id="movConfirmar">Confirmar movimiento</button>` : ""}
+    </div>`;
+
+  document.getElementById("movVolver").onclick = () => nav({ n: "unidad", nivelId: nivOrigen.id, unidadId: apt.id });
+  document.getElementById("movDest").onchange = (e) => { st.pantalla.movDestino = e.target.value; st.pantalla.movIntercambiar = ""; rMover(); };
+  const dj = document.getElementById("movDejar");
+  if (dj) dj.onclick = () => { st.pantalla.movDejar = !st.pantalla.movDejar; rMover(); };
+  const it = document.getElementById("movInt");
+  if (it) it.onchange = (e) => { st.pantalla.movIntercambiar = e.target.value; rMover(); };
+
+  const cf = document.getElementById("movConfirmar");
+  if (cf) cf.onclick = () => {
+    const ok = moverUnidad(apt, nivOrigen, st.pantalla.movDestino, {
+      dejarVacia: st.pantalla.movDejar ? apt.nombre : null,
+      intercambiarId: st.pantalla.movIntercambiar || null
+    });
+    if (ok) {
+      st.pantalla.moverApt = null; st.pantalla.movDestino = ""; st.pantalla.movDejar = true; st.pantalla.movIntercambiar = "";
+      nav({ n: "unidad", nivelId: st.pantalla.movDestino, unidadId: apt.id });
+    }
+  };
+}
+
+/* Renumera en lote las unidades reales de un nivel (deja intactos los
+   pasillos y las zonas comunes). Toma un primer valor y un formato,
+   y reescribe los nombres en el orden actual de la lista. */
+function rRenumerar() {
+  const nv = st.insp.niveles.find((x) => x.id === st.pantalla.nivelId);
+  if (!nv) return nav({ n: "casa" });
+  const reales = nv.apts.filter((a) => !/^Pasillo /.test(a.nombre));
+
+  const T = st.pantalla.renum || (st.pantalla.renum = { desde: "", formato: "num", prefijo: "Apto ", letraBase: "" });
+
+  const previa = (i) => {
+    const d = T.desde.trim();
+    if (T.formato === "letra") {
+      const base = (T.letraBase.trim() || "A").toUpperCase().charCodeAt(0);
+      return (T.prefijo + String.fromCharCode(base + i)).trim();
+    }
+    const n0 = parseInt(d, 10);
+    if (!Number.isFinite(n0)) return "";
+    return (T.prefijo + (n0 + i)).trim();
+  };
+
+  const muestra = reales.slice(0, 6).map((a, i) => `${esc(a.nombre)} → <b>${esc(previa(i)) || "?"}</b>`).join("<br />");
+
+  $app.innerHTML = `
+    <div class="fila" style="margin-bottom:2px">
+      <button class="btn-gris" style="width:auto;border-radius:10px" id="rnVolver">‹ Volver</button>
+    </div>
+    <h2>Renumerar unidades</h2>
+    <p class="sub">${esc(nv.nombre)} · ${reales.length} unidad(es), en el orden actual</p>
+
+    <div class="tarjeta">
+      <div class="pildoras" style="margin-bottom:12px" id="rnFormato">
+        <button data-f="num" class="${T.formato === "num" ? "on" : ""}">Números</button>
+        <button data-f="letra" class="${T.formato === "letra" ? "on" : ""}">Letras</button>
+      </div>
+      ${T.formato === "num"
+        ? `<label class="campo"><span>Primer número</span><input id="rnDesde" inputmode="numeric" value="${esc(T.desde)}" placeholder="101" /></label>`
+        : `<label class="campo"><span>Primera letra</span><input id="rnLetra" value="${esc(T.letraBase)}" maxlength="1" placeholder="A" /></label>`}
+      <label class="campo"><span>Prefijo</span><input id="rnPrefijo" value="${esc(T.prefijo)}" placeholder='Ej: "Apto " o vacío' /></label>
+
+      <div class="tarjeta" style="padding:12px;background:var(--fondo);margin-bottom:12px">
+        <div class="etiq" style="margin-top:0">Vista previa</div>
+        <p class="aviso" style="margin:0;line-height:1.7">${muestra || "Complete los datos para ver la vista previa."}${reales.length > 6 ? "<br />…" : ""}</p>
+      </div>
+      <p class="aviso">Se renumeran en el orden en que están hoy. Las fotos y clasificaciones se conservan: solo cambia el nombre.</p>
+      <button class="btn btn-negro" id="rnAplicar">Aplicar a las ${reales.length} unidades</button>
+    </div>`;
+
+  document.getElementById("rnVolver").onclick = () => nav({ n: "nivel", nivelId: nv.id });
+  document.getElementById("rnFormato").querySelectorAll("[data-f]").forEach((b) => {
+    b.onclick = () => { T.formato = b.dataset.f; rRenumerar(); };
+  });
+  const dd = document.getElementById("rnDesde");
+  if (dd) dd.oninput = (e) => { T.desde = e.target.value; rRenumerar(); };
+  const ll = document.getElementById("rnLetra");
+  if (ll) ll.oninput = (e) => { T.letraBase = e.target.value; rRenumerar(); };
+  document.getElementById("rnPrefijo").oninput = (e) => { T.prefijo = e.target.value; rRenumerar(); };
+
+  document.getElementById("rnAplicar").onclick = () => {
+    const nombres = reales.map((a, i) => previa(i));
+    if (nombres.some((n) => !n)) { alert("Complete el primer valor antes de aplicar."); return; }
+    if (!confirm(`Se renombrarán ${reales.length} unidades. ¿Continuar?`)) return;
+    reales.forEach((a, i) => { a.nombre = nombres[i]; });
+    st.pantalla.renum = null;
+    guardar();
+    nav({ n: "nivel", nivelId: nv.id });
+  };
+}
+
 function rUnidad() {
   const nv = st.insp.niveles.find((x) => x.id === st.pantalla.nivelId);
   const apt = nv && nv.apts.find((a) => a.id === st.pantalla.unidadId);
@@ -1282,6 +1463,7 @@ function rUnidad() {
   $app.innerHTML = `
     <div class="fila" style="margin-bottom:2px">
       <h2 style="flex:1" id="tituloApt">${esc(apt.nombre)}</h2>
+      <button class="btn-gris" style="width:auto;border-radius:10px" id="bMover">Mover</button>
       <button class="btn-gris" style="width:auto;border-radius:10px" id="bRenombrar">Renombrar</button>
     </div>
     <p class="sub">${esc(nv.nombre)}</p>
@@ -1383,6 +1565,7 @@ function rUnidad() {
     const nuevo = prompt("Nuevo nombre de la unidad:", apt.nombre);
     if (nuevo && nuevo.trim()) { apt.nombre = nuevo.trim(); guardar(); rUnidad(); }
   };
+  document.getElementById("bMover").onclick = () => { st.pantalla.moverApt = apt.id; nav({ n: "mover" }); };
   document.getElementById("bDelUnidad").onclick = async () => {
     if (!confirm(`¿Eliminar "${apt.nombre}" con sus fotos y grabaciones?`)) return;
     for (const f of u.fotos || []) await blobDel("photo:" + f.id);
