@@ -121,7 +121,7 @@
 <script>
 "use strict";
 /* ================= Constantes ================= */
-const VERSION = "3.16";
+const VERSION = "3.17";
 const ATC = ["INSPECCIONADO", "USO RESTRINGIDO", "NO HABITABLE"];
 const ATC_CLS = { "INSPECCIONADO": "v", "USO RESTRINGIDO": "a", "NO HABITABLE": "r" };
 const ATC_CORTO = { "INSPECCIONADO": "INSPECC.", "USO RESTRINGIDO": "USO RESTR.", "NO HABITABLE": "NO HABITABLE" };
@@ -460,6 +460,10 @@ function cmpParcial(l, p) {
 function cmpValidar(l, p) {
   const e = [];
   if (!String(l.zona || "").trim()) e.push("Indique la zona donde tomó la medida.");
+  if (l.parcialFijo != null) {
+    if (cmpNum(l.parcialFijo) <= 0) e.push("La cantidad medida debe ser mayor que cero.");
+    return e;
+  }
   for (const c of cmpCampos(p)) {
     if (c === "diametro") {
       if (!l.diametro || !(l.diametro in CMP_CABILLA)) e.push("Seleccione el diámetro de la cabilla.");
@@ -468,7 +472,7 @@ function cmpValidar(l, p) {
     const v = cmpNum(l[c], NaN);
     if (!Number.isFinite(v) || v <= 0) e.push(cmpEtiq(p, c) + " debe ser mayor que cero.");
   }
-  if (l.origen !== "sitio" && !String(l.obs || "").trim())
+  if ((l.origen === "planos" || l.origen === "muestreo") && !String(l.obs || "").trim())
     e.push("Una medida estimada requiere una observación que explique el criterio.");
   return e;
 }
@@ -481,6 +485,7 @@ function cmpPie(l, p, iso) {
   t.push(mag + ": " + cmpFmt(cmpParcial(l, p)) + " " + CMP_UNI[p.unidad]);
   if (l.origen === "planos") t.push("Cantidad tomada de planos");
   if (l.origen === "muestreo") t.push("Cantidad estimada por muestreo");
+  if (l.origen === "foto") t.push("Medida sobre fotografía con escala");
   if (iso) {
     const d = new Date(iso), z = (n) => String(n).padStart(2, "0");
     t.push("Fotografía tomada el " + z(d.getDate()) + "/" + z(d.getMonth() + 1) + "/" + d.getFullYear() +
@@ -496,7 +501,7 @@ function cmpAgrupar(lineas) {
     if (!m.has(p.codigo)) m.set(p.codigo, { codigo: p.codigo, descripcion: p.descripcion, unidad: p.unidad, total: 0, n: 0, estimada: false });
     const a = m.get(p.codigo);
     a.total += cmpNum(l.parcial); a.n++;
-    if (l.origen && l.origen !== "sitio") a.estimada = true;
+    if (l.origen === "planos" || l.origen === "muestreo") a.estimada = true;
   }
   return Array.from(m.values()).sort((a, b) => a.codigo.localeCompare(b.codigo));
 }
@@ -690,6 +695,7 @@ document.getElementById("btnVolver").onclick = () => {
   if (p.n === "unidad") nav({ n: "nivel", nivelId: p.nivelId });
   else if (p.n === "nivel" || p.n === "export") nav({ n: "casa" });
   else if (p.n === "computos") { if (cmpDescartar()) nav({ n: "casa" }); }
+  else if (p.n === "medir") nav({ n: "computos" });
   else if (p.n === "casa") nav({ n: "lista" });
   else if (p.n === "setup") nav(st.insp && st.insp.listo ? { n: "casa" } : { n: "lista" });
   else if (p.n === "ajustes") nav({ n: "lista" });
@@ -714,6 +720,7 @@ function render() {
   else if (p.n === "nivel") rNivel();
   else if (p.n === "unidad") rUnidad();
   else if (p.n === "computos") rComputos();
+  else if (p.n === "medir") rMedir();
   else if (p.n === "export") rExport();
   else if (p.n === "ajustes") rAjustes();
   activarCorrector();
@@ -2020,7 +2027,7 @@ async function cmpZip() {
       T.push("  " + l.partida + "  " + [l.elemento, l.zona, l.nivel].filter(Boolean).join(" · "));
       T.push("      " + cmpFmt(cmpNum(l.cantidad), 0) + " × " + med +
         "  =  " + cmpFmt(l.parcial) + " " + CMP_UNI[l.unidad]);
-      T.push("      Origen: " + (l.origen === "sitio" ? "medida en sitio" : l.origen === "planos" ? "tomada de planos" : "estimada por muestreo") +
+      T.push("      Origen: " + (l.origen === "sitio" ? "medida en sitio" : l.origen === "foto" ? "medida sobre fotografia con escala" : l.origen === "planos" ? "tomada de planos" : "estimada por muestreo") +
         "  ·  " + ((l.fotos || []).length) + " fotografía(s)");
       if (l.obs) T.push("      Observación: " + l.obs);
     }
@@ -2046,6 +2053,7 @@ function cmpDetalleLinea(l) {
   const med = cmpCampos(p).map((x) =>
     cmpEtiq(p, x) + ": " + (x === "diametro" ? (l.diametro || "—") : cmpFmt(cmpNum(l[x])))).join("  ·  ");
   const org = l.origen === "sitio" ? "Medida en sitio"
+    : l.origen === "foto" ? "Medida sobre fotografía con escala"
     : l.origen === "planos" ? "Cantidad tomada de planos" : "Cantidad estimada por muestreo";
   const fotos = l.fotos || [];
   return `<div class="tarjeta" style="margin:0 0 8px;padding:12px;background:var(--fondo)">
@@ -2229,6 +2237,20 @@ function cmpPintarDims() {
   if (!cmpBorrador.dims) cmpBorrador.dims = {};
   const D = cmpBorrador.dims;
 
+  if (cmpBorrador.fijo) {
+    cont.innerHTML = `<div class="tarjeta" style="padding:12px;background:var(--fondo)">
+      <p class="aviso" style="margin:0 0 8px">Cantidad tomada de una medición sobre fotografía. No se teclean medidas.</p>
+      <div class="fila" style="align-items:center">
+        <b class="mono" style="flex:1;font-size:18px">${cmpFmt(cmpBorrador.fijo.valor)} ${CMP_UNI[cmpBorrador.fijo.unidad]}</b>
+        <button class="btn btn-rojo-linea" id="cmQuitarFijo" style="width:auto;padding:8px 14px">Quitar</button>
+      </div></div>`;
+    document.getElementById("cmQuitarFijo").onclick = () => {
+      cmpBorrador.fijo = null; cmpBorrador.medicion = null; cmpPintarDims();
+    };
+    cmpCinta();
+    return;
+  }
+
   cont.innerHTML = `<div class="grid2">` + cmpCampos(p).map((c) => {
     const val = D[c] === undefined ? (c === "cantidad" ? "1" : "") : D[c];
     if (c === "diametro") {
@@ -2270,6 +2292,8 @@ function cmpLeer() {
     origen: cmpBorrador.origen
   };
   for (const c of cmpCampos(p)) l[c] = D[c] === undefined ? (c === "cantidad" ? "1" : "") : D[c];
+  if (cmpBorrador.fijo) l.parcialFijo = cmpBorrador.fijo.valor;
+  if (cmpBorrador.medicion) l.medicion = cmpBorrador.medicion;
   return l;
 }
 
@@ -2278,6 +2302,11 @@ function cmpCinta() {
   const el = document.getElementById("cmCinta");
   if (!el || !p) return;
   const l = cmpLeer();
+  if (cmpBorrador.fijo) {
+    el.innerHTML = `<span style="opacity:.65">medición sobre foto</span>
+      <b style="font-size:20px">${cmpFmt(cmpBorrador.fijo.valor)} <span style="font-size:13px;opacity:.75">${CMP_UNI[p.unidad]}</span></b>`;
+    return;
+  }
   const piezas = [];
   for (const c of cmpCampos(p)) {
     if (c === "cantidad") {
@@ -2432,7 +2461,7 @@ function cmpGuardarCompuesta() {
   if (!incl.length) errs.push("Debe incluir al menos una partida.");
   for (const x of incl) if (cmpCantidadComponente(x) <= 0)
     errs.push("La cantidad de la partida " + x.partida + " debe ser mayor que cero.");
-  if (cmpBorrador.origen !== "sitio" && !String(cmpBorrador.obs || "").trim())
+  if ((cmpBorrador.origen === "planos" || cmpBorrador.origen === "muestreo") && !String(cmpBorrador.obs || "").trim())
     errs.push("Una medida estimada requiere una observación que explique el criterio.");
 
   const box = document.getElementById("cmErr");
@@ -2475,6 +2504,269 @@ function cmpGuardarCompuesta() {
   cmpComp = { id: cmpComp.id, base: {}, comps: {} };
   guardar();
   rComputos();
+}
+
+/* ================= Medición sobre fotografía ================= */
+let cmpMed = null;
+
+function medNuevo(fid) {
+  return { fid: fid, img: null, paso: "escala", ref: [], refLen: "",
+           tipo: "linea", pts: [], verif: [], verifLen: "", escala: 0, arrastre: -1, cual: "ref" };
+}
+
+function medDist(a, b) { return Math.sqrt((a.x - b.x) * (a.x - b.x) + (a.y - b.y) * (a.y - b.y)); }
+
+function medLongitudPx() {
+  let t = 0;
+  for (let i = 1; i < cmpMed.pts.length; i++) t += medDist(cmpMed.pts[i - 1], cmpMed.pts[i]);
+  return t;
+}
+
+function medAreaPx() {
+  const p = cmpMed.pts;
+  if (p.length < 3) return 0;
+  let a = 0;
+  for (let i = 0; i < p.length; i++) {
+    const j = (i + 1) % p.length;
+    a += p[i].x * p[j].y - p[j].x * p[i].y;
+  }
+  return Math.abs(a / 2);
+}
+
+function medResultado() {
+  if (!cmpMed.escala) return 0;
+  return cmpMed.tipo === "area"
+    ? cmpRed(medAreaPx() / (cmpMed.escala * cmpMed.escala), 2)
+    : cmpRed(medLongitudPx() / cmpMed.escala, 2);
+}
+
+function medDesvio() {
+  if (!cmpMed.escala || cmpMed.verif.length < 2) return null;
+  const esp = cmpNum(cmpMed.verifLen);
+  if (esp <= 0) return null;
+  const obt = medDist(cmpMed.verif[0], cmpMed.verif[1]) / cmpMed.escala;
+  return { esperado: esp, obtenido: cmpRed(obt, 3), pct: cmpRed(Math.abs(obt - esp) / esp * 100, 1) };
+}
+
+function medDibujar() {
+  const cv = document.getElementById("medCv");
+  if (!cv || !cmpMed.img) return;
+  const x = cv.getContext("2d");
+  x.clearRect(0, 0, cv.width, cv.height);
+  x.drawImage(cmpMed.img, 0, 0, cv.width, cv.height);
+  const r = Math.max(2, cv.width / 260);
+
+  const trazo = (pts, color, cerrar) => {
+    if (!pts.length) return;
+    x.strokeStyle = color; x.lineWidth = Math.max(2, cv.width / 420);
+    x.lineJoin = "round"; x.lineCap = "round";
+    if (pts.length > 1) {
+      x.beginPath(); x.moveTo(pts[0].x, pts[0].y);
+      for (let i = 1; i < pts.length; i++) x.lineTo(pts[i].x, pts[i].y);
+      if (cerrar) x.closePath();
+      x.stroke();
+      if (cerrar) { x.fillStyle = color.replace("rgb", "rgba").replace(")", ",0.18)"); x.fill(); }
+    }
+    for (const p of pts) {
+      x.beginPath(); x.arc(p.x, p.y, r * 1.6, 0, 7); x.fillStyle = "#fff"; x.fill();
+      x.beginPath(); x.arc(p.x, p.y, r, 0, 7); x.fillStyle = color; x.fill();
+    }
+  };
+
+  trazo(cmpMed.ref, "rgb(37,99,235)", false);
+  trazo(cmpMed.pts, "rgb(216,90,48)", cmpMed.tipo === "area");
+  trazo(cmpMed.verif, "rgb(22,163,74)", false);
+}
+
+function medCoords(ev, cv) {
+  const b = cv.getBoundingClientRect();
+  return { x: (ev.clientX - b.left) * (cv.width / b.width), y: (ev.clientY - b.top) * (cv.height / b.height) };
+}
+
+function medLupa(pt) {
+  const lu = document.getElementById("medLupa");
+  const cv = document.getElementById("medCv");
+  if (!lu || !cv || !pt) { if (lu) lu.style.display = "none"; return; }
+  const b = cv.getBoundingClientRect();
+  const esc = b.width / cv.width;
+  lu.style.display = "block";
+  lu.style.left = Math.max(0, Math.min(b.width - 120, pt.x * esc - 60)) + "px";
+  lu.style.top = Math.max(0, pt.y * esc - 150) + "px";
+  const g = lu.getContext("2d");
+  const Z = 4, S = 120 / Z;
+  g.clearRect(0, 0, 120, 120);
+  g.imageSmoothingEnabled = false;
+  g.drawImage(cv, pt.x - S / 2, pt.y - S / 2, S, S, 0, 0, 120, 120);
+  g.strokeStyle = "rgba(0,0,0,.8)"; g.lineWidth = 1;
+  g.beginPath(); g.moveTo(60, 44); g.lineTo(60, 76); g.moveTo(44, 60); g.lineTo(76, 60); g.stroke();
+  g.strokeStyle = "rgba(255,255,255,.9)";
+  g.beginPath(); g.arc(60, 60, 8, 0, 7); g.stroke();
+}
+
+function medLista() {
+  return cmpMed.cual === "ref" ? cmpMed.ref : cmpMed.cual === "verif" ? cmpMed.verif : cmpMed.pts;
+}
+
+function medTope() {
+  return cmpMed.cual === "ref" ? 2 : cmpMed.cual === "verif" ? 2 : 999;
+}
+
+async function rMedir() {
+  const fotos = cmpBorrador.fotos || [];
+  if (!fotos.length) {
+    $app.innerHTML = `<h2>Medición sobre fotografía</h2>
+      <p class="aviso">Primero tome la fotografía con la cinta o la referencia visible dentro del encuadre.
+      Vuelva a cómputos, tome la foto y regrese aquí.</p>
+      <button class="btn btn-negro" id="medVolver">Volver a cómputos</button>`;
+    document.getElementById("medVolver").onclick = () => nav({ n: "computos" });
+    return;
+  }
+  if (!cmpMed || !fotos.some((f) => f.id === cmpMed.fid)) cmpMed = medNuevo(fotos[fotos.length - 1].id);
+
+  const res = medResultado();
+  const dv = medDesvio();
+  const unid = cmpMed.tipo === "area" ? "m²" : "m";
+
+  $app.innerHTML = `
+    <h2>Medición sobre fotografía</h2>
+    <p class="sub">Escala por referencia de longitud conocida</p>
+    ${fotos.length > 1 ? `<div class="pildoras" style="margin-bottom:10px">
+      ${fotos.map((f, i) => `<button data-foto="${f.id}" class="${f.id === cmpMed.fid ? "on" : ""}">Foto ${i + 1}</button>`).join("")}
+    </div>` : ""}
+
+    <div style="position:relative;margin-bottom:12px">
+      <canvas id="medCv" style="width:100%;display:block;border-radius:10px;border:1px solid var(--borde);touch-action:none"></canvas>
+      <canvas id="medLupa" width="120" height="120" style="position:absolute;display:none;width:120px;height:120px;
+        border-radius:60px;border:2px solid #fff;box-shadow:0 2px 8px rgba(0,0,0,.4);pointer-events:none"></canvas>
+    </div>
+
+    <div class="tarjeta">
+      <div class="etiq">1 · Escala</div>
+      <p class="aviso" style="margin-top:0">Toque los dos extremos de la cinta o regla. Mantenga el dedo y arrastre para afinar con la lupa.</p>
+      <div class="grid2">
+        <button class="btn ${cmpMed.cual === "ref" ? "btn-negro" : "btn-linea"}" data-cual="ref">Marcar referencia (${cmpMed.ref.length}/2)</button>
+        <label class="campo" style="margin:0"><span>Longitud real (m)</span>
+          <input id="medRefLen" inputmode="decimal" style="text-align:right" value="${esc(cmpMed.refLen)}" placeholder="1,00" /></label>
+      </div>
+      <p class="aviso" style="margin-bottom:0">${cmpMed.escala ? "Escala fijada: " + cmpFmt(cmpMed.escala, 0) + " px por metro." : "Falta marcar los dos puntos y escribir la longitud."}</p>
+    </div>
+
+    <div class="tarjeta">
+      <div class="etiq">2 · Trazado</div>
+      <div class="pildoras" style="margin-bottom:10px">
+        <button data-tipo="linea" class="${cmpMed.tipo === "linea" ? "on" : ""}">Longitud</button>
+        <button data-tipo="area" class="${cmpMed.tipo === "area" ? "on" : ""}">Área</button>
+      </div>
+      <p class="aviso" style="margin-top:0">${cmpMed.tipo === "area"
+        ? "Marque el contorno de la zona. Se cierra sola."
+        : "Marque un punto en cada quiebre de la grieta, no solo en las puntas."}</p>
+      <div class="grid2">
+        <button class="btn ${cmpMed.cual === "pts" ? "btn-negro" : "btn-linea"}" data-cual="pts">Trazar (${cmpMed.pts.length} puntos)</button>
+        <button class="btn btn-gris" id="medDeshacer">Deshacer punto</button>
+      </div>
+      <div style="background:var(--ink);color:#fff;border-radius:10px;padding:11px 13px;display:flex;
+        align-items:baseline;justify-content:space-between;gap:12px;margin-top:12px;font-variant-numeric:tabular-nums">
+        <span style="opacity:.65">${cmpMed.tipo === "area" ? "Área" : "Longitud desarrollada"}</span>
+        <b style="font-size:20px">${cmpFmt(res)} <span style="font-size:13px;opacity:.75">${unid}</span></b>
+      </div>
+    </div>
+
+    <div class="tarjeta">
+      <div class="etiq">3 · Verificación (recomendada)</div>
+      <p class="aviso" style="margin-top:0">Mida algo de esa misma foto cuya medida conozca. Si la desviación pasa de 5 %, la foto está muy inclinada: repítala de frente.</p>
+      <div class="grid2">
+        <button class="btn ${cmpMed.cual === "verif" ? "btn-negro" : "btn-linea"}" data-cual="verif">Marcar control (${cmpMed.verif.length}/2)</button>
+        <label class="campo" style="margin:0"><span>Medida conocida (m)</span>
+          <input id="medVerLen" inputmode="decimal" style="text-align:right" value="${esc(cmpMed.verifLen)}" placeholder="0,20" /></label>
+      </div>
+      ${dv ? `<p class="aviso" style="margin-bottom:0;color:${dv.pct > 5 ? "var(--rojo)" : "var(--verde)"}">
+        La foto arroja ${cmpFmt(dv.obtenido, 3)} m contra ${cmpFmt(dv.esperado, 3)} m reales: desviación ${cmpFmt(dv.pct, 1)} %.
+        ${dv.pct > 5 ? "Conviene repetir la fotografía." : "Dentro de lo aceptable."}</p>` : ""}
+    </div>
+
+    <button class="btn btn-negro" id="medUsar" ${res > 0 ? "" : "disabled"} style="margin-bottom:10px">Usar ${cmpFmt(res)} ${unid} en la línea</button>
+    <button class="btn btn-linea" id="medCancelar">Volver sin usar</button>`;
+
+  const cv = document.getElementById("medCv");
+  if (!cmpMed.img) {
+    const u = await urlFoto(cmpMed.fid);
+    if (!u) { $app.querySelector(".sub").textContent = "No se pudo cargar la imagen en este dispositivo."; return; }
+    cmpMed.img = await new Promise((r) => { const im = new Image(); im.onload = () => r(im); im.src = u; });
+  }
+  const W = Math.min(1400, cmpMed.img.naturalWidth || 1200);
+  cv.width = W;
+  cv.height = Math.round(W * (cmpMed.img.naturalHeight / cmpMed.img.naturalWidth));
+  medDibujar();
+
+  let activo = false;
+  cv.addEventListener("pointerdown", (e) => {
+    e.preventDefault();
+    cv.setPointerCapture(e.pointerId);
+    const p = medCoords(e, cv);
+    const lista = medLista();
+    let i = -1, mejor = cv.width / 40;
+    for (let k = 0; k < lista.length; k++) { const d = medDist(lista[k], p); if (d < mejor) { mejor = d; i = k; } }
+    if (i < 0) {
+      if (lista.length >= medTope()) lista.shift();
+      lista.push(p); i = lista.length - 1;
+    }
+    cmpMed.arrastre = i; activo = true;
+    lista[i] = p; medDibujar(); medLupa(p);
+  });
+  cv.addEventListener("pointermove", (e) => {
+    if (!activo) return;
+    e.preventDefault();
+    const p = medCoords(e, cv);
+    medLista()[cmpMed.arrastre] = p;
+    medDibujar(); medLupa(p);
+  });
+  const soltar = () => {
+    if (!activo) return;
+    activo = false; cmpMed.arrastre = -1; medLupa(null); rMedir();
+  };
+  cv.addEventListener("pointerup", soltar);
+  cv.addEventListener("pointercancel", soltar);
+
+  $app.querySelectorAll("[data-cual]").forEach((b) => { b.onclick = () => { cmpMed.cual = b.dataset.cual; rMedir(); }; });
+  $app.querySelectorAll("[data-tipo]").forEach((b) => { b.onclick = () => { cmpMed.tipo = b.dataset.tipo; rMedir(); }; });
+  $app.querySelectorAll("[data-foto]").forEach((b) => { b.onclick = () => { cmpMed = medNuevo(b.dataset.foto); rMedir(); }; });
+
+  const fijar = () => {
+    if (cmpMed.ref.length === 2 && cmpNum(cmpMed.refLen) > 0)
+      cmpMed.escala = medDist(cmpMed.ref[0], cmpMed.ref[1]) / cmpNum(cmpMed.refLen);
+    else cmpMed.escala = 0;
+  };
+  document.getElementById("medRefLen").oninput = (e) => { cmpMed.refLen = e.target.value; fijar(); rMedir(); };
+  document.getElementById("medVerLen").oninput = (e) => { cmpMed.verifLen = e.target.value; rMedir(); };
+  document.getElementById("medDeshacer").onclick = () => { cmpMed.pts.pop(); rMedir(); };
+  document.getElementById("medCancelar").onclick = () => nav({ n: "computos" });
+
+  document.getElementById("medUsar").onclick = async () => {
+    const valor = medResultado();
+    const d2 = medDesvio();
+    const im = document.getElementById("medCv");
+    try {
+      const blob = await new Promise((r) => im.toBlob(r, "image/jpeg", 0.85));
+      if (blob) await blobSet("photo:" + cmpMed.fid, blob);
+    } catch (e) {}
+    cmpBorrador.origen = "foto";
+    cmpBorrador.medicion = {
+      foto: cmpMed.fid, tipo: cmpMed.tipo, valor: valor,
+      referencia_m: cmpNum(cmpMed.refLen), escala_px_m: cmpRed(cmpMed.escala, 1),
+      puntos: cmpMed.pts.length,
+      verificacion: d2 ? { esperado: d2.esperado, obtenido: d2.obtenido, desvio_pct: d2.pct } : null
+    };
+    if (cmpMed.tipo === "area") {
+      cmpBorrador.fijo = { valor: valor, unidad: "m2" };
+    } else {
+      cmpBorrador.fijo = null;
+      if (!cmpBorrador.dims) cmpBorrador.dims = {};
+      cmpBorrador.dims.cantidad = "1";
+      cmpBorrador.dims.largo = cmpFmt(valor);
+    }
+    cmpMed = null;
+    nav({ n: "computos" });
+  };
 }
 
 function rComputos() {
@@ -2530,7 +2822,7 @@ function rComputos() {
     </div>`;
   }).join("") : `<p class="aviso">Las líneas que guarde aparecerán aquí.</p>`;
 
-  const orig = [["sitio", "Medida en sitio"], ["planos", "De planos"], ["muestreo", "Por muestreo"]];
+  const orig = [["sitio", "En sitio"], ["foto", "Sobre foto"], ["planos", "De planos"], ["muestreo", "Por muestreo"]];
   const simple = cmpModo === "simple";
 
   $app.innerHTML = `
@@ -2573,6 +2865,7 @@ function rComputos() {
         <button class="btn btn-linea" id="cmBGal">🖼 De galería</button>
       </div>
       <div id="cmFotos"></div>
+      <button class="btn btn-linea" id="cmMedir" style="margin-top:8px">📐 Medir sobre la foto</button>
       <p class="error" id="cmErr"></p>
       ${simple ? `<div class="grid2">
         <button class="btn btn-negro" id="cmGuardar">Guardar línea</button>
@@ -2646,6 +2939,8 @@ function rComputos() {
   };
   cam.onchange = onFotos; gal.onchange = onFotos;
 
+  document.getElementById("cmMedir").onclick = () => { cmpCapturar(); nav({ n: "medir" }); };
+
   const bg = document.getElementById("cmGuardar");
   if (bg) bg.onclick = () => {
     const p = cmpPartida(cmpBorrador.partida);
@@ -2676,6 +2971,8 @@ function rComputos() {
     cmpBorrador.fotos = [];
     cmpBorrador.elemento = "";
     cmpBorrador.dims = {};
+    cmpBorrador.fijo = null;
+    cmpBorrador.medicion = null;
     cmpBorrador.atipicoOk = false;
     guardar();
     rComputos();
