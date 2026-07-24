@@ -121,7 +121,7 @@
 <script>
 "use strict";
 /* ================= Constantes ================= */
-const VERSION = "3.10";
+const VERSION = "3.11";
 const ATC = ["INSPECCIONADO", "USO RESTRINGIDO", "NO HABITABLE"];
 const ATC_CLS = { "INSPECCIONADO": "v", "USO RESTRINGIDO": "a", "NO HABITABLE": "r" };
 const ATC_CORTO = { "INSPECCIONADO": "INSPECC.", "USO RESTRINGIDO": "USO RESTR.", "NO HABITABLE": "NO HABITABLE" };
@@ -522,7 +522,11 @@ function guardar() {
         st.insp._ts = new Date().toISOString();
         await kvSet("insp:" + st.inspId, JSON.stringify(st.insp));
         const e = st.index.find((x) => x.id === st.inspId);
-        if (e) { e.nombre = st.insp.edificio.nombre; e.informe = st.insp.edificio.informe; e.fecha = st.insp.edificio.fecha; }
+        if (e) {
+          e.nombre = st.insp.edificio.nombre; e.informe = st.insp.edificio.informe; e.fecha = st.insp.edificio.fecha;
+          e.atc = st.insp.edificio.atcGlobal || "";
+          e.nComp = ((st.insp.computos && st.insp.computos.lineas) || []).length;
+        }
         await kvSet("index", JSON.stringify(st.index));
         programarSubida();
       }
@@ -657,6 +661,7 @@ function rLista() {
       <button class="cuerpo" style="background:none;border:none;text-align:left;font-family:inherit;padding:0" data-abrir="${e.id}">
         <div class="nombre">${esc(e.nombre) || "(sin nombre)"}</div>
         <div class="detalle">${e.informe ? "BSP-2026-" + esc(e.informe) : "Sin n.° de informe"}${e.fecha ? " · " + esc(e.fecha) : ""}</div>
+        ${e.nComp ? `<div style="margin-top:5px"><span class="chip" style="${e.atc ? "border-color:var(--borde);color:var(--gris);background:var(--fondo)" : "border-color:var(--ambar);color:var(--ambar-tx);background:var(--ambar-bg)"}">${e.atc ? "CÓMPUTOS · " + e.nComp : "SOLO CÓMPUTOS · " + e.nComp}</span></div>` : ""}
       </button>
       <button class="btn-rojo-linea" style="width:auto;padding:7px 10px;border-radius:8px;font-size:12px" data-borrar="${e.id}">Eliminar</button>
     </div>`).join("");
@@ -1844,6 +1849,63 @@ function rExport() {
 }
 
 /* ================= Ajustes / API ================= */
+function cmpPintarUbic() {
+  const cont = document.getElementById("cmUbic");
+  if (!cont) return;
+  const niveles = (st.insp.niveles || []);
+  const otroNivel = cmpBorrador.nivelId === "__otro";
+  const nv = niveles.find((x) => x.id === cmpBorrador.nivelId) || null;
+  const apts = nv ? (nv.apts || []) : [];
+  const zonaLibre = otroNivel || (nv && !apts.length) || cmpBorrador.zonaSel === "__otro";
+
+  let zonaHtml = "";
+  if (!nv && !otroNivel) {
+    zonaHtml = `<label class="campo"><span>Zona</span>
+      <select disabled><option>Escoja primero el nivel</option></select></label>`;
+  } else if (apts.length) {
+    zonaHtml = `<label class="campo"><span>Zona</span>
+      <select id="cmZonaSel">
+        <option value="">Seleccione</option>
+        ${apts.map((a) => `<option value="${esc(a.nombre)}" ${cmpBorrador.zonaSel !== "__otro" && cmpBorrador.zona === a.nombre ? "selected" : ""}>${esc(a.nombre)}</option>`).join("")}
+        <option value="__otro" ${cmpBorrador.zonaSel === "__otro" ? "selected" : ""}>Otra…</option>
+      </select></label>`;
+  }
+  if (zonaLibre) {
+    zonaHtml += `<label class="campo"><span>${apts.length ? "Nombre de la otra zona" : "Zona"}</span>
+      <input id="cmZonaTxt" value="${esc(cmpBorrador.zona || "")}" placeholder="Junta de dilatación eje C" /></label>`;
+  }
+
+  cont.innerHTML = `
+    <label class="campo"><span>Nivel</span>
+      <select id="cmNivelSel">
+        <option value="">Seleccione</option>
+        ${niveles.map((n) => `<option value="${n.id}" ${cmpBorrador.nivelId === n.id ? "selected" : ""}>${esc(n.nombre)}</option>`).join("")}
+        <option value="__otro" ${otroNivel ? "selected" : ""}>Otro…</option>
+      </select></label>
+    ${otroNivel ? `<label class="campo"><span>Nombre del nivel</span>
+      <input id="cmNivelTxt" value="${esc(cmpBorrador.nivel || "")}" placeholder="Foso del ascensor" /></label>` : ""}
+    ${zonaHtml}`;
+
+  document.getElementById("cmNivelSel").onchange = (e) => {
+    const v = e.target.value;
+    const n2 = niveles.find((x) => x.id === v);
+    cmpBorrador.nivelId = v;
+    cmpBorrador.nivel = n2 ? n2.nombre : "";
+    cmpBorrador.zona = ""; cmpBorrador.zonaSel = "";
+    cmpPintarUbic();
+  };
+  const nt = document.getElementById("cmNivelTxt");
+  if (nt) nt.oninput = (e) => { cmpBorrador.nivel = e.target.value; };
+  const zs = document.getElementById("cmZonaSel");
+  if (zs) zs.onchange = (e) => {
+    cmpBorrador.zonaSel = e.target.value;
+    cmpBorrador.zona = e.target.value === "__otro" ? "" : e.target.value;
+    cmpPintarUbic();
+  };
+  const zt = document.getElementById("cmZonaTxt");
+  if (zt) zt.oninput = (e) => { cmpBorrador.zona = e.target.value; };
+}
+
 function cmpPintarDims() {
   const p = cmpPartida(cmpBorrador.partida);
   const cont = document.getElementById("cmDims");
@@ -1880,7 +1942,10 @@ function cmpLeer() {
   const p = cmpPartida(cmpBorrador.partida);
   const g = (id) => { const e = document.getElementById(id); return e ? e.value : ""; };
   const l = {
-    partida: cmpBorrador.partida, zona: g("cmZona").trim(), nivel: g("cmNivel").trim(),
+    partida: cmpBorrador.partida,
+    zona: String(cmpBorrador.zona || "").trim(),
+    nivel: String(cmpBorrador.nivel || "").trim(),
+    nivelId: cmpBorrador.nivelId && cmpBorrador.nivelId !== "__otro" ? cmpBorrador.nivelId : "",
     elemento: g("cmElem").trim(), obs: g("cmObs").trim(), origen: cmpBorrador.origen
   };
   for (const c of cmpCampos(p)) l[c] = g("cmD_" + c);
@@ -1978,10 +2043,7 @@ function rComputos() {
       <div class="etiq">Nueva línea</div>
       <label class="campo"><span>Partida</span><select id="cmPart">${opts}</select></label>
       <p class="aviso" id="cmCrit" style="margin-top:-6px"></p>
-      <div class="grid2">
-        <label class="campo"><span>Zona</span><input id="cmZona" value="${esc(cmpBorrador.zona || "")}" placeholder="Sótano 1, fachada norte" /></label>
-        <label class="campo"><span>Nivel</span><input id="cmNivel" value="${esc(cmpBorrador.nivel || "")}" placeholder="Piso 3" /></label>
-      </div>
+      <div id="cmUbic"></div>
       <label class="campo"><span>Elemento</span><input id="cmElem" placeholder="Columna C-4" /></label>
       <div class="etiq">Medidas</div>
       <div class="grid2" id="cmDims"></div>
@@ -2014,6 +2076,7 @@ function rComputos() {
     ${linHtml}
     ${c.lineas.length ? `<button class="btn btn-gris" id="cmExport" style="margin-top:12px">Exportar cómputos (JSON)</button>` : ""}`;
 
+  cmpPintarUbic();
   cmpPintarDims();
   cmpPintarFotos();
 
@@ -2070,7 +2133,8 @@ function rComputos() {
     l.ts = new Date().toISOString();
     l.fotos = cmpBorrador.fotos.map((f) => ({ id: f.id, pie: cmpPie(l, p, f.ts) }));
     c.lineas.push(l);
-    cmpBorrador = { partida: cmpBorrador.partida, origen: cmpBorrador.origen, zona: l.zona, nivel: l.nivel, fotos: [] };
+    cmpBorrador = { partida: cmpBorrador.partida, origen: cmpBorrador.origen, zona: l.zona,
+      nivel: l.nivel, nivelId: cmpBorrador.nivelId, zonaSel: cmpBorrador.zonaSel, fotos: [] };
     guardar();
     rComputos();
   };
@@ -2078,7 +2142,8 @@ function rComputos() {
   document.getElementById("cmRepetir").onclick = () => {
     const u = c.lineas[c.lineas.length - 1];
     if (!u) return;
-    cmpBorrador = { partida: u.partida, origen: u.origen, zona: u.zona, nivel: u.nivel, repetir: u, fotos: [] };
+    cmpBorrador = { partida: u.partida, origen: u.origen, zona: u.zona, nivel: u.nivel,
+      nivelId: u.nivelId || "", zonaSel: "", repetir: u, fotos: [] };
     rComputos();
   };
 
