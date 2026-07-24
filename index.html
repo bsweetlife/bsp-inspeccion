@@ -121,7 +121,7 @@
 <script>
 "use strict";
 /* ================= Constantes ================= */
-const VERSION = "3.20";
+const VERSION = "3.21";
 const ATC = ["INSPECCIONADO", "USO RESTRINGIDO", "NO HABITABLE"];
 const ATC_CLS = { "INSPECCIONADO": "v", "USO RESTRINGIDO": "a", "NO HABITABLE": "r" };
 const ATC_CORTO = { "INSPECCIONADO": "INSPECC.", "USO RESTRINGIDO": "USO RESTR.", "NO HABITABLE": "NO HABITABLE" };
@@ -1086,6 +1086,11 @@ function rCasa() {
   $app.querySelectorAll("[data-nivel]").forEach((b) => (b.onclick = () => nav({ n: "nivel", nivelId: b.dataset.nivel })));
 }
 
+/* Deteccion de plataforma para adaptar la ayuda de dictado.
+   En Android instalado como app, el reconocimiento del navegador no corre;
+   el dictado del teclado si. En iPhone es al reves de fiable. */
+const ES_ANDROID = /Android/i.test(navigator.userAgent);
+
 /* ================= Grabadora ================= */
 let rec = null; // { mr, sr, chunks, texto, segs, timer, ctx }
 function iniciarGrabacion(ctx, btn, liveEl) {
@@ -1166,15 +1171,21 @@ function detenerGrabacion() {
   }
 }
 function htmlGrabadora(idBase, etiqueta, voz) {
+  const etiquetaBtn = ES_ANDROID
+    ? (voz.audio || voz.texto ? "Agregar audio" : "Grabar audio")
+    : (voz.audio || voz.texto ? "Agregar grabación" : "Grabar resumen");
   return `
   <div class="grabadora" id="${idBase}">
     <div class="fila" style="align-items:center">
       <div class="etiq" style="margin:0;flex:1">${etiqueta}</div>
-      <button class="rec" style="flex:0 0 auto" id="${idBase}Btn">🎙 ${voz.audio || voz.texto ? "Agregar grabación" : "Grabar resumen"}</button>
+      <button class="rec" style="flex:0 0 auto" id="${idBase}Btn">🎙 ${etiquetaBtn}</button>
     </div>
     <div class="grab-live" id="${idBase}Live" style="display:none"></div>
     <div id="${idBase}Audio"></div>
-    <textarea id="${idBase}Txt" rows="3" placeholder="Resumen (dicta con el 🎙 del teclado o escribe)…" style="margin-top:8px">${esc(voz.texto)}</textarea>
+    <textarea id="${idBase}Txt" rows="3" placeholder="Resumen del ${etiqueta.split("·").pop().trim() || "nivel"}…" style="margin-top:8px">${esc(voz.texto)}</textarea>
+    <p class="aviso" style="margin:6px 2px 0">${ES_ANDROID
+      ? "Para dictar: toque aquí arriba y pulse el 🎙 de su teclado. El botón rojo solo guarda el audio."
+      : "Para dictar: toque el recuadro y pulse el 🎙 del teclado, o escriba directamente."}</p>
   </div>`;
 }
 function wireGrabadora(idBase, getVoz) {
