@@ -1,4 +1,4 @@
-const CACHE = "bsp-v25";
+const CACHE = "bsp-v26";
 const SHELL = [
   "./",
   "./index.html",
@@ -11,7 +11,13 @@ const SHELL = [
 ];
 
 self.addEventListener("install", (e) => {
-  e.waitUntil(caches.open(CACHE).then((c) => c.addAll(SHELL)).then(() => self.skipWaiting()));
+  e.waitUntil(
+    caches.open(CACHE).then((c) => c.addAll(
+      // Los archivos propios se piden salteando la cache del navegador,
+      // si no se corre el riesgo de guardar una version vieja en la cache nueva.
+      SHELL.map((u) => (u.startsWith("http") ? u : new Request(u, { cache: "reload" })))
+    )).then(() => self.skipWaiting())
+  );
 });
 
 self.addEventListener("activate", (e) => {
@@ -22,8 +28,30 @@ self.addEventListener("activate", (e) => {
 
 self.addEventListener("fetch", (e) => {
   const url = new URL(e.request.url);
-  // Nunca cachear llamadas a la API de Anthropic
+  // Nunca cachear llamadas a la API de Anthropic ni a Supabase
   if (url.hostname === "api.anthropic.com" || url.hostname.endsWith("supabase.co")) return;
+
+  // Las paginas van primero a la red: asi nunca se queda una version atras.
+  // Sin conexion cae a la cache y la app sigue funcionando igual.
+  const esPagina = e.request.mode === "navigate" ||
+    (url.origin === location.origin && url.pathname.endsWith(".html"));
+
+  if (esPagina) {
+    e.respondWith(
+      fetch(e.request)
+        .then((resp) => {
+          if (resp && resp.ok) {
+            const copia = resp.clone();
+            caches.open(CACHE).then((c) => c.put(e.request, copia));
+          }
+          return resp;
+        })
+        .catch(() => caches.match(e.request).then((hit) => hit || caches.match("./index.html")))
+    );
+    return;
+  }
+
+  // El resto (iconos, librerias de CDN) sigue siendo cache primero.
   e.respondWith(
     caches.match(e.request).then(
       (hit) =>
