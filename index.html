@@ -121,7 +121,7 @@
 <script>
 "use strict";
 /* ================= Constantes ================= */
-const VERSION = "3.12";
+const VERSION = "3.13";
 const ATC = ["INSPECCIONADO", "USO RESTRINGIDO", "NO HABITABLE"];
 const ATC_CLS = { "INSPECCIONADO": "v", "USO RESTRINGIDO": "a", "NO HABITABLE": "r" };
 const ATC_CORTO = { "INSPECCIONADO": "INSPECC.", "USO RESTRINGIDO": "USO RESTR.", "NO HABITABLE": "NO HABITABLE" };
@@ -505,6 +505,7 @@ function cmpDe(insp) {
   return insp.computos;
 }
 let cmpBorrador = { origen: "sitio", fotos: [] };
+let cmpVer = null;
 function cmpDescartar() {
   if (cmpBorrador.fotos && cmpBorrador.fotos.length) {
     if (!confirm("Hay fotos adjuntas a una línea que no ha guardado. ¿Salir y descartarlas?")) return false;
@@ -1852,6 +1853,122 @@ function rExport() {
 }
 
 /* ================= Ajustes / API ================= */
+async function cmpZip() {
+  const c = cmpDe(st.insp), b = st.insp.edificio;
+  const base = "BSP-2026-" + (b.informe || "X");
+  ponEstado("Armando ZIP…", false);
+  try {
+    const zip = new JSZip();
+    const mapa = {};
+    let n = 0;
+    for (const l of c.lineas) {
+      for (const f of (l.fotos || [])) {
+        n++;
+        let blob = await blobGet("photo:" + f.id);
+        if (!blob && supa && nube.sesion && navigator.onLine) blob = await bajarBlob("photo", f.id);
+        if (!blob) continue;
+        const ubic = [l.elemento, l.zona, l.nivel].filter(Boolean).join(" · ");
+        const sel = await sellarFoto(blob,
+          "Partida " + l.partida + (ubic ? " · " + ubic : ""),
+          cmpFmt(l.parcial) + " " + CMP_UNI[l.unidad] + " · " + base);
+        const nombre = "fotos/" + l.partida + "_" + String(n).padStart(3, "0") + ".jpg";
+        zip.file(nombre, sel);
+        mapa[f.id] = nombre;
+      }
+    }
+    const res = cmpAgrupar(c.lineas);
+    const salida = {
+      informe: b.informe ? base : "",
+      edificacion: b.nombre, direccion: b.direccion,
+      municipio: b.municipio, estado: b.estado,
+      fecha_medicion: c.fecha, responsable: c.responsable, revision: c.rev || 1,
+      generado_en: new Date().toISOString(), version_app: VERSION,
+      resumen: res.map((r) => ({
+        codigo: r.codigo, descripcion: r.descripcion, unidad: r.unidad,
+        cantidad_total: cmpRed(r.total, 2), lineas: r.n, tiene_estimaciones: r.estimada
+      })),
+      lineas: c.lineas.map((l) => Object.assign({}, l, {
+        fotos: (l.fotos || []).map((f) => ({ id: f.id, pie: f.pie, archivo: mapa[f.id] || null }))
+      }))
+    };
+    zip.file("computos.json", JSON.stringify(salida, null, 2));
+
+    const T = [];
+    T.push("CÓMPUTOS MÉTRICOS · " + base);
+    T.push(b.nombre || "");
+    if (b.direccion) T.push(b.direccion);
+    T.push("Fecha de medición: " + (c.fecha || ""));
+    if (c.responsable) T.push("Responsable: " + c.responsable);
+    T.push("");
+    T.push("RESUMEN POR PARTIDA");
+    for (const r of res) {
+      T.push("  " + r.codigo + "  " + r.descripcion);
+      T.push("      " + cmpFmt(r.total) + " " + CMP_UNI[r.unidad] +
+        (r.estimada ? "   (incluye cantidades estimadas)" : ""));
+    }
+    T.push("");
+    T.push("DETALLE POR LÍNEA");
+    for (const l of c.lineas) {
+      const p = cmpPartida(l.partida) || {};
+      const med = cmpCampos(p).filter((x) => x !== "cantidad")
+        .map((x) => cmpEtiq(p, x) + " " + (x === "diametro" ? (l.diametro || "") : cmpFmt(cmpNum(l[x])))).join("  ·  ");
+      T.push("  " + l.partida + "  " + [l.elemento, l.zona, l.nivel].filter(Boolean).join(" · "));
+      T.push("      " + cmpFmt(cmpNum(l.cantidad), 0) + " × " + med +
+        "  =  " + cmpFmt(l.parcial) + " " + CMP_UNI[l.unidad]);
+      T.push("      Origen: " + (l.origen === "sitio" ? "medida en sitio" : l.origen === "planos" ? "tomada de planos" : "estimada por muestreo") +
+        "  ·  " + ((l.fotos || []).length) + " fotografía(s)");
+      if (l.obs) T.push("      Observación: " + l.obs);
+    }
+    zip.file("resumen.txt", T.join("\n"));
+
+    const blob = await zip.generateAsync({ type: "blob" });
+    const file = new File([blob], base + "_computos.zip", { type: "application/zip" });
+    if (navigator.canShare && navigator.canShare({ files: [file] })) {
+      try { await navigator.share({ files: [file] }); ponEstado("ZIP compartido ✓", false); return; } catch (e) {}
+    }
+    const a = document.createElement("a");
+    a.href = URL.createObjectURL(blob); a.download = file.name; a.click();
+    URL.revokeObjectURL(a.href);
+    ponEstado("ZIP con " + n + " foto(s) ✓", false);
+  } catch (e) {
+    ponEstado("⚠ Falló el ZIP", true);
+    alert("No se pudo armar el ZIP: " + (e && e.message ? e.message : e));
+  }
+}
+
+function cmpDetalleLinea(l) {
+  const p = cmpPartida(l.partida) || {};
+  const med = cmpCampos(p).map((x) =>
+    cmpEtiq(p, x) + ": " + (x === "diametro" ? (l.diametro || "—") : cmpFmt(cmpNum(l[x])))).join("  ·  ");
+  const org = l.origen === "sitio" ? "Medida en sitio"
+    : l.origen === "planos" ? "Cantidad tomada de planos" : "Cantidad estimada por muestreo";
+  const fotos = l.fotos || [];
+  return `<div class="tarjeta" style="margin:0 0 8px;padding:12px;background:var(--fondo)">
+    <p class="aviso" style="margin:0 0 6px">${esc(med)}</p>
+    <p class="aviso" style="margin:0 0 6px"><b>${esc(org)}</b>${l.obs ? " · " + esc(l.obs) : ""}</p>
+    ${fotos.length ? fotos.map((f) => `
+      <div class="foto-card" style="margin-bottom:8px">
+        <img data-foto="${f.id}" alt="Fotografía de respaldo" style="background:var(--borde);min-height:60px" />
+        <div class="cuerpo"><p class="aviso" style="margin:0">${esc(f.pie || "")}</p></div>
+      </div>`).join("") : `<p class="aviso" style="margin:0">Esta línea no tiene fotografías de respaldo.</p>`}
+  </div>`;
+}
+
+async function cmpCargarFotos() {
+  const imgs = $app.querySelectorAll("img[data-foto]");
+  for (const img of imgs) {
+    const u = await urlFoto(img.dataset.foto);
+    if (u) img.src = u;
+    else {
+      const aviso = document.createElement("p");
+      aviso.className = "aviso";
+      aviso.style.margin = "10px 12px";
+      aviso.textContent = "La imagen no está en este dispositivo. Conéctese para descargarla de la nube.";
+      img.replaceWith(aviso);
+    }
+  }
+}
+
 function cmpPintarUbic() {
   const cont = document.getElementById("cmUbic");
   if (!cont) return;
@@ -2024,11 +2141,16 @@ function rComputos() {
     const p2 = cmpPartida(l.partida) || { descripcion: "" };
     const meta = [l.elemento, l.zona, l.nivel].filter(Boolean).join(" · ");
     const nf = (l.fotos || []).length;
-    return `<div class="lista-foto">
-      <span style="flex:1"><b>${l.partida}</b> ${esc(p2.descripcion)}
-        <br /><span class="aviso">${esc(meta)} · ${nf ? nf + (nf === 1 ? " foto" : " fotos") : "sin foto"}</span></span>
-      <b class="mono" style="font-size:14px">${cmpFmt(l.parcial)} ${CMP_UNI[l.unidad]}</b>
-      <button class="btn btn-rojo-linea" style="width:auto;padding:6px 10px" data-borrar="${l.id}">✕</button>
+    const abierta = cmpVer === l.id;
+    return `<div>
+      <div class="lista-foto">
+        <button style="flex:1;background:none;border:none;text-align:left;font-family:inherit;font-size:13px;padding:0"
+          data-ver="${l.id}"><b>${l.partida}</b> ${esc(p2.descripcion)}
+          <br /><span class="aviso">${esc(meta)} · ${nf ? nf + (nf === 1 ? " foto" : " fotos") : "sin foto"} · ${abierta ? "ocultar" : "ver detalle"}</span></button>
+        <b class="mono" style="font-size:14px">${cmpFmt(l.parcial)} ${CMP_UNI[l.unidad]}</b>
+        <button class="btn btn-rojo-linea" style="width:auto;padding:6px 10px" data-borrar="${l.id}">✕</button>
+      </div>
+      ${abierta ? cmpDetalleLinea(l) : ""}
     </div>`;
   }).join("") : `<p class="aviso">Las líneas que guarde aparecerán aquí.</p>`;
 
@@ -2077,11 +2199,19 @@ function rComputos() {
     <hr class="sep" />
     <div class="etiq">Líneas capturadas (${c.lineas.length})</div>
     ${linHtml}
-    ${c.lineas.length ? `<button class="btn btn-gris" id="cmExport" style="margin-top:12px">Exportar cómputos (JSON)</button>` : ""}`;
+    ${c.lineas.length ? `<div class="grid2" style="margin-top:12px">
+      <button class="btn btn-negro" id="cmZip">Exportar ZIP (datos + fotos)</button>
+      <button class="btn btn-gris" id="cmExport">Solo JSON</button>
+    </div>` : ""}`;
 
   cmpPintarUbic();
   cmpPintarDims();
   cmpPintarFotos();
+  cmpCargarFotos();
+
+  $app.querySelectorAll("[data-ver]").forEach((btn) => {
+    btn.onclick = () => { cmpVer = cmpVer === btn.dataset.ver ? null : btn.dataset.ver; rComputos(); };
+  });
 
   document.getElementById("cmPart").onchange = (e) => { cmpBorrador.partida = e.target.value; cmpPintarDims(); };
   document.getElementById("cmFecha").onchange = (e) => { c.fecha = e.target.value; guardar(); };
@@ -2161,6 +2291,9 @@ function rComputos() {
       rComputos();
     };
   });
+
+  const bz = document.getElementById("cmZip");
+  if (bz) bz.onclick = cmpZip;
 
   const bx = document.getElementById("cmExport");
   if (bx) bx.onclick = () => {
