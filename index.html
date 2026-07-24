@@ -121,7 +121,7 @@
 <script>
 "use strict";
 /* ================= Constantes ================= */
-const VERSION = "3.18";
+const VERSION = "3.19";
 const ATC = ["INSPECCIONADO", "USO RESTRINGIDO", "NO HABITABLE"];
 const ATC_CLS = { "INSPECCIONADO": "v", "USO RESTRINGIDO": "a", "NO HABITABLE": "r" };
 const ATC_CORTO = { "INSPECCIONADO": "INSPECC.", "USO RESTRINGIDO": "USO RESTR.", "NO HABITABLE": "NO HABITABLE" };
@@ -696,7 +696,7 @@ document.getElementById("btnVolver").onclick = () => {
   else if (p.n === "nivel" || p.n === "export") nav({ n: "casa" });
   else if (p.n === "computos") { if (cmpDescartar()) nav({ n: "casa" }); }
   else if (p.n === "medir") nav({ n: "computos" });
-  else if (p.n === "mover") { const nv = st.insp.niveles.find((x) => x.apts.some((a) => a.id === st.pantalla.moverApt)); nav(nv ? { n: "unidad", nivelId: nv.id, unidadId: st.pantalla.moverApt } : { n: "casa" }); }
+  else if (p.n === "mover") { const nv = st.insp.niveles.find((x) => x.apts.some((a) => a.id === p.moverApt)); nav(nv ? { n: "unidad", nivelId: nv.id, unidadId: p.moverApt } : { n: "casa" }); }
   else if (p.n === "renumerar") nav({ n: "nivel", nivelId: st.pantalla.nivelId });
   else if (p.n === "casa") nav({ n: "lista" });
   else if (p.n === "setup") nav(st.insp && st.insp.listo ? { n: "casa" } : { n: "lista" });
@@ -1288,18 +1288,18 @@ function moverUnidad(apt, origen, destinoId, opciones) {
 }
 
 function rMover() {
-  const nivOrigen = st.insp.niveles.find((nv) => nv.apts.some((a) => a.id === st.pantalla.moverApt));
-  const apt = nivOrigen && nivOrigen.apts.find((a) => a.id === st.pantalla.moverApt);
+  const moverApt = st.pantalla.moverApt;
+  const nivOrigen = st.insp.niveles.find((nv) => nv.apts.some((a) => a.id === moverApt));
+  const apt = nivOrigen && nivOrigen.apts.find((a) => a.id === moverApt);
   if (!apt) return nav({ n: "casa" });
   const u = st.insp.unidades[apt.id] || {};
   const nFotos = (u.fotos || []).length;
 
-  if (!st.pantalla.movDestino) st.pantalla.movDestino = "";
-  if (st.pantalla.movDejar === undefined) st.pantalla.movDejar = true;
-  if (st.pantalla.movIntercambiar === undefined) st.pantalla.movIntercambiar = "";
+  if (!st.mov || st.mov.apt !== moverApt) st.mov = { apt: moverApt, destino: "", dejar: true, intercambiar: "" };
+  const M = st.mov;
 
   const destinos = st.insp.niveles.filter((nv) => !nv.comun && nv.id !== nivOrigen.id);
-  const destino = st.insp.niveles.find((nv) => nv.id === st.pantalla.movDestino);
+  const destino = st.insp.niveles.find((nv) => nv.id === M.destino);
   const aptsDestino = destino ? destino.apts.filter((a) => !/^Pasillo /.test(a.nombre)) : [];
 
   $app.innerHTML = `
@@ -1314,13 +1314,13 @@ function rMover() {
       <label class="campo"><span>Nivel de destino</span>
         <select id="movDest">
           <option value="">Seleccione</option>
-          ${destinos.map((nv) => `<option value="${nv.id}" ${nv.id === st.pantalla.movDestino ? "selected" : ""}>${esc(nv.nombre)}</option>`).join("")}
+          ${destinos.map((nv) => `<option value="${nv.id}" ${nv.id === M.destino ? "selected" : ""}>${esc(nv.nombre)}</option>`).join("")}
         </select></label>
 
       ${destino ? `
       <div class="etiq">En el nivel de origen</div>
       <label class="fila" style="align-items:center;gap:10px;margin-bottom:12px;cursor:pointer">
-        <button id="movDejar" style="background:none;border:none;font-size:20px;padding:0;line-height:1">${st.pantalla.movDejar ? "☑" : "☐"}</button>
+        <button id="movDejar" style="background:none;border:none;font-size:20px;padding:0;line-height:1">${M.dejar ? "☑" : "☐"}</button>
         <span style="flex:1;font-size:14px">Crear una unidad nueva vacía que reemplace a la que se va, con el nombre <b>${esc(apt.nombre)}</b></span>
       </label>
 
@@ -1330,36 +1330,34 @@ function rMover() {
       <label class="campo"><span>Intercambiar con</span>
         <select id="movInt">
           <option value="">No intercambiar</option>
-          ${aptsDestino.map((a) => `<option value="${a.id}" ${a.id === st.pantalla.movIntercambiar ? "selected" : ""}>${esc(a.nombre)}${(st.insp.unidades[a.id] && (st.insp.unidades[a.id].fotos || []).length) ? " · inspeccionada" : " · vacía"}</option>`).join("")}
+          ${aptsDestino.map((a) => `<option value="${a.id}" ${a.id === M.intercambiar ? "selected" : ""}>${esc(a.nombre)}${(st.insp.unidades[a.id] && (st.insp.unidades[a.id].fotos || []).length) ? " · inspeccionada" : " · vacía"}</option>`).join("")}
         </select></label>` : ""}
 
       <div class="tarjeta" style="padding:12px;background:var(--fondo);margin-bottom:12px">
         <div class="etiq" style="margin-top:0">Resumen</div>
         <p class="aviso" style="margin:0">${esc(apt.nombre)} pasa de ${esc(nivOrigen.nombre)} a ${esc(destino.nombre)}, con sus ${nFotos} foto(s) y su clasificación.
-        ${st.pantalla.movDejar ? "Se crea " + esc(apt.nombre) + " vacío en " + esc(nivOrigen.nombre) + "." : ""}
-        ${st.pantalla.movIntercambiar ? "La unidad elegida baja a " + esc(nivOrigen.nombre) + "." : ""}</p>
+        ${M.dejar ? "Se crea " + esc(apt.nombre) + " vacío en " + esc(nivOrigen.nombre) + "." : ""}
+        ${M.intercambiar ? "La unidad elegida baja a " + esc(nivOrigen.nombre) + "." : ""}</p>
       </div>
 
       <button class="btn btn-negro" id="movConfirmar">Confirmar movimiento</button>` : ""}
     </div>`;
 
   document.getElementById("movVolver").onclick = () => nav({ n: "unidad", nivelId: nivOrigen.id, unidadId: apt.id });
-  document.getElementById("movDest").onchange = (e) => { st.pantalla.movDestino = e.target.value; st.pantalla.movIntercambiar = ""; rMover(); };
+  document.getElementById("movDest").onchange = (e) => { M.destino = e.target.value; M.intercambiar = ""; rMover(); };
   const dj = document.getElementById("movDejar");
-  if (dj) dj.onclick = () => { st.pantalla.movDejar = !st.pantalla.movDejar; rMover(); };
+  if (dj) dj.onclick = () => { M.dejar = !M.dejar; rMover(); };
   const it = document.getElementById("movInt");
-  if (it) it.onchange = (e) => { st.pantalla.movIntercambiar = e.target.value; rMover(); };
+  if (it) it.onchange = (e) => { M.intercambiar = e.target.value; rMover(); };
 
   const cf = document.getElementById("movConfirmar");
   if (cf) cf.onclick = () => {
-    const ok = moverUnidad(apt, nivOrigen, st.pantalla.movDestino, {
-      dejarVacia: st.pantalla.movDejar ? apt.nombre : null,
-      intercambiarId: st.pantalla.movIntercambiar || null
+    const destinoId = M.destino;
+    const ok = moverUnidad(apt, nivOrigen, destinoId, {
+      dejarVacia: M.dejar ? apt.nombre : null,
+      intercambiarId: M.intercambiar || null
     });
-    if (ok) {
-      st.pantalla.moverApt = null; st.pantalla.movDestino = ""; st.pantalla.movDejar = true; st.pantalla.movIntercambiar = "";
-      nav({ n: "unidad", nivelId: st.pantalla.movDestino, unidadId: apt.id });
-    }
+    if (ok) { st.mov = null; nav({ n: "unidad", nivelId: destinoId, unidadId: apt.id }); }
   };
 }
 
@@ -1565,7 +1563,7 @@ function rUnidad() {
     const nuevo = prompt("Nuevo nombre de la unidad:", apt.nombre);
     if (nuevo && nuevo.trim()) { apt.nombre = nuevo.trim(); guardar(); rUnidad(); }
   };
-  document.getElementById("bMover").onclick = () => { st.pantalla.moverApt = apt.id; nav({ n: "mover" }); };
+  document.getElementById("bMover").onclick = () => nav({ n: "mover", moverApt: apt.id });
   document.getElementById("bDelUnidad").onclick = async () => {
     if (!confirm(`¿Eliminar "${apt.nombre}" con sus fotos y grabaciones?`)) return;
     for (const f of u.fotos || []) await blobDel("photo:" + f.id);
