@@ -121,7 +121,7 @@
 <script>
 "use strict";
 /* ================= Constantes ================= */
-const VERSION = "3.19";
+const VERSION = "3.20";
 const ATC = ["INSPECCIONADO", "USO RESTRINGIDO", "NO HABITABLE"];
 const ATC_CLS = { "INSPECCIONADO": "v", "USO RESTRINGIDO": "a", "NO HABITABLE": "r" };
 const ATC_CORTO = { "INSPECCIONADO": "INSPECC.", "USO RESTRINGIDO": "USO RESTR.", "NO HABITABLE": "NO HABITABLE" };
@@ -1112,11 +1112,13 @@ function iniciarGrabacion(ctx, btn, liveEl) {
     };
     let texto = "";
     let sr = null;
+    let srVivo = false;
     const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
     if (SR) {
       sr = new SR(); sr.lang = "es-VE"; sr.continuous = true; sr.interimResults = true;
       sr.onresult = (e) => {
         if (!rec) return;
+        srVivo = true;
         let interim = "";
         for (let i = e.resultIndex; i < e.results.length; i++) {
           if (e.results[i].isFinal) texto += e.results[i][0].transcript + " ";
@@ -1125,12 +1127,22 @@ function iniciarGrabacion(ctx, btn, liveEl) {
         rec.texto = texto;
         if (liveEl) liveEl.textContent = texto + interim;
       };
+      sr.onerror = (e) => {
+        // En Android el micrófono suele quedar tomado por MediaRecorder y el
+        // reconocimiento falla con "not-allowed" o "audio-capture".
+        if (rec && !srVivo && liveEl && (e.error === "not-allowed" || e.error === "audio-capture" || e.error === "service-not-allowed")) {
+          rec.sr = null;
+          liveEl.textContent = "Se está grabando el audio, pero la transcripción automática no funcionó en este teléfono. Toque el campo de texto de abajo y dicte con el micrófono del teclado.";
+        }
+      };
       sr.onend = () => { if (rec && rec.sr === sr) { try { sr.start(); } catch (e) {} } };
       try { sr.start(); } catch (e) { sr = null; }
     }
-    if (liveEl && !sr) liveEl.textContent = "Grabando audio… (transcripción en vivo no disponible; dicta luego con el teclado en el campo de texto)";
+    if (liveEl && !sr) liveEl.textContent = "Grabando audio. La transcripción automática no está disponible en este navegador: toque el campo de texto de abajo y dicte con el micrófono del teclado.";
     rec = { mr, sr, chunks, texto: "", segs: 0, ctx };
-    mr.start(1000);
+    // La grabación arranca un instante después, para que el reconocimiento de
+    // voz tome el micrófono primero. En Android eso evita que choquen.
+    setTimeout(() => { try { if (rec && mr.state === "inactive") mr.start(1000); } catch (e) {} }, 350);
     rec.timer = setInterval(() => {
       rec.segs++;
       if (btn) btn.innerHTML = '<span class="punto"></span>Detener ' + Math.floor(rec.segs / 60) + ":" + String(rec.segs % 60).padStart(2, "0");
@@ -1142,7 +1154,16 @@ function detenerGrabacion() {
   if (!rec) return;
   clearInterval(rec.timer);
   if (rec.sr) { const s = rec.sr; rec.sr = null; try { s.stop(); } catch (e) {} }
-  if (rec.mr.state !== "inactive") rec.mr.stop();
+  if (rec.mr.state === "inactive") {
+    // Se detuvo antes de que arrancara la grabación: cerrar el micrófono a mano.
+    try { rec.mr.stream.getTracks().forEach((t) => t.stop()); } catch (e) {}
+    const voz = rec.ctx.voz();
+    const nuevo = (rec.texto || "").trim();
+    if (nuevo) voz.texto = voz.texto ? voz.texto.trim() + "\n" + nuevo : nuevo;
+    rec = null; guardar(); render();
+  } else {
+    rec.mr.stop();
+  }
 }
 function htmlGrabadora(idBase, etiqueta, voz) {
   return `
