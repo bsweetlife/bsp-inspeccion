@@ -121,7 +121,7 @@
 <script>
 "use strict";
 /* ================= Constantes ================= */
-const VERSION = "3.14";
+const VERSION = "3.15";
 const ATC = ["INSPECCIONADO", "USO RESTRINGIDO", "NO HABITABLE"];
 const ATC_CLS = { "INSPECCIONADO": "v", "USO RESTRINGIDO": "a", "NO HABITABLE": "r" };
 const ATC_CORTO = { "INSPECCIONADO": "INSPECC.", "USO RESTRINGIDO": "USO RESTR.", "NO HABITABLE": "NO HABITABLE" };
@@ -447,6 +447,7 @@ const cmpFmt = (v, d) => Number.isFinite(v)
   : "0,00";
 
 function cmpParcial(l, p) {
+  if (l && l.parcialFijo != null) return cmpRed(cmpNum(l.parcialFijo));
   if (!p) return 0;
   let v = cmpNum(l.cantidad, 1);
   for (const c of cmpCampos(p)) {
@@ -505,7 +506,104 @@ function cmpDe(insp) {
   return insp.computos;
 }
 let cmpBorrador = { origen: "sitio", fotos: [] };
+/* Partidas que suelen aplicar según el daño registrado en la unidad.
+   Se ofrecen, nunca se imponen. */
+const CMP_SUGER = {
+  "Mampostería menor": { partidas: ["04.02", "04.04", "04.05"], compuestas: ["friso"] },
+  "Mampostería mayor": { partidas: ["02.02", "02.03", "04.01", "04.04", "04.05"], compuestas: ["pared", "friso"] },
+  "Daño estructural": { partidas: ["02.01", "02.04", "03.01", "03.02", "03.03", "03.05", "04.03", "04.05"], compuestas: ["columna"] },
+  "Preexistente no sísmico": { partidas: ["04.04", "04.05", "05.01", "05.02"], compuestas: [] }
+};
+
+/* Partidas compuestas: se mide una vez y se generan varias líneas coherentes.
+   Todos los componentes comparten la unidad de la medición base. */
+const CMP_COMPUESTAS = [
+  {
+    id: "columna",
+    nombre: "Reparación de columna con cabillas expuestas",
+    campos: ["cantidad", "largo", "ancho"],
+    etiquetas: { cantidad: "N.° de columnas", largo: "Longitud a reparar (m)", ancho: "Perímetro de sección (m)" },
+    magnitud: "Superficie desarrollada",
+    unidad: "m2",
+    nota: "Las cabillas nuevas se computan aparte, en kg, con la partida 03.02.",
+    componentes: [
+      { partida: "02.01", factor: 1, nota: "Demolición del friso en el tramo a reparar" },
+      { partida: "02.04", factor: 1, nota: "Picado hasta concreto sano" },
+      { partida: "03.01", factor: 1, nota: "Limpieza y anticorrosivo en las cabillas" },
+      { partida: "03.05", factor: 1, nota: "Mortero de reparación" },
+      { partida: "04.03", factor: 1, nota: "Friso nuevo sobre el elemento" },
+      { partida: "04.05", factor: 1, alcance: true, nota: "Pintura" }
+    ]
+  },
+  {
+    id: "pared",
+    nombre: "Reposición de pared de bloque",
+    campos: ["cantidad", "largo", "alto"],
+    etiquetas: { cantidad: "N.° de paños", largo: "Largo del paño (m)", alto: "Alto del paño (m)" },
+    magnitud: "Superficie del paño",
+    unidad: "m2",
+    componentes: [
+      { partida: "02.03", factor: 1, nota: "Demolición de la pared existente" },
+      { partida: "04.01", factor: 1, nota: "Pared nueva de bloque" },
+      { partida: "04.04", factor: 2, nota: "Friso por las dos caras" },
+      { partida: "04.05", factor: 2, alcance: true, nota: "Pintura por las dos caras" }
+    ]
+  },
+  {
+    id: "friso",
+    nombre: "Reparación de friso en pared",
+    campos: ["cantidad", "largo", "alto"],
+    etiquetas: { cantidad: "N.° de paños", largo: "Largo del paño (m)", alto: "Alto del paño (m)" },
+    magnitud: "Superficie del paño",
+    unidad: "m2",
+    componentes: [
+      { partida: "02.02", factor: 1, nota: "Demolición del friso dañado" },
+      { partida: "04.04", factor: 1, nota: "Friso nuevo" },
+      { partida: "04.05", factor: 1, alcance: true, nota: "Pintura" }
+    ]
+  }
+];
+
+const cmpCompuesta = (id) => CMP_COMPUESTAS.find((x) => x.id === id) || null;
+
+function cmpUnidadActual() {
+  const id = cmpBorrador.zonaId;
+  if (!id) return null;
+  return (st.insp.unidades || {})[id] || null;
+}
+
+function cmpSugerencias() {
+  const u = cmpUnidadActual();
+  if (!u) return null;
+  const danos = [];
+  for (const f of (u.fotos || [])) if (f.dano && f.dano !== "Sin daño" && danos.indexOf(f.dano) < 0) danos.push(f.dano);
+  const partidas = [], compuestas = [];
+  for (const d of danos) {
+    const g = CMP_SUGER[d] || {};
+    for (const c of (g.partidas || [])) if (partidas.indexOf(c) < 0) partidas.push(c);
+    for (const c of (g.compuestas || [])) if (compuestas.indexOf(c) < 0) compuestas.push(c);
+  }
+  if (!danos.length) return null;
+  return { danos: danos, atc: u.atc || "", partidas: partidas, compuestas: compuestas };
+}
+
+/* Superficie o longitud base de la partida compuesta */
+function cmpBaseCompuesta() {
+  const a = cmpCompuesta(cmpComp.id);
+  if (!a) return 0;
+  let v = cmpNum(cmpComp.base.cantidad, 1);
+  for (const c of a.campos) { if (c === "cantidad") continue; v *= cmpNum(cmpComp.base[c]); }
+  return cmpRed(v);
+}
+
+function cmpCantidadComponente(comp) {
+  const e = cmpComp.comps[comp.partida] || {};
+  if (e.alcance === "parcial") return cmpRed(cmpNum(e.cant), 2);
+  return cmpRed(cmpBaseCompuesta() * comp.factor, 2);
+}
 let cmpVer = null;
+let cmpModo = "simple";
+let cmpComp = { id: "", base: {}, comps: {} };
 function cmpDescartar() {
   if (cmpBorrador.fotos && cmpBorrador.fotos.length) {
     if (!confirm("Hay fotos adjuntas a una línea que no ha guardado. ¿Salir y descartarlas?")) return false;
@@ -1944,7 +2042,8 @@ function cmpDetalleLinea(l) {
     : l.origen === "planos" ? "Cantidad tomada de planos" : "Cantidad estimada por muestreo";
   const fotos = l.fotos || [];
   return `<div class="tarjeta" style="margin:0 0 8px;padding:12px;background:var(--fondo)">
-    <p class="aviso" style="margin:0 0 6px">${esc(med)}</p>
+    ${l.derivada ? `<p class="aviso" style="margin:0 0 6px"><b>⊞ ${esc(l.compuesta || "Partida compuesta")}</b><br />Cantidad derivada de: ${esc(l.baseMedida || "")}</p>`
+      : `<p class="aviso" style="margin:0 0 6px">${esc(med)}</p>`}
     <p class="aviso" style="margin:0 0 6px"><b>${esc(org)}</b>${l.obs ? " · " + esc(l.obs) : ""}</p>
     ${fotos.length ? fotos.map((f) => `
       <div class="foto-card" style="margin-bottom:8px">
@@ -1986,7 +2085,7 @@ function cmpPintarUbic() {
     zonaHtml = `<label class="campo"><span>Zona</span>
       <select id="cmZonaSel">
         <option value="">Seleccione</option>
-        ${apts.map((a) => `<option value="${esc(a.nombre)}" ${cmpBorrador.zonaSel !== "__otro" && cmpBorrador.zona === a.nombre ? "selected" : ""}>${esc(a.nombre)}</option>`).join("")}
+        ${apts.map((a) => `<option value="${esc(a.id)}" ${cmpBorrador.zonaSel !== "__otro" && cmpBorrador.zonaId === a.id ? "selected" : ""}>${esc(a.nombre)}</option>`).join("")}
         <option value="__otro" ${cmpBorrador.zonaSel === "__otro" ? "selected" : ""}>Otra…</option>
       </select></label>`;
   }
@@ -2011,19 +2110,22 @@ function cmpPintarUbic() {
     const n2 = niveles.find((x) => x.id === v);
     cmpBorrador.nivelId = v;
     cmpBorrador.nivel = n2 ? n2.nombre : "";
-    cmpBorrador.zona = ""; cmpBorrador.zonaSel = "";
-    cmpPintarUbic();
+    cmpBorrador.zona = ""; cmpBorrador.zonaSel = ""; cmpBorrador.zonaId = "";
+    cmpCapturar(); rComputos();
   };
   const nt = document.getElementById("cmNivelTxt");
   if (nt) nt.oninput = (e) => { cmpBorrador.nivel = e.target.value; };
   const zs = document.getElementById("cmZonaSel");
   if (zs) zs.onchange = (e) => {
-    cmpBorrador.zonaSel = e.target.value;
-    cmpBorrador.zona = e.target.value === "__otro" ? "" : e.target.value;
-    cmpPintarUbic();
+    const v = e.target.value;
+    cmpBorrador.zonaSel = v;
+    const ap = apts.find((x) => x.id === v);
+    cmpBorrador.zonaId = ap ? ap.id : "";
+    cmpBorrador.zona = ap ? ap.nombre : "";
+    cmpCapturar(); rComputos();
   };
   const zt = document.getElementById("cmZonaTxt");
-  if (zt) zt.oninput = (e) => { cmpBorrador.zona = e.target.value; };
+  if (zt) zt.oninput = (e) => { cmpBorrador.zona = e.target.value; cmpBorrador.zonaId = ""; };
 }
 
 function cmpPintarDims() {
@@ -2118,10 +2220,165 @@ async function cmpPintarFotos() {
   });
 }
 
+function cmpCapturar() {
+  const el = document.getElementById("cmElem");
+  const ob = document.getElementById("cmObs");
+  if (el) cmpBorrador.elemento = el.value;
+  if (ob) cmpBorrador.obs = ob.value;
+}
+
+function cmpPintarCompuesta() {
+  const cont = document.getElementById("cmComp");
+  if (!cont) return;
+  const a = cmpCompuesta(cmpComp.id);
+  if (!a) return;
+  const base = cmpBaseCompuesta();
+
+  const dims = a.campos.map((cc) => `<label class="campo"><span>${esc(a.etiquetas[cc] || CMP_TXT[cc])}</span>
+    <input data-base="${cc}" inputmode="decimal" style="text-align:right;font-weight:600"
+      value="${esc(cmpComp.base[cc] == null ? (cc === "cantidad" ? "1" : "") : cmpComp.base[cc])}"
+      placeholder="${cc === "cantidad" ? "1" : "0,00"}" /></label>`).join("");
+
+  const comps = a.componentes.map((comp) => {
+    const p = cmpPartida(comp.partida) || { descripcion: "", unidad: "m2" };
+    const e = cmpComp.comps[comp.partida] || {};
+    const inc = e.incluir !== false;
+    const q = cmpCantidadComponente(comp);
+    return `<div class="tarjeta" style="padding:10px;margin-bottom:8px;background:${inc ? "var(--blanco)" : "var(--fondo)"}">
+      <div class="fila" style="align-items:flex-start;gap:8px">
+        <button data-inc="${comp.partida}" style="background:none;border:none;font-size:19px;padding:0;cursor:pointer;line-height:1">${inc ? "☑" : "☐"}</button>
+        <span style="flex:1;font-size:13px"><b>${comp.partida}</b> ${esc(p.descripcion)}
+          <br /><span class="aviso">${esc(comp.nota || "")}${comp.factor !== 1 ? " · factor ×" + comp.factor : ""}</span></span>
+        <b class="mono" style="font-size:14px">${inc ? cmpFmt(q) + " " + CMP_UNI[p.unidad] : "—"}</b>
+      </div>
+      ${inc && comp.alcance ? `
+        <div class="pildoras" style="margin-top:8px">
+          <button data-alc="${comp.partida}|total" class="${e.alcance === "parcial" ? "" : "on"}">Todo el paño</button>
+          <button data-alc="${comp.partida}|parcial" class="${e.alcance === "parcial" ? "on" : ""}">Solo lo intervenido</button>
+        </div>
+        ${e.alcance === "parcial" ? `<label class="campo" style="margin:8px 0 0"><span>Superficie a pintar (${CMP_UNI[p.unidad]})</span>
+          <input data-cant="${comp.partida}" inputmode="decimal" style="text-align:right"
+            value="${esc(e.cant || "")}" placeholder="0,00" /></label>` : ""}` : ""}
+    </div>`;
+  }).join("");
+
+  const incl = a.componentes.filter((x) => (cmpComp.comps[x.partida] || {}).incluir !== false);
+
+  cont.innerHTML = `
+    <label class="campo"><span>Partida compuesta</span>
+      <select id="cmCompSel">
+        ${CMP_COMPUESTAS.map((x) => `<option value="${x.id}" ${x.id === cmpComp.id ? "selected" : ""}>${esc(x.nombre)}</option>`).join("")}
+      </select></label>
+    ${a.nota ? `<p class="aviso" style="margin-top:-6px">${esc(a.nota)}</p>` : ""}
+    <div class="etiq">Medición base</div>
+    <div class="grid2">${dims}</div>
+    <div style="background:var(--ink);color:#fff;border-radius:10px;padding:11px 13px;display:flex;
+      align-items:baseline;justify-content:space-between;gap:12px;margin-bottom:12px;font-variant-numeric:tabular-nums">
+      <span style="opacity:.65">${esc(a.magnitud)}</span>
+      <b style="font-size:20px">${cmpFmt(base)} <span style="font-size:13px;opacity:.75">${CMP_UNI[a.unidad]}</span></b>
+    </div>
+    <div class="etiq">Partidas que se generan (${incl.length})</div>
+    ${comps}`;
+
+  document.getElementById("cmCompSel").onchange = (e) => {
+    cmpCapturar(); cmpComp = { id: e.target.value, base: {}, comps: {} }; rComputos();
+  };
+  cont.querySelectorAll("[data-base]").forEach((i) => {
+    i.oninput = (e) => { cmpComp.base[e.target.dataset.base] = e.target.value; cmpPintarCompuesta(); };
+  });
+  cont.querySelectorAll("[data-inc]").forEach((btn) => {
+    btn.onclick = () => {
+      const k = btn.dataset.inc;
+      cmpComp.comps[k] = cmpComp.comps[k] || {};
+      cmpComp.comps[k].incluir = cmpComp.comps[k].incluir === false;
+      cmpPintarCompuesta();
+    };
+  });
+  cont.querySelectorAll("[data-alc]").forEach((btn) => {
+    btn.onclick = () => {
+      const [k, v] = btn.dataset.alc.split("|");
+      cmpComp.comps[k] = cmpComp.comps[k] || {};
+      cmpComp.comps[k].alcance = v;
+      cmpPintarCompuesta();
+    };
+  });
+  cont.querySelectorAll("[data-cant]").forEach((i) => {
+    i.oninput = (e) => {
+      const k = e.target.dataset.cant;
+      cmpComp.comps[k] = cmpComp.comps[k] || {};
+      cmpComp.comps[k].cant = e.target.value;
+      const b = cont.querySelector('[data-inc="' + k + '"]').closest(".tarjeta").querySelector("b.mono");
+      const comp = a.componentes.find((x) => x.partida === k);
+      const p = cmpPartida(k);
+      if (b) b.textContent = cmpFmt(cmpCantidadComponente(comp)) + " " + CMP_UNI[p.unidad];
+    };
+  });
+}
+
+function cmpGuardarCompuesta() {
+  const c = cmpDe(st.insp);
+  const a = cmpCompuesta(cmpComp.id);
+  cmpCapturar();
+  const errs = [];
+  if (!String(cmpBorrador.zona || "").trim()) errs.push("Indique la zona donde tomó la medida.");
+  for (const cc of a.campos) {
+    const v = cmpNum(cmpComp.base[cc], cc === "cantidad" ? 1 : NaN);
+    if (!Number.isFinite(v) || v <= 0) errs.push((a.etiquetas[cc] || CMP_TXT[cc]) + " debe ser mayor que cero.");
+  }
+  const incl = a.componentes.filter((x) => (cmpComp.comps[x.partida] || {}).incluir !== false);
+  if (!incl.length) errs.push("Debe incluir al menos una partida.");
+  for (const x of incl) if (cmpCantidadComponente(x) <= 0)
+    errs.push("La cantidad de la partida " + x.partida + " debe ser mayor que cero.");
+  if (cmpBorrador.origen !== "sitio" && !String(cmpBorrador.obs || "").trim())
+    errs.push("Una medida estimada requiere una observación que explique el criterio.");
+
+  const box = document.getElementById("cmErr");
+  if (errs.length) {
+    box.style.color = "var(--rojo)";
+    box.innerHTML = errs.map(esc).join("<br />");
+    box.scrollIntoView({ behavior: "smooth", block: "center" });
+    return;
+  }
+
+  const gid = uid();
+  const baseTxt = cmpFmt(cmpNum(cmpComp.base.cantidad, 1), 0) + " × " +
+    a.campos.filter((x) => x !== "cantidad").map((x) => cmpFmt(cmpNum(cmpComp.base[x])) + " m").join(" × ") +
+    " = " + cmpFmt(cmpBaseCompuesta()) + " " + CMP_UNI[a.unidad];
+
+  let primera = true;
+  for (const x of incl) {
+    const p = cmpPartida(x.partida);
+    const e = cmpComp.comps[x.partida] || {};
+    const q = cmpCantidadComponente(x);
+    const l = {
+      id: uid(), partida: x.partida,
+      zona: cmpBorrador.zona, nivel: cmpBorrador.nivel,
+      nivelId: cmpBorrador.nivelId && cmpBorrador.nivelId !== "__otro" ? cmpBorrador.nivelId : "",
+      elemento: String(cmpBorrador.elemento || "").trim(),
+      obs: String(cmpBorrador.obs || "").trim(),
+      origen: cmpBorrador.origen,
+      unidad: p.unidad, parcialFijo: q, parcial: q,
+      derivada: true, grupo: gid, compuesta: a.nombre,
+      baseMedida: baseTxt + (x.factor !== 1 ? "  ×" + x.factor : "") +
+        (e.alcance === "parcial" ? "  ·  alcance parcial declarado" : ""),
+      ts: new Date().toISOString(), fotos: []
+    };
+    if (primera) { l.fotos = cmpBorrador.fotos.map((f) => ({ id: f.id, pie: cmpPie(l, p, f.ts) })); primera = false; }
+    c.lineas.push(l);
+  }
+
+  cmpBorrador.fotos = [];
+  cmpBorrador.elemento = "";
+  cmpComp = { id: cmpComp.id, base: {}, comps: {} };
+  guardar();
+  rComputos();
+}
+
 function rComputos() {
   const c = cmpDe(st.insp);
   const b = st.insp.edificio;
   if (!cmpBorrador.partida) cmpBorrador.partida = CMP_CAT[0].codigo;
+  if (!cmpComp.id) cmpComp = { id: CMP_COMPUESTAS[0].id, base: {}, comps: {} };
 
   let grupo = "", opts = "";
   for (const p of CMP_CAT) {
@@ -2129,6 +2386,17 @@ function rComputos() {
     opts += `<option value="${p.codigo}" ${p.codigo === cmpBorrador.partida ? "selected" : ""}>${p.codigo} ${esc(p.descripcion)}</option>`;
   }
   if (grupo) opts += "</optgroup>";
+
+  const sug = cmpSugerencias();
+  const sugHtml = sug ? `
+    <div class="tarjeta" style="padding:12px;background:var(--ambar-bg);border-color:var(--ambar)">
+      <div class="etiq" style="color:var(--ambar-tx)">Sugerencias para esta unidad</div>
+      <p class="aviso" style="margin:0 0 8px">Daño registrado en la inspección: ${esc(sug.danos.join(", "))}${sug.atc ? " · " + esc(sug.atc) : ""}.</p>
+      <div class="pildoras">
+        ${sug.compuestas.map((id) => { const a = cmpCompuesta(id); return a ? `<button data-sugc="${id}">⊞ ${esc(a.nombre)}</button>` : ""; }).join("")}
+        ${sug.partidas.map((cod) => { const p = cmpPartida(cod); return p ? `<button data-sug="${cod}">${cod} ${esc(p.descripcion)}</button>` : ""; }).join("")}
+      </div>
+    </div>` : "";
 
   const res = cmpAgrupar(c.lineas);
   const resHtml = res.length ? res.map((r) => `
@@ -2145,7 +2413,7 @@ function rComputos() {
     return `<div>
       <div class="lista-foto">
         <button style="flex:1;background:none;border:none;text-align:left;font-family:inherit;font-size:13px;padding:0"
-          data-ver="${l.id}"><b>${l.partida}</b> ${esc(p2.descripcion)}
+          data-ver="${l.id}"><b>${l.partida}</b> ${esc(p2.descripcion)}${l.derivada ? ' <span class="chip">⊞</span>' : ""}
           <br /><span class="aviso">${esc(meta)} · ${nf ? nf + (nf === 1 ? " foto" : " fotos") : "sin foto"} · ${abierta ? "ocultar" : "ver detalle"}</span></button>
         <b class="mono" style="font-size:14px">${cmpFmt(l.parcial)} ${CMP_UNI[l.unidad]}</b>
         <button class="btn btn-rojo-linea" style="width:auto;padding:6px 10px" data-borrar="${l.id}">✕</button>
@@ -2155,6 +2423,7 @@ function rComputos() {
   }).join("") : `<p class="aviso">Las líneas que guarde aparecerán aquí.</p>`;
 
   const orig = [["sitio", "Medida en sitio"], ["planos", "De planos"], ["muestreo", "Por muestreo"]];
+  const simple = cmpModo === "simple";
 
   $app.innerHTML = `
     <h2>Cómputos métricos</h2>
@@ -2165,21 +2434,30 @@ function rComputos() {
     </div>
 
     <div class="tarjeta">
-      <div class="etiq">Nueva línea</div>
-      <label class="campo"><span>Partida</span><select id="cmPart">${opts}</select></label>
-      <p class="aviso" id="cmCrit" style="margin-top:-6px"></p>
+      <div class="pildoras" id="cmModo" style="margin-bottom:12px">
+        <button data-modo="simple" class="${simple ? "on" : ""}">Línea simple</button>
+        <button data-modo="compuesta" class="${simple ? "" : "on"}">⊞ Partida compuesta</button>
+      </div>
       <div id="cmUbic"></div>
-      <label class="campo"><span>Elemento</span><input id="cmElem" placeholder="Columna C-4" /></label>
-      <div class="etiq">Medidas</div>
-      <div class="grid2" id="cmDims"></div>
-      <div id="cmCinta" style="background:var(--ink);color:#fff;border-radius:10px;padding:11px 13px;
-        display:flex;align-items:baseline;justify-content:space-between;gap:12px;margin-bottom:12px;
-        font-variant-numeric:tabular-nums"></div>
+      ${sugHtml}
+      <label class="campo"><span>Elemento</span><input id="cmElem" value="${esc(cmpBorrador.elemento || "")}" placeholder="Columna C-4" /></label>
+
+      <div id="cmSimple" ${simple ? "" : 'style="display:none"'}>
+        <label class="campo"><span>Partida</span><select id="cmPart">${opts}</select></label>
+        <p class="aviso" id="cmCrit" style="margin-top:-6px"></p>
+        <div class="etiq">Medidas</div>
+        <div class="grid2" id="cmDims"></div>
+        <div id="cmCinta" style="background:var(--ink);color:#fff;border-radius:10px;padding:11px 13px;
+          display:flex;align-items:baseline;justify-content:space-between;gap:12px;margin-bottom:12px;
+          font-variant-numeric:tabular-nums"></div>
+      </div>
+      <div id="cmComp" ${simple ? 'style="display:none"' : ""}></div>
+
       <div class="etiq">Origen de la medida</div>
       <div class="pildoras" id="cmOrigen">
         ${orig.map(([v, t]) => `<button data-org="${v}" class="${cmpBorrador.origen === v ? "on" : ""}">${t}</button>`).join("")}
       </div>
-      <label class="campo"><span>Observación</span><textarea id="cmObs" rows="2" placeholder="Espesor, sección, criterio de estimación"></textarea></label>
+      <label class="campo"><span>Observación</span><textarea id="cmObs" rows="2" placeholder="Espesor, sección, criterio de estimación">${esc(cmpBorrador.obs || "")}</textarea></label>
       <input type="file" accept="image/*" capture="environment" id="cmCam" style="display:none" />
       <input type="file" accept="image/*" multiple id="cmGal" style="display:none" />
       <div class="grid2" style="margin-bottom:8px">
@@ -2188,10 +2466,10 @@ function rComputos() {
       </div>
       <div id="cmFotos"></div>
       <p class="error" id="cmErr"></p>
-      <div class="grid2">
+      ${simple ? `<div class="grid2">
         <button class="btn btn-negro" id="cmGuardar">Guardar línea</button>
         <button class="btn btn-linea" id="cmRepetir" ${c.lineas.length ? "" : "disabled"}>Repetir última</button>
-      </div>
+      </div>` : `<button class="btn btn-negro" id="cmGuardarComp">Guardar partidas generadas</button>`}
     </div>
 
     <div class="etiq">Resumen por partida</div>
@@ -2205,15 +2483,27 @@ function rComputos() {
     </div>` : ""}`;
 
   cmpPintarUbic();
-  cmpPintarDims();
+  if (simple) cmpPintarDims(); else cmpPintarCompuesta();
   cmpPintarFotos();
   cmpCargarFotos();
 
+  document.getElementById("cmModo").querySelectorAll("[data-modo]").forEach((btn) => {
+    btn.onclick = () => { cmpCapturar(); cmpModo = btn.dataset.modo; rComputos(); };
+  });
+  $app.querySelectorAll("[data-sug]").forEach((btn) => {
+    btn.onclick = () => { cmpCapturar(); cmpModo = "simple"; cmpBorrador.partida = btn.dataset.sug; rComputos(); };
+  });
+  $app.querySelectorAll("[data-sugc]").forEach((btn) => {
+    btn.onclick = () => { cmpCapturar(); cmpModo = "compuesta"; cmpComp = { id: btn.dataset.sugc, base: {}, comps: {} }; rComputos(); };
+  });
   $app.querySelectorAll("[data-ver]").forEach((btn) => {
-    btn.onclick = () => { cmpVer = cmpVer === btn.dataset.ver ? null : btn.dataset.ver; rComputos(); };
+    btn.onclick = () => { cmpCapturar(); cmpVer = cmpVer === btn.dataset.ver ? null : btn.dataset.ver; rComputos(); };
   });
 
-  document.getElementById("cmPart").onchange = (e) => { cmpBorrador.partida = e.target.value; cmpPintarDims(); };
+  const pt = document.getElementById("cmPart");
+  if (pt) pt.onchange = (e) => { cmpBorrador.partida = e.target.value; cmpPintarDims(); };
+  document.getElementById("cmElem").oninput = (e) => { cmpBorrador.elemento = e.target.value; };
+  document.getElementById("cmObs").oninput = (e) => { cmpBorrador.obs = e.target.value; };
   document.getElementById("cmFecha").onchange = (e) => { c.fecha = e.target.value; guardar(); };
   document.getElementById("cmResp").oninput = (e) => { c.responsable = e.target.value; guardar(); };
 
@@ -2248,7 +2538,8 @@ function rComputos() {
   };
   cam.onchange = onFotos; gal.onchange = onFotos;
 
-  document.getElementById("cmGuardar").onclick = () => {
+  const bg = document.getElementById("cmGuardar");
+  if (bg) bg.onclick = () => {
     const p = cmpPartida(cmpBorrador.partida);
     const l = cmpLeer();
     const errs = cmpValidar(l, p);
@@ -2266,17 +2557,21 @@ function rComputos() {
     l.ts = new Date().toISOString();
     l.fotos = cmpBorrador.fotos.map((f) => ({ id: f.id, pie: cmpPie(l, p, f.ts) }));
     c.lineas.push(l);
-    cmpBorrador = { partida: cmpBorrador.partida, origen: cmpBorrador.origen, zona: l.zona,
-      nivel: l.nivel, nivelId: cmpBorrador.nivelId, zonaSel: cmpBorrador.zonaSel, fotos: [] };
+    cmpBorrador.fotos = [];
+    cmpBorrador.elemento = "";
     guardar();
     rComputos();
   };
 
-  document.getElementById("cmRepetir").onclick = () => {
-    const u = c.lineas[c.lineas.length - 1];
+  const bgc = document.getElementById("cmGuardarComp");
+  if (bgc) bgc.onclick = cmpGuardarCompuesta;
+
+  const br = document.getElementById("cmRepetir");
+  if (br) br.onclick = () => {
+    const u = c.lineas.filter((x) => !x.derivada).pop();
     if (!u) return;
-    cmpBorrador = { partida: u.partida, origen: u.origen, zona: u.zona, nivel: u.nivel,
-      nivelId: u.nivelId || "", zonaSel: "", repetir: u, fotos: [] };
+    cmpBorrador = { partida: u.partida, origen: u.origen, zona: u.zona, zonaId: cmpBorrador.zonaId,
+      nivel: u.nivel, nivelId: u.nivelId || "", zonaSel: "", repetir: u, elemento: "", obs: u.obs || "", fotos: [] };
     rComputos();
   };
 
