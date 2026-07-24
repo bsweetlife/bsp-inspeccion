@@ -121,7 +121,7 @@
 <script>
 "use strict";
 /* ================= Constantes ================= */
-const VERSION = "3.15";
+const VERSION = "3.16";
 const ATC = ["INSPECCIONADO", "USO RESTRINGIDO", "NO HABITABLE"];
 const ATC_CLS = { "INSPECCIONADO": "v", "USO RESTRINGIDO": "a", "NO HABITABLE": "r" };
 const ATC_CORTO = { "INSPECCIONADO": "INSPECC.", "USO RESTRINGIDO": "USO RESTR.", "NO HABITABLE": "NO HABITABLE" };
@@ -503,6 +503,7 @@ function cmpAgrupar(lineas) {
 function cmpDe(insp) {
   if (!insp.computos) insp.computos = { fecha: new Date().toISOString().slice(0, 10), responsable: "", rev: 1, lineas: [] };
   if (!insp.computos.lineas) insp.computos.lineas = [];
+  if (!insp.computos.desperdicio) insp.computos.desperdicio = {};
   return insp.computos;
 }
 let cmpBorrador = { origen: "sitio", fotos: [] };
@@ -1983,7 +1984,10 @@ async function cmpZip() {
       generado_en: new Date().toISOString(), version_app: VERSION,
       resumen: res.map((r) => ({
         codigo: r.codigo, descripcion: r.descripcion, unidad: r.unidad,
-        cantidad_total: cmpRed(r.total, 2), lineas: r.n, tiene_estimaciones: r.estimada
+        cantidad_neta: cmpRed(r.total, 2),
+        desperdicio_pct: cmpDespDe(r.codigo),
+        cantidad_con_desperdicio: cmpRed(r.total * (1 + cmpDespDe(r.codigo) / 100), 2),
+        lineas: r.n, tiene_estimaciones: r.estimada
       })),
       lineas: c.lineas.map((l) => Object.assign({}, l, {
         fotos: (l.fotos || []).map((f) => ({ id: f.id, pie: f.pie, archivo: mapa[f.id] || null }))
@@ -2001,7 +2005,10 @@ async function cmpZip() {
     T.push("RESUMEN POR PARTIDA");
     for (const r of res) {
       T.push("  " + r.codigo + "  " + r.descripcion);
-      T.push("      " + cmpFmt(r.total) + " " + CMP_UNI[r.unidad] +
+      const dp = cmpDespDe(r.codigo);
+      T.push("      Neta " + cmpFmt(r.total) + " " + CMP_UNI[r.unidad] +
+        "   ·   con " + cmpFmt(dp, 0) + " % de desperdicio: " +
+        cmpFmt(cmpRed(r.total * (1 + dp / 100), 2)) + " " + CMP_UNI[r.unidad] +
         (r.estimada ? "   (incluye cantidades estimadas)" : ""));
     }
     T.push("");
@@ -2128,49 +2135,141 @@ function cmpPintarUbic() {
   if (zt) zt.oninput = (e) => { cmpBorrador.zona = e.target.value; cmpBorrador.zonaId = ""; };
 }
 
+/* Desperdicio por defecto de cada partida, en por ciento.
+   Las demoliciones y los servicios no llevan. */
+const CMP_DESP = {
+  "01.01": 0, "01.02": 0, "01.03": 5, "01.04": 0,
+  "02.01": 0, "02.02": 0, "02.03": 0, "02.04": 0, "02.05": 0, "02.06": 0,
+  "03.01": 0, "03.02": 7, "03.03": 10, "03.04": 8, "03.05": 10,
+  "03.06": 5, "03.07": 5, "03.08": 8, "03.09": 3, "03.10": 5,
+  "04.01": 5, "04.02": 8, "04.03": 8, "04.04": 8, "04.05": 5,
+  "04.06": 10, "04.07": 10, "04.08": 5,
+  "05.01": 8, "05.02": 5, "05.03": 0, "05.04": 5
+};
+
+/* Campos que ofrecen calculadora auxiliar */
+const CMP_AUX = { "02.01": "ancho", "03.01": "ancho", "04.03": "ancho" };
+
+let cmpAux = { abierto: false, forma: "rect", b: "", h: "", d: "", destino: "" };
+
+function cmpDespDe(cod) {
+  const c = cmpDe(st.insp);
+  const v = (c.desperdicio || {})[cod];
+  if (v === undefined || v === null || v === "") return CMP_DESP[cod] === undefined ? 0 : CMP_DESP[cod];
+  return cmpNum(v);
+}
+
+function cmpAuxValor() {
+  if (cmpAux.forma === "circ") return cmpRed(Math.PI * cmpNum(cmpAux.d) / 100, 3);
+  return cmpRed(2 * (cmpNum(cmpAux.b) + cmpNum(cmpAux.h)) / 100, 3);
+}
+
+function cmpRepintar() { if (cmpModo === "simple") cmpPintarDims(); else cmpPintarCompuesta(); }
+
+function cmpAuxHtml(destino) {
+  const ab = cmpAux.abierto && cmpAux.destino === destino;
+  return `<button class="btn btn-gris" id="auxBtn_${destino}" style="margin-bottom:10px">⌗ ${ab ? "Cerrar calculadora" : "Calcular perímetro de sección"}</button>
+    ${ab ? `<div class="tarjeta" style="padding:12px;margin-bottom:10px;background:var(--fondo)">
+      <div class="pildoras" style="margin-bottom:10px">
+        <button data-forma="rect" class="${cmpAux.forma === "rect" ? "on" : ""}">Rectangular</button>
+        <button data-forma="circ" class="${cmpAux.forma === "circ" ? "on" : ""}">Circular</button>
+      </div>
+      ${cmpAux.forma === "rect" ? `<div class="grid2">
+        <label class="campo"><span>Base (cm)</span><input data-aux="b" inputmode="decimal" style="text-align:right" value="${esc(cmpAux.b)}" placeholder="30" /></label>
+        <label class="campo"><span>Altura (cm)</span><input data-aux="h" inputmode="decimal" style="text-align:right" value="${esc(cmpAux.h)}" placeholder="50" /></label>
+      </div>` : `<label class="campo"><span>Diámetro (cm)</span><input data-aux="d" inputmode="decimal" style="text-align:right" value="${esc(cmpAux.d)}" placeholder="40" /></label>`}
+      <p class="aviso" style="margin:0 0 10px">Perímetro desarrollado: <b id="auxRes">${cmpFmt(cmpAuxValor(), 3)}</b> m</p>
+      <button class="btn btn-negro" id="auxUsar_${destino}">Usar este valor</button>
+    </div>` : ""}`;
+}
+
+function cmpAuxWire(cont, destino, aplicar) {
+  const b = document.getElementById("auxBtn_" + destino);
+  if (b) b.onclick = () => {
+    cmpAux.abierto = !(cmpAux.abierto && cmpAux.destino === destino);
+    cmpAux.destino = destino;
+    cmpRepintar();
+  };
+  cont.querySelectorAll("[data-forma]").forEach((x) => {
+    x.onclick = () => { cmpAux.forma = x.dataset.forma; cmpRepintar(); };
+  });
+  cont.querySelectorAll("[data-aux]").forEach((i) => {
+    i.oninput = (e) => {
+      cmpAux[e.target.dataset.aux] = e.target.value;
+      const r = document.getElementById("auxRes");
+      if (r) r.textContent = cmpFmt(cmpAuxValor(), 3);
+    };
+  });
+  const u = document.getElementById("auxUsar_" + destino);
+  if (u) u.onclick = () => { aplicar(cmpFmt(cmpAuxValor(), 3)); cmpAux.abierto = false; cmpRepintar(); };
+}
+
+/* Aviso de valor atípico: compara contra la mediana de la misma partida */
+function cmpAtipico(l, p) {
+  const c = cmpDe(st.insp);
+  const otras = c.lineas.filter((x) => x.partida === l.partida)
+    .map((x) => cmpNum(x.parcial)).filter((v) => v > 0).sort((a, b) => a - b);
+  if (otras.length < 3) return null;
+  const med = otras[Math.floor(otras.length / 2)];
+  const v = cmpParcial(l, p);
+  if (med <= 0 || v <= 0) return null;
+  if (v / med >= 5) return "Esta cantidad es " + cmpFmt(v / med, 1) + " veces la mediana de las otras " +
+    otras.length + " líneas de la partida " + l.partida + ". Revise la medida.";
+  if (med / v >= 5) return "Esta cantidad es " + cmpFmt(med / v, 1) + " veces menor que la mediana de las otras " +
+    otras.length + " líneas de la partida " + l.partida + ". Revise la medida.";
+  return null;
+}
+
 function cmpPintarDims() {
   const p = cmpPartida(cmpBorrador.partida);
   const cont = document.getElementById("cmDims");
   if (!cont || !p) return;
   const crit = document.getElementById("cmCrit");
   if (crit) crit.textContent = p.notas || "";
-  cont.innerHTML = cmpCampos(p).map((c) => {
+  if (!cmpBorrador.dims) cmpBorrador.dims = {};
+  const D = cmpBorrador.dims;
+
+  cont.innerHTML = `<div class="grid2">` + cmpCampos(p).map((c) => {
+    const val = D[c] === undefined ? (c === "cantidad" ? "1" : "") : D[c];
     if (c === "diametro") {
       const op = Object.keys(CMP_CABILLA).map((k) =>
-        `<option value="${esc(k)}">${esc(k)} · ${cmpFmt(CMP_CABILLA[k], 3)} kg/m</option>`).join("");
+        `<option value="${esc(k)}" ${val === k ? "selected" : ""}>${esc(k)} · ${cmpFmt(CMP_CABILLA[k], 3)} kg/m</option>`).join("");
       return `<label class="campo"><span>${esc(cmpEtiq(p, c))}</span>
         <select id="cmD_${c}"><option value="">Seleccione</option>${op}</select></label>`;
     }
     return `<label class="campo"><span>${esc(cmpEtiq(p, c))}</span>
       <input id="cmD_${c}" inputmode="decimal" style="text-align:right;font-weight:600"
-        value="${c === "cantidad" ? "1" : ""}" placeholder="${c === "cantidad" ? "1" : "0,00"}" /></label>`;
-  }).join("");
+        value="${esc(val)}" placeholder="${c === "cantidad" ? "1" : "0,00"}" /></label>`;
+  }).join("") + `</div>` + (CMP_AUX[p.codigo] ? cmpAuxHtml("cmD_" + CMP_AUX[p.codigo]) : "");
+
   for (const c of cmpCampos(p)) {
     const el = document.getElementById("cmD_" + c);
-    if (el) el.addEventListener(c === "diametro" ? "change" : "input", cmpCinta);
+    if (!el) continue;
+    el.addEventListener(c === "diametro" ? "change" : "input", (e) => {
+      D[c] = e.target.value;
+      cmpBorrador.atipicoOk = false;
+      cmpCinta();
+    });
   }
-  if (cmpBorrador.repetir) {
-    const u = cmpBorrador.repetir;
-    delete cmpBorrador.repetir;
-    for (const c of cmpCampos(p)) {
-      const el = document.getElementById("cmD_" + c);
-      if (el) el.value = u[c] == null ? "" : u[c];
-    }
+  if (CMP_AUX[p.codigo]) {
+    cmpAuxWire(cont, "cmD_" + CMP_AUX[p.codigo], (v) => { D[CMP_AUX[p.codigo]] = v; });
   }
   cmpCinta();
 }
 
 function cmpLeer() {
   const p = cmpPartida(cmpBorrador.partida);
-  const g = (id) => { const e = document.getElementById(id); return e ? e.value : ""; };
+  const D = cmpBorrador.dims || {};
   const l = {
     partida: cmpBorrador.partida,
     zona: String(cmpBorrador.zona || "").trim(),
     nivel: String(cmpBorrador.nivel || "").trim(),
     nivelId: cmpBorrador.nivelId && cmpBorrador.nivelId !== "__otro" ? cmpBorrador.nivelId : "",
-    elemento: g("cmElem").trim(), obs: g("cmObs").trim(), origen: cmpBorrador.origen
+    elemento: String(cmpBorrador.elemento || "").trim(),
+    obs: String(cmpBorrador.obs || "").trim(),
+    origen: cmpBorrador.origen
   };
-  for (const c of cmpCampos(p)) l[c] = g("cmD_" + c);
+  for (const c of cmpCampos(p)) l[c] = D[c] === undefined ? (c === "cantidad" ? "1" : "") : D[c];
   return l;
 }
 
@@ -2234,6 +2333,7 @@ function cmpPintarCompuesta() {
   if (!a) return;
   const base = cmpBaseCompuesta();
 
+  const auxCampo = a.id === "columna" ? "ancho" : "";
   const dims = a.campos.map((cc) => `<label class="campo"><span>${esc(a.etiquetas[cc] || CMP_TXT[cc])}</span>
     <input data-base="${cc}" inputmode="decimal" style="text-align:right;font-weight:600"
       value="${esc(cmpComp.base[cc] == null ? (cc === "cantidad" ? "1" : "") : cmpComp.base[cc])}"
@@ -2272,6 +2372,7 @@ function cmpPintarCompuesta() {
     ${a.nota ? `<p class="aviso" style="margin-top:-6px">${esc(a.nota)}</p>` : ""}
     <div class="etiq">Medición base</div>
     <div class="grid2">${dims}</div>
+    ${auxCampo ? cmpAuxHtml("cmB_" + auxCampo) : ""}
     <div style="background:var(--ink);color:#fff;border-radius:10px;padding:11px 13px;display:flex;
       align-items:baseline;justify-content:space-between;gap:12px;margin-bottom:12px;font-variant-numeric:tabular-nums">
       <span style="opacity:.65">${esc(a.magnitud)}</span>
@@ -2284,8 +2385,10 @@ function cmpPintarCompuesta() {
     cmpCapturar(); cmpComp = { id: e.target.value, base: {}, comps: {} }; rComputos();
   };
   cont.querySelectorAll("[data-base]").forEach((i) => {
+    i.id = "cmB_" + i.dataset.base;
     i.oninput = (e) => { cmpComp.base[e.target.dataset.base] = e.target.value; cmpPintarCompuesta(); };
   });
+  if (auxCampo) cmpAuxWire(cont, "cmB_" + auxCampo, (v) => { cmpComp.base[auxCampo] = v; });
   cont.querySelectorAll("[data-inc]").forEach((btn) => {
     btn.onclick = () => {
       const k = btn.dataset.inc;
@@ -2399,11 +2502,16 @@ function rComputos() {
     </div>` : "";
 
   const res = cmpAgrupar(c.lineas);
-  const resHtml = res.length ? res.map((r) => `
-    <div class="lista-foto">
-      <span style="flex:1"><b>${r.codigo}</b> ${esc(r.descripcion)}${r.estimada ? ' <span class="chip a">estimada</span>' : ""}</span>
-      <b class="mono" style="font-size:14px">${cmpFmt(r.total)} ${CMP_UNI[r.unidad]}</b>
-    </div>`).join("") : `<p class="aviso">Aún no hay cantidades computadas.</p>`;
+  const resHtml = res.length ? res.map((r) => {
+    const d = cmpDespDe(r.codigo);
+    return `<div class="lista-foto">
+      <span style="flex:1"><b>${r.codigo}</b> ${esc(r.descripcion)}${r.estimada ? ' <span class="chip a">estimada</span>' : ""}
+        <br /><span class="aviso">Neta ${cmpFmt(r.total)} ${CMP_UNI[r.unidad]} · desperdicio
+        <input data-desp="${r.codigo}" inputmode="decimal" value="${esc(String(d))}"
+          style="width:54px;display:inline-block;padding:2px 6px;min-height:0;text-align:right;font-size:12px" /> %</span></span>
+      <b class="mono" style="font-size:14px" data-total="${r.codigo}">${cmpFmt(cmpRed(r.total * (1 + d / 100), 2))} ${CMP_UNI[r.unidad]}</b>
+    </div>`;
+  }).join("") : `<p class="aviso">Aún no hay cantidades computadas.</p>`;
 
   const linHtml = c.lineas.length ? c.lineas.slice().reverse().map((l) => {
     const p2 = cmpPartida(l.partida) || { descripcion: "" };
@@ -2501,7 +2609,7 @@ function rComputos() {
   });
 
   const pt = document.getElementById("cmPart");
-  if (pt) pt.onchange = (e) => { cmpBorrador.partida = e.target.value; cmpPintarDims(); };
+  if (pt) pt.onchange = (e) => { cmpBorrador.partida = e.target.value; cmpBorrador.dims = {}; cmpBorrador.atipicoOk = false; cmpPintarDims(); };
   document.getElementById("cmElem").oninput = (e) => { cmpBorrador.elemento = e.target.value; };
   document.getElementById("cmObs").oninput = (e) => { cmpBorrador.obs = e.target.value; };
   document.getElementById("cmFecha").onchange = (e) => { c.fecha = e.target.value; guardar(); };
@@ -2550,6 +2658,14 @@ function rComputos() {
       box.scrollIntoView({ behavior: "smooth", block: "center" });
       return;
     }
+    const at = cmpAtipico(l, p);
+    if (at && !cmpBorrador.atipicoOk) {
+      box.style.color = "var(--ambar-tx)";
+      box.innerHTML = esc(at) + "<br />Vuelva a tocar Guardar línea si la cantidad es correcta.";
+      cmpBorrador.atipicoOk = true;
+      box.scrollIntoView({ behavior: "smooth", block: "center" });
+      return;
+    }
     l.id = uid();
     l.unidad = p.unidad;
     l.factor = p.unidad === "kg" ? (CMP_CABILLA[l.diametro] || 1) : 1;
@@ -2559,6 +2675,8 @@ function rComputos() {
     c.lineas.push(l);
     cmpBorrador.fotos = [];
     cmpBorrador.elemento = "";
+    cmpBorrador.dims = {};
+    cmpBorrador.atipicoOk = false;
     guardar();
     rComputos();
   };
@@ -2571,7 +2689,8 @@ function rComputos() {
     const u = c.lineas.filter((x) => !x.derivada).pop();
     if (!u) return;
     cmpBorrador = { partida: u.partida, origen: u.origen, zona: u.zona, zonaId: cmpBorrador.zonaId,
-      nivel: u.nivel, nivelId: u.nivelId || "", zonaSel: "", repetir: u, elemento: "", obs: u.obs || "", fotos: [] };
+      nivel: u.nivel, nivelId: u.nivelId || "", zonaSel: "", elemento: "", obs: u.obs || "", fotos: [],
+      dims: cmpCampos(cmpPartida(u.partida)).reduce((o, k) => { o[k] = u[k]; return o; }, {}) };
     rComputos();
   };
 
@@ -2587,6 +2706,17 @@ function rComputos() {
     };
   });
 
+  $app.querySelectorAll("[data-desp]").forEach((i) => {
+    i.oninput = (e) => {
+      const cod = e.target.dataset.desp;
+      c.desperdicio[cod] = e.target.value;
+      const r = cmpAgrupar(c.lineas).find((x) => x.codigo === cod);
+      const b2 = $app.querySelector('[data-total="' + cod + '"]');
+      if (r && b2) b2.textContent = cmpFmt(cmpRed(r.total * (1 + cmpDespDe(cod) / 100), 2)) + " " + CMP_UNI[r.unidad];
+      guardar();
+    };
+  });
+
   const bz = document.getElementById("cmZip");
   if (bz) bz.onclick = cmpZip;
 
@@ -2599,7 +2729,10 @@ function rComputos() {
       generado_en: new Date().toISOString(),
       resumen: cmpAgrupar(c.lineas).map((r) => ({
         codigo: r.codigo, descripcion: r.descripcion, unidad: r.unidad,
-        cantidad_total: cmpRed(r.total, 2), lineas: r.n, tiene_estimaciones: r.estimada
+        cantidad_neta: cmpRed(r.total, 2),
+        desperdicio_pct: cmpDespDe(r.codigo),
+        cantidad_con_desperdicio: cmpRed(r.total * (1 + cmpDespDe(r.codigo) / 100), 2),
+        lineas: r.n, tiene_estimaciones: r.estimada
       })),
       lineas: c.lineas
     };
