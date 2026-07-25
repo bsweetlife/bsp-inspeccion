@@ -121,7 +121,7 @@
 <script>
 "use strict";
 /* ================= Constantes ================= */
-const VERSION = "3.25";
+const VERSION = "3.26";
 const ATC = ["INSPECCIONADO", "USO RESTRINGIDO", "NO HABITABLE"];
 const ATC_CLS = { "INSPECCIONADO": "v", "USO RESTRINGIDO": "a", "NO HABITABLE": "r" };
 const ATC_CORTO = { "INSPECCIONADO": "INSPECC.", "USO RESTRINGIDO": "USO RESTR.", "NO HABITABLE": "NO HABITABLE" };
@@ -550,11 +550,12 @@ const CMP_COMPUESTAS = [
     etiquetas: { cantidad: "N.° de paños", largo: "Largo del paño (m)", alto: "Alto del paño (m)" },
     magnitud: "Superficie del paño",
     unidad: "m2",
+    caras: true,
     componentes: [
       { partida: "02.03", factor: 1, nota: "Demolición de la pared existente" },
       { partida: "04.01", factor: 1, nota: "Pared nueva de bloque" },
-      { partida: "04.04", factor: 2, nota: "Friso por las dos caras" },
-      { partida: "04.05", factor: 2, alcance: true, nota: "Pintura por las dos caras" }
+      { partida: "04.04", factor: 1, caras: "frisar", nota: "Friso" },
+      { partida: "04.05", factor: 1, caras: "pintar", alcance: true, nota: "Pintura" }
     ]
   },
   {
@@ -564,10 +565,13 @@ const CMP_COMPUESTAS = [
     etiquetas: { cantidad: "N.° de paños", largo: "Largo del paño (m)", alto: "Alto del paño (m)" },
     magnitud: "Superficie del paño",
     unidad: "m2",
+    caras: true,
+    carasFrisarDef: 1,
+    carasPintarDef: 1,
     componentes: [
-      { partida: "02.02", factor: 1, nota: "Demolición del friso dañado" },
-      { partida: "04.04", factor: 1, nota: "Friso nuevo" },
-      { partida: "04.05", factor: 1, alcance: true, nota: "Pintura" }
+      { partida: "02.02", factor: 1, caras: "frisar", nota: "Demolición del friso dañado" },
+      { partida: "04.04", factor: 1, caras: "frisar", nota: "Friso nuevo" },
+      { partida: "04.05", factor: 1, caras: "pintar", alcance: true, nota: "Pintura" }
     ]
   },
   {
@@ -683,10 +687,19 @@ function cmpBaseDe(comp) {
   return cmpBaseCompuesta();
 }
 
+function cmpCarasDe(tipo) {
+  const a = cmpCompuesta(cmpComp.id);
+  if (!a || !a.caras) return 1;
+  if (tipo === "frisar") return cmpComp.carasFrisar || a.carasFrisarDef || 2;
+  if (tipo === "pintar") return cmpComp.carasPintar || a.carasPintarDef || 2;
+  return 1;
+}
+
 function cmpCantidadComponente(comp) {
   const e = cmpComp.comps[comp.partida] || {};
   if (e.alcance === "parcial") return cmpRed(cmpNum(e.cant), 2);
-  return cmpRed(cmpBaseDe(comp) * comp.factor, 2);
+  const caras = comp.caras ? cmpCarasDe(comp.caras) : 1;
+  return cmpRed(cmpBaseDe(comp) * comp.factor * caras, 2);
 }
 let cmpVer = null;
 let cmpModo = "simple";
@@ -2672,7 +2685,7 @@ function cmpPintarCompuesta() {
       <div class="fila" style="align-items:flex-start;gap:8px">
         <button data-inc="${comp.partida}" style="background:none;border:none;font-size:19px;padding:0;cursor:pointer;line-height:1">${inc ? "☑" : "☐"}</button>
         <span style="flex:1;font-size:13px"><b>${comp.partida}</b> ${esc(p.descripcion)}
-          <br /><span class="aviso">${esc(comp.nota || "")}${comp.factor !== 1 ? " · factor ×" + comp.factor : ""}</span></span>
+          <br /><span class="aviso">${esc(comp.nota || "")}${comp.caras ? " · " + cmpCarasDe(comp.caras) + (cmpCarasDe(comp.caras) === 1 ? " cara" : " caras") : (comp.factor !== 1 ? " · factor ×" + comp.factor : "")}</span></span>
         <b class="mono" style="font-size:14px" data-qcomp="${comp.partida}">${inc ? cmpFmt(q) + " " + CMP_UNI[p.unidad] : "—"}</b>
       </div>
       ${inc && comp.alcance ? `
@@ -2702,17 +2715,37 @@ function cmpPintarCompuesta() {
       <span style="opacity:.65">${esc(a.magnitud)}</span>
       <b style="font-size:20px" id="cmBaseVal">${cmpFmt(base)} <span style="font-size:13px;opacity:.75">${CMP_UNI[a.unidad]}</span></b>
     </div>
+    ${a.caras ? `
+    <div class="etiq">Caras a intervenir</div>
+    <div class="grid2" style="margin-bottom:4px">
+      <div>
+        <label style="font-size:13px;font-weight:600;color:var(--gris)">Frisar</label>
+        <div class="pildoras"><button data-caras="frisar|1" class="${cmpCarasDe("frisar") === 1 ? "on" : ""}">1 cara</button><button data-caras="frisar|2" class="${cmpCarasDe("frisar") === 2 ? "on" : ""}">2 caras</button></div>
+      </div>
+      <div>
+        <label style="font-size:13px;font-weight:600;color:var(--gris)">Pintar</label>
+        <div class="pildoras"><button data-caras="pintar|1" class="${cmpCarasDe("pintar") === 1 ? "on" : ""}">1 cara</button><button data-caras="pintar|2" class="${cmpCarasDe("pintar") === 2 ? "on" : ""}">2 caras</button></div>
+      </div>
+    </div>` : ""}
     <div class="etiq">Partidas que se generan (${incl.length})</div>
     ${comps}`;
 
   document.getElementById("cmCompSel").onchange = (e) => {
-    cmpCapturar(); cmpComp = { id: e.target.value, base: {}, comps: {} }; rComputos();
+    cmpCapturar(); cmpComp = { id: e.target.value, base: {}, comps: {}, carasFrisar: 0, carasPintar: 0 }; rComputos();
   };
   cont.querySelectorAll("[data-base]").forEach((i) => {
     i.id = "cmB_" + i.dataset.base;
     i.oninput = (e) => {
       cmpComp.base[e.target.dataset.base] = e.target.value;
       cmpActualizarComp();
+    };
+  });
+  cont.querySelectorAll("[data-caras]").forEach((b) => {
+    b.onclick = () => {
+      const [tipo, n] = b.dataset.caras.split("|");
+      if (tipo === "frisar") cmpComp.carasFrisar = parseInt(n, 10);
+      else cmpComp.carasPintar = parseInt(n, 10);
+      cmpPintarCompuesta();
     };
   });
   if (auxCampo) cmpAuxWire(cont, "cmB_" + auxCampo, (v) => { cmpComp.base[auxCampo] = v; });
@@ -2805,6 +2838,7 @@ function cmpGuardarCompuesta() {
       unidad: p.unidad, parcialFijo: q, parcial: q,
       derivada: true, grupo: gid, compuesta: a.nombre,
       baseMedida: baseTxt + (x.factor !== 1 ? "  ×" + x.factor : "") +
+        (x.caras ? "  ·  " + cmpCarasDe(x.caras) + (cmpCarasDe(x.caras) === 1 ? " cara" : " caras") : "") +
         (e.alcance === "parcial" ? "  ·  alcance parcial declarado" : ""),
       ts: new Date().toISOString(), fotos: []
     };
@@ -2814,7 +2848,7 @@ function cmpGuardarCompuesta() {
 
   cmpBorrador.fotos = [];
   cmpBorrador.elemento = "";
-  cmpComp = { id: cmpComp.id, base: {}, comps: {} };
+  cmpComp = { id: cmpComp.id, base: {}, comps: {}, carasFrisar: 0, carasPintar: 0 };
   guardar();
   rComputos();
 }
@@ -3086,7 +3120,7 @@ function rComputos() {
   const c = cmpDe(st.insp);
   const b = st.insp.edificio;
   if (!cmpBorrador.partida) cmpBorrador.partida = CMP_CAT[0].codigo;
-  if (!cmpComp.id) cmpComp = { id: CMP_COMPUESTAS[0].id, base: {}, comps: {} };
+  if (!cmpComp.id) cmpComp = { id: CMP_COMPUESTAS[0].id, base: {}, comps: {}, carasFrisar: 0, carasPintar: 0 };
 
   let grupo = "", opts = "";
   for (const p of CMP_CAT) {
@@ -3208,7 +3242,7 @@ function rComputos() {
     btn.onclick = () => { cmpCapturar(); cmpModo = "simple"; cmpBorrador.partida = btn.dataset.sug; rComputos(); };
   });
   $app.querySelectorAll("[data-sugc]").forEach((btn) => {
-    btn.onclick = () => { cmpCapturar(); cmpModo = "compuesta"; cmpComp = { id: btn.dataset.sugc, base: {}, comps: {} }; rComputos(); };
+    btn.onclick = () => { cmpCapturar(); cmpModo = "compuesta"; cmpComp = { id: btn.dataset.sugc, base: {}, comps: {}, carasFrisar: 0, carasPintar: 0 }; rComputos(); };
   });
   $app.querySelectorAll("[data-ver]").forEach((btn) => {
     btn.onclick = () => { cmpCapturar(); cmpVer = cmpVer === btn.dataset.ver ? null : btn.dataset.ver; rComputos(); };
