@@ -121,7 +121,7 @@
 <script>
 "use strict";
 /* ================= Constantes ================= */
-const VERSION = "3.22";
+const VERSION = "3.23";
 const ATC = ["INSPECCIONADO", "USO RESTRINGIDO", "NO HABITABLE"];
 const ATC_CLS = { "INSPECCIONADO": "v", "USO RESTRINGIDO": "a", "NO HABITABLE": "r" };
 const ATC_CORTO = { "INSPECCIONADO": "INSPECC.", "USO RESTRINGIDO": "USO RESTR.", "NO HABITABLE": "NO HABITABLE" };
@@ -407,6 +407,7 @@ const CMP_CAT = [
   ["02.04", "02 Demoliciones", "Picado y saneamiento de concreto deteriorado", "m2", "Área saneada hasta concreto sano, medida después del picado."],
   ["02.05", "02 Demoliciones", "Remoción de revestimiento desprendido o inestable", "m2", "Área efectivamente removida."],
   ["02.06", "02 Demoliciones", "Demolición de recubrimiento en losa", "m2", "Área en planta."],
+  ["02.07", "02 Demoliciones", "Demolición de cielo raso suspendido, láminas y perfilería", "m2", "Área en planta del cielo raso retirado."],
   ["03.01", "03 Reparación estructural", "Limpieza y tratamiento anticorrosivo de cabillas expuestas", "m2", "Superficie desarrollada de la cabilla tratada."],
   ["03.02", "03 Reparación estructural", "Suministro y colocación de cabillas de refuerzo", "kg", "Barras por longitud por peso teórico según diámetro."],
   ["03.03", "03 Reparación estructural", "Inyección de grietas con resina epóxica", "m", "Longitud real de la grieta inyectada."],
@@ -425,6 +426,7 @@ const CMP_CAT = [
   ["04.06", "04 Mampostería y acabados", "Reposición de revestimiento cerámico en paredes", "m2", "Largo o perímetro desarrollado del paño por su altura."],
   ["04.07", "04 Mampostería y acabados", "Reposición de revestimiento cerámico en pisos", "m2", "Área en planta."],
   ["04.08", "04 Mampostería y acabados", "Anclaje de paredes no estructurales a la estructura", "m", "Longitud de encuentro pared-estructura tratado."],
+  ["04.09", "04 Mampostería y acabados", "Suministro y colocación de cielo raso suspendido", "m2", "Área en planta. El tipo de lámina se declara en la observación."],
   ["05.01", "05 Impermeabilización e instalaciones", "Impermeabilización de losa de azotea", "m2", "Área en planta más medias cañas y remates."],
   ["05.02", "05 Impermeabilización e instalaciones", "Reparación de juntas de dilatación", "m", "Longitud de junta intervenida."],
   ["05.03", "05 Impermeabilización e instalaciones", "Desincorporación de tanque elevado", "und", "Se computa por tanque. No incluye el sistema sustituto."],
@@ -2364,7 +2366,8 @@ const CMP_DESP = {
   "03.01": 0, "03.02": 7, "03.03": 10, "03.04": 8, "03.05": 10,
   "03.06": 5, "03.07": 5, "03.08": 8, "03.09": 3, "03.10": 5,
   "04.01": 5, "04.02": 8, "04.03": 8, "04.04": 8, "04.05": 5,
-  "04.06": 10, "04.07": 10, "04.08": 5,
+  "04.06": 10, "04.07": 10, "04.08": 5, "04.09": 8,
+  "02.07": 0,
   "05.01": 8, "05.02": 5, "05.03": 0, "05.04": 5
 };
 
