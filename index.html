@@ -121,7 +121,7 @@
 <script>
 "use strict";
 /* ================= Constantes ================= */
-const VERSION = "3.21";
+const VERSION = "3.22";
 const ATC = ["INSPECCIONADO", "USO RESTRINGIDO", "NO HABITABLE"];
 const ATC_CLS = { "INSPECCIONADO": "v", "USO RESTRINGIDO": "a", "NO HABITABLE": "r" };
 const ATC_CORTO = { "INSPECCIONADO": "INSPECC.", "USO RESTRINGIDO": "USO RESTR.", "NO HABITABLE": "NO HABITABLE" };
@@ -2591,7 +2591,7 @@ function cmpPintarCompuesta() {
         <button data-inc="${comp.partida}" style="background:none;border:none;font-size:19px;padding:0;cursor:pointer;line-height:1">${inc ? "☑" : "☐"}</button>
         <span style="flex:1;font-size:13px"><b>${comp.partida}</b> ${esc(p.descripcion)}
           <br /><span class="aviso">${esc(comp.nota || "")}${comp.factor !== 1 ? " · factor ×" + comp.factor : ""}</span></span>
-        <b class="mono" style="font-size:14px">${inc ? cmpFmt(q) + " " + CMP_UNI[p.unidad] : "—"}</b>
+        <b class="mono" style="font-size:14px" data-qcomp="${comp.partida}">${inc ? cmpFmt(q) + " " + CMP_UNI[p.unidad] : "—"}</b>
       </div>
       ${inc && comp.alcance ? `
         <div class="pildoras" style="margin-top:8px">
@@ -2618,7 +2618,7 @@ function cmpPintarCompuesta() {
     <div style="background:var(--ink);color:#fff;border-radius:10px;padding:11px 13px;display:flex;
       align-items:baseline;justify-content:space-between;gap:12px;margin-bottom:12px;font-variant-numeric:tabular-nums">
       <span style="opacity:.65">${esc(a.magnitud)}</span>
-      <b style="font-size:20px">${cmpFmt(base)} <span style="font-size:13px;opacity:.75">${CMP_UNI[a.unidad]}</span></b>
+      <b style="font-size:20px" id="cmBaseVal">${cmpFmt(base)} <span style="font-size:13px;opacity:.75">${CMP_UNI[a.unidad]}</span></b>
     </div>
     <div class="etiq">Partidas que se generan (${incl.length})</div>
     ${comps}`;
@@ -2628,7 +2628,10 @@ function cmpPintarCompuesta() {
   };
   cont.querySelectorAll("[data-base]").forEach((i) => {
     i.id = "cmB_" + i.dataset.base;
-    i.oninput = (e) => { cmpComp.base[e.target.dataset.base] = e.target.value; cmpPintarCompuesta(); };
+    i.oninput = (e) => {
+      cmpComp.base[e.target.dataset.base] = e.target.value;
+      cmpActualizarComp();
+    };
   });
   if (auxCampo) cmpAuxWire(cont, "cmB_" + auxCampo, (v) => { cmpComp.base[auxCampo] = v; });
   cont.querySelectorAll("[data-inc]").forEach((btn) => {
@@ -2658,6 +2661,21 @@ function cmpPintarCompuesta() {
       if (b) b.textContent = cmpFmt(cmpCantidadComponente(comp)) + " " + CMP_UNI[p.unidad];
     };
   });
+}
+
+function cmpActualizarComp() {
+  const a = cmpCompuesta(cmpComp.id);
+  if (!a) return;
+  const base = cmpBaseCompuesta();
+  const bv = document.getElementById("cmBaseVal");
+  if (bv) bv.innerHTML = cmpFmt(base) + ' <span style="font-size:13px;opacity:.75">' + CMP_UNI[a.unidad] + "</span>";
+  for (const comp of a.componentes) {
+    const inc = (cmpComp.comps[comp.partida] || {}).incluir !== false;
+    const b = document.querySelector('[data-qcomp="' + comp.partida + '"]');
+    if (!b) continue;
+    const p = cmpPartida(comp.partida);
+    b.textContent = inc ? cmpFmt(cmpCantidadComponente(comp)) + " " + CMP_UNI[p.unidad] : "—";
+  }
 }
 
 function cmpGuardarCompuesta() {
