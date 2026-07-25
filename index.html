@@ -121,7 +121,7 @@
 <script>
 "use strict";
 /* ================= Constantes ================= */
-const VERSION = "3.23";
+const VERSION = "3.25";
 const ATC = ["INSPECCIONADO", "USO RESTRINGIDO", "NO HABITABLE"];
 const ATC_CLS = { "INSPECCIONADO": "v", "USO RESTRINGIDO": "a", "NO HABITABLE": "r" };
 const ATC_CORTO = { "INSPECCIONADO": "INSPECC.", "USO RESTRINGIDO": "USO RESTR.", "NO HABITABLE": "NO HABITABLE" };
@@ -518,8 +518,8 @@ let cmpBorrador = { origen: "sitio", fotos: [] };
    Se ofrecen, nunca se imponen. */
 const CMP_SUGER = {
   "Mampostería menor": { partidas: ["04.02", "04.04", "04.05"], compuestas: ["friso"] },
-  "Mampostería mayor": { partidas: ["02.02", "02.03", "04.01", "04.04", "04.05"], compuestas: ["pared", "friso"] },
-  "Daño estructural": { partidas: ["02.01", "02.04", "03.01", "03.02", "03.03", "03.05", "04.03", "04.05"], compuestas: ["columna"] },
+  "Mampostería mayor": { partidas: ["02.02", "02.03", "04.01", "04.04", "04.05"], compuestas: ["pared", "friso", "grieta"] },
+  "Daño estructural": { partidas: ["02.01", "02.04", "03.01", "03.02", "03.03", "03.05", "04.03", "04.05"], compuestas: ["columna", "viga", "encamisado"] },
   "Preexistente no sísmico": { partidas: ["04.04", "04.05", "05.01", "05.02"], compuestas: [] }
 };
 
@@ -569,6 +569,67 @@ const CMP_COMPUESTAS = [
       { partida: "04.04", factor: 1, nota: "Friso nuevo" },
       { partida: "04.05", factor: 1, alcance: true, nota: "Pintura" }
     ]
+  },
+  {
+    id: "viga",
+    nombre: "Reparación de viga con cabillas expuestas",
+    campos: ["cantidad", "largo", "ancho"],
+    etiquetas: { cantidad: "N.° de vigas", largo: "Longitud a reparar (m)", ancho: "Perímetro de sección (m)" },
+    magnitud: "Superficie desarrollada",
+    unidad: "m2",
+    nota: "Las cabillas nuevas se computan aparte, en kg, con la partida 03.02.",
+    componentes: [
+      { partida: "02.01", factor: 1, nota: "Demolición del friso en el tramo a reparar" },
+      { partida: "02.04", factor: 1, nota: "Picado hasta concreto sano" },
+      { partida: "03.01", factor: 1, nota: "Limpieza y anticorrosivo en las cabillas" },
+      { partida: "03.05", factor: 1, nota: "Mortero de reparación" },
+      { partida: "04.03", factor: 1, nota: "Friso nuevo sobre el elemento" },
+      { partida: "04.05", factor: 1, alcance: true, nota: "Pintura" }
+    ]
+  },
+  {
+    id: "encamisado",
+    nombre: "Encamisado de columna en concreto armado",
+    campos: ["cantidad", "largo", "ancho"],
+    etiquetas: { cantidad: "N.° de columnas", largo: "Longitud a encamisar (m)", ancho: "Perímetro de sección (m)" },
+    magnitud: "Superficie desarrollada",
+    unidad: "m2",
+    nota: "El encamisado se computa en metros con la partida 03.06 sobre la longitud. El acero de refuerzo del encamisado va aparte, en kg, con la 03.02.",
+    componentes: [
+      { partida: "02.01", factor: 1, nota: "Demolición del friso existente" },
+      { partida: "02.04", factor: 1, nota: "Picado y preparación de la superficie" },
+      { partida: "03.08", factor: 1, nota: "Puente de adherencia concreto nuevo-existente" },
+      { partida: "04.03", factor: 1, nota: "Acabado sobre el encamisado" },
+      { partida: "04.05", factor: 1, alcance: true, nota: "Pintura" }
+    ]
+  },
+  {
+    id: "cieloraso",
+    nombre: "Reposición de cielo raso suspendido",
+    campos: ["cantidad", "largo", "ancho"],
+    etiquetas: { cantidad: "N.° de paños", largo: "Largo en planta (m)", ancho: "Ancho en planta (m)" },
+    magnitud: "Área en planta",
+    unidad: "m2",
+    nota: "Si repone menos de lo que demuele, declare el alcance en la partida de reposición.",
+    componentes: [
+      { partida: "02.07", factor: 1, nota: "Demolición del cielo raso existente" },
+      { partida: "04.09", factor: 1, alcance: true, nota: "Cielo raso nuevo" }
+    ]
+  },
+  {
+    id: "grieta",
+    nombre: "Tratamiento de grieta en pared",
+    campos: ["cantidad", "largo", "ancho"],
+    etiquetas: { cantidad: "N.° de grietas", largo: "Longitud de la grieta (m)", ancho: "Ancho de banda a resanar (m)" },
+    magnitud: "Longitud de grieta",
+    unidad: "m",
+    baseCampo: "largo",
+    nota: "El sellado se computa por la longitud de la grieta. El friso y la pintura se computan por la banda resanada: longitud por ancho de banda.",
+    componentes: [
+      { partida: "04.02", factor: 1, base: "largo", nota: "Sellado de la grieta, por su longitud" },
+      { partida: "04.04", factor: 1, base: "area", nota: "Friso de la banda: longitud por ancho" },
+      { partida: "04.05", factor: 1, base: "area", alcance: true, nota: "Pintura de la banda" }
+    ]
   }
 ];
 
@@ -599,15 +660,33 @@ function cmpSugerencias() {
 function cmpBaseCompuesta() {
   const a = cmpCompuesta(cmpComp.id);
   if (!a) return 0;
+  // La magnitud principal que se muestra en el recuadro. Si la compuesta
+  // declara baseCampo, esa es la magnitud rectora (p. ej. la longitud de la
+  // grieta); si no, se multiplican todos los campos dimensionales.
+  if (a.baseCampo) return cmpRed(cmpNum(cmpComp.base.cantidad, 1) * cmpNum(cmpComp.base[a.baseCampo]));
   let v = cmpNum(cmpComp.base.cantidad, 1);
   for (const c of a.campos) { if (c === "cantidad") continue; v *= cmpNum(cmpComp.base[c]); }
   return cmpRed(v);
 }
 
+// Cantidad de un componente, respetando que use la magnitud rectora ("largo"),
+// el área completa ("area") o, por defecto, la base general de la compuesta.
+function cmpBaseDe(comp) {
+  const a = cmpCompuesta(cmpComp.id);
+  const n = cmpNum(cmpComp.base.cantidad, 1);
+  if (comp.base === "largo") return cmpRed(n * cmpNum(cmpComp.base.largo));
+  if (comp.base === "area") {
+    let v = n;
+    for (const c of a.campos) { if (c === "cantidad") continue; v *= cmpNum(cmpComp.base[c]); }
+    return cmpRed(v);
+  }
+  return cmpBaseCompuesta();
+}
+
 function cmpCantidadComponente(comp) {
   const e = cmpComp.comps[comp.partida] || {};
   if (e.alcance === "parcial") return cmpRed(cmpNum(e.cant), 2);
-  return cmpRed(cmpBaseCompuesta() * comp.factor, 2);
+  return cmpRed(cmpBaseDe(comp) * comp.factor, 2);
 }
 let cmpVer = null;
 let cmpModo = "simple";
@@ -2578,7 +2657,7 @@ function cmpPintarCompuesta() {
   if (!a) return;
   const base = cmpBaseCompuesta();
 
-  const auxCampo = a.id === "columna" ? "ancho" : "";
+  const auxCampo = (a.id === "columna" || a.id === "viga" || a.id === "encamisado") ? "ancho" : "";
   const dims = a.campos.map((cc) => `<label class="campo"><span>${esc(a.etiquetas[cc] || CMP_TXT[cc])}</span>
     <input data-base="${cc}" inputmode="decimal" style="text-align:right;font-weight:600"
       value="${esc(cmpComp.base[cc] == null ? (cc === "cantidad" ? "1" : "") : cmpComp.base[cc])}"
