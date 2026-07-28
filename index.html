@@ -121,7 +121,7 @@
 <script>
 "use strict";
 /* ================= Constantes ================= */
-const VERSION = "3.26";
+const VERSION = "3.27";
 const ATC = ["INSPECCIONADO", "USO RESTRINGIDO", "NO HABITABLE"];
 const ATC_CLS = { "INSPECCIONADO": "v", "USO RESTRINGIDO": "a", "NO HABITABLE": "r" };
 const ATC_CORTO = { "INSPECCIONADO": "INSPECC.", "USO RESTRINGIDO": "USO RESTR.", "NO HABITABLE": "NO HABITABLE" };
@@ -2009,7 +2009,7 @@ function rExport() {
     <button class="btn btn-negro" id="bCopiar">Copiar texto para Claude</button>
     <button class="btn btn-linea" id="bPdf" style="margin-top:8px">📄 Resumen PDF de campo (WhatsApp / correo)</button>
     <div class="grid2" style="margin-top:8px">
-      <button class="btn btn-ambar" id="bShareStar">★ Compartir fotos del informe (${starred.length})</button>
+      <button class="btn btn-ambar" id="bShareStar">★ ZIP fotos del informe (${starred.length})</button>
       <button class="btn btn-linea" id="bZip">💾 ZIP completo (${idx.length} fotos)</button>
     </div>
     <p class="aviso" id="msgExp"></p>
@@ -2206,17 +2206,20 @@ function rExport() {
   };
   document.getElementById("bShareStar").onclick = async () => {
     if (!starred.length) return msg("No hay fotos marcadas con ★ todavía.");
-    if (!navigator.canShare) return msg("Este navegador no permite compartir archivos; usa el ZIP.");
-    const lote = 10;
-    for (let i = 0; i < starred.length; i += lote) {
-      const files = [];
-      for (const f of starred.slice(i, i + lote)) {
-        const b = await sellar(f);
-        if (b) files.push(new File([b], nombreFoto(f), { type: "image/jpeg" }));
-      }
-      try { await navigator.share({ files }); } catch (e) { break; }
+    msg("Armando ZIP de fotos del informe…");
+    const zip = new JSZip();
+    for (const f of starred) {
+      const b = await sellar(f);
+      if (b) zip.file(nombreFoto(f), b);
     }
-    msg("Listo. Si son más de 10, se comparten por tandas.");
+    const blob = await zip.generateAsync({ type: "blob" });
+    const file = new File([blob], `BSP-2026-${st.insp.edificio.informe || "X"}_fotos_informe.zip`, { type: "application/zip" });
+    if (navigator.canShare && navigator.canShare({ files: [file] })) {
+      try { await navigator.share({ files: [file] }); msg("ZIP de fotos del informe compartido."); return; } catch (e) {}
+    }
+    const a = document.createElement("a");
+    a.href = URL.createObjectURL(blob); a.download = file.name; a.click();
+    msg(`ZIP con ${starred.length} fotos del informe descargado.`);
   };
   document.getElementById("bZip").onclick = async () => {
     msg("Armando ZIP…");
