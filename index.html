@@ -121,8 +121,9 @@
 <script>
 "use strict";
 /* ================= Constantes ================= */
-const VERSION = "3.33";
+const VERSION = "3.34";
 const CHANGELOG = [
+  ["3.34", "Editar y corregir una línea simple ya guardada: cambiar la partida, las medidas, la observación o la ubicación sin borrarla ni perder su foto."],
   ["3.33", "En tratamiento de grietas, opción de sumar varios tramos de distinta longitud en una sola línea."],
   ["3.32", "La observación ya no se queda pegada al guardar una línea, con botón para reutilizar la anterior. Nuevas partidas 04.10 y 04.11: reemplazo de rodapié pintado y de material."],
   ["3.31", "Replicar una línea de cómputo a varios niveles a la vez, por ejemplo una junta de dilatación dañada piso por piso."],
@@ -823,6 +824,7 @@ function cmpCantidadComponente(comp) {
   return cmpRed(cmpBaseDe(comp) * comp.factor * caras, 2);
 }
 let cmpVer = null;
+let cmpEditId = null;
 let cmpModo = "simple";
 let cmpComp = { id: "", base: {}, comps: {} };
 function cmpDescartar() {
@@ -2522,6 +2524,7 @@ function cmpDetalleLinea(l) {
         <img data-foto="${f.id}" alt="Fotografía de respaldo" style="background:var(--borde);min-height:60px" />
         <div class="cuerpo"><p class="aviso" style="margin:0">${esc(f.pie || "")}</p></div>
       </div>`).join("") : `<p class="aviso" style="margin:0">Esta línea no tiene fotografías de respaldo.</p>`}
+    ${!l.derivada ? `<button class="btn btn-linea" style="width:auto;padding:6px 11px;font-size:12px;margin:0 6px 6px 0" data-editln="${l.id}">✎ Editar / corregir</button>` : `<p class="aviso" style="margin:6px 0 0;font-style:italic">La edición de partidas compuestas llegará en una próxima versión.</p>`}
     ${cmpReplicarUI(l)}
   </div>`;
 }
@@ -2799,6 +2802,33 @@ function cmpLeer() {
   if (cmpBorrador.fijo) l.parcialFijo = cmpBorrador.fijo.valor;
   if (cmpBorrador.medicion) l.medicion = cmpBorrador.medicion;
   return l;
+}
+
+function cmpEditarLinea(id) {
+  const c = cmpDe(st.insp);
+  const l = c.lineas.find((x) => x.id === id);
+  if (!l || l.derivada) return;
+  const p = cmpPartida(l.partida);
+  cmpModo = "simple";
+  cmpEditId = id;
+  cmpVer = null;
+  cmpBorrador = {
+    origen: l.origen || "sitio",
+    partida: l.partida,
+    zona: l.zona || "",
+    nivel: l.nivel || "",
+    nivelId: l.nivelId || "",
+    zonaSel: "__otro",
+    elemento: l.elemento || "",
+    obs: l.obs || "",
+    dims: {},
+    fotos: (l.fotos || []).map((f) => ({ id: f.id, ts: l.ts, pie: f.pie }))
+  };
+  for (const cc of cmpCampos(p)) cmpBorrador.dims[cc] = l[cc] != null ? l[cc] : "";
+  if (l.parcialFijo != null) cmpBorrador.fijo = { valor: l.parcialFijo, unidad: l.unidad };
+  if (l.medicion) cmpBorrador.medicion = l.medicion;
+  rComputos();
+  window.scrollTo(0, 0);
 }
 
 function cmpCinta() {
@@ -3422,10 +3452,10 @@ function rComputos() {
     </div>
 
     <div class="tarjeta">
-      <div class="pildoras" id="cmModo" style="margin-bottom:12px">
+      ${cmpEditId ? "" : `<div class="pildoras" id="cmModo" style="margin-bottom:12px">
         <button data-modo="simple" class="${simple ? "on" : ""}">Línea simple</button>
         <button data-modo="compuesta" class="${simple ? "" : "on"}">⊞ Partida compuesta</button>
-      </div>
+      </div>`}
       <div id="cmUbic"></div>
       ${sugHtml}
       <label class="campo"><span>Elemento</span><input id="cmElem" value="${esc(cmpBorrador.elemento || "")}" placeholder="Columna C-4" /></label>
@@ -3456,10 +3486,15 @@ function rComputos() {
       <div id="cmFotos"></div>
       <button class="btn btn-linea" id="cmMedir" style="margin-top:8px">📐 Medir sobre la foto</button>
       <p class="error" id="cmErr"></p>
-      ${simple ? `<div class="grid2">
+      ${simple ? (cmpEditId ? `<div class="tarjeta" style="background:var(--ambar-bg);border-color:var(--ambar);padding:8px 11px;margin-bottom:8px">
+        <span class="aviso" style="color:var(--ambar-tx)">Editando una línea guardada. Los cambios reemplazan la original.</span></div>
+      <div class="grid2">
+        <button class="btn btn-negro" id="cmGuardar">Guardar cambios</button>
+        <button class="btn btn-linea" id="cmEditCancel">Cancelar</button>
+      </div>` : `<div class="grid2">
         <button class="btn btn-negro" id="cmGuardar">Guardar línea</button>
         <button class="btn btn-linea" id="cmRepetir" ${c.lineas.length ? "" : "disabled"}>Repetir última</button>
-      </div>` : `<button class="btn btn-negro" id="cmGuardarComp">Guardar partidas generadas</button>`}
+      </div>`) : `<button class="btn btn-negro" id="cmGuardarComp">Guardar partidas generadas</button>`}
     </div>
 
     <div class="etiq">Resumen por partida</div>
@@ -3552,13 +3587,22 @@ function rComputos() {
       box.scrollIntoView({ behavior: "smooth", block: "center" });
       return;
     }
-    l.id = uid();
     l.unidad = p.unidad;
     l.factor = p.unidad === "kg" ? (CMP_CABILLA[l.diametro] || 1) : 1;
     l.parcial = cmpParcial(l, p);
-    l.ts = new Date().toISOString();
-    l.fotos = cmpBorrador.fotos.map((f) => ({ id: f.id, pie: cmpPie(l, p, f.ts) }));
-    c.lineas.push(l);
+    if (cmpEditId) {
+      const ied = c.lineas.findIndex((x) => x.id === cmpEditId);
+      l.id = cmpEditId;
+      l.ts = ied >= 0 ? c.lineas[ied].ts : new Date().toISOString();
+      l.fotos = (cmpBorrador.fotos || []).map((f) => ({ id: f.id, pie: cmpPie(l, p, f.ts || l.ts) }));
+      if (ied >= 0) c.lineas[ied] = l; else c.lineas.push(l);
+      cmpEditId = null;
+    } else {
+      l.id = uid();
+      l.ts = new Date().toISOString();
+      l.fotos = cmpBorrador.fotos.map((f) => ({ id: f.id, pie: cmpPie(l, p, f.ts) }));
+      c.lineas.push(l);
+    }
     cmpUltObs = l.obs || cmpUltObs;
     cmpBorrador.fotos = [];
     cmpBorrador.elemento = "";
@@ -3596,6 +3640,9 @@ function rComputos() {
     };
   });
 
+  $app.querySelectorAll("[data-editln]").forEach((b) => (b.onclick = () => cmpEditarLinea(b.dataset.editln)));
+  const bEditCancel = document.getElementById("cmEditCancel");
+  if (bEditCancel) bEditCancel.onclick = () => { cmpEditId = null; cmpBorrador = { origen: "sitio", fotos: [] }; rComputos(); window.scrollTo(0, 0); };
   $app.querySelectorAll("[data-repltoggle]").forEach((b) => (b.onclick = () => {
     const box = document.getElementById("repl_" + b.dataset.repltoggle);
     if (box) box.style.display = box.style.display === "none" ? "block" : "none";
