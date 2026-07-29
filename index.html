@@ -121,8 +121,9 @@
 <script>
 "use strict";
 /* ================= Constantes ================= */
-const VERSION = "3.30";
+const VERSION = "3.31";
 const CHANGELOG = [
+  ["3.31", "Replicar una línea de cómputo a varios niveles a la vez, por ejemplo una junta de dilatación dañada piso por piso."],
   ["3.30", "Cálculo automático del acarreo de escombros: volumen suelto y viajes de volqueta a partir de las demoliciones."],
   ["3.29", "Nueva partida 02.08, demolición de revestimiento cerámico en pisos."],
   ["3.28", "Compuestas de pared perimetral con cara de fachada y marca D/R en las fotos exportadas."],
@@ -2506,7 +2507,52 @@ function cmpDetalleLinea(l) {
         <img data-foto="${f.id}" alt="Fotografía de respaldo" style="background:var(--borde);min-height:60px" />
         <div class="cuerpo"><p class="aviso" style="margin:0">${esc(f.pie || "")}</p></div>
       </div>`).join("") : `<p class="aviso" style="margin:0">Esta línea no tiene fotografías de respaldo.</p>`}
+    ${cmpReplicarUI(l)}
   </div>`;
+}
+
+/* Panel para copiar una linea (o toda una compuesta) a otros niveles. */
+function cmpReplicarUI(l) {
+  const niveles = (st.insp.niveles || []).filter((n) => n.id && n.id !== l.nivelId);
+  if (!niveles.length) return "";
+  return `<div style="margin-top:6px">
+    <button class="btn btn-gris" style="width:auto;padding:6px 10px;font-size:12px" data-repltoggle="${l.id}">⧉ Replicar a otros niveles</button>
+    <div id="repl_${l.id}" style="display:none;margin-top:8px">
+      <p class="aviso" style="margin:0 0 6px">Copia esta línea (misma partida y cantidad, sin fotos) a los niveles que marques. En los pisos donde no aplique, luego la eliminas.</p>
+      <div style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:8px">
+        ${niveles.map((n) => `<label style="display:inline-flex;align-items:center;gap:5px;font-size:13px;border:1px solid var(--borde);border-radius:8px;padding:5px 9px">
+          <input type="checkbox" data-replniv="${l.id}" value="${esc(n.id)}" style="min-height:0;width:auto" /> ${esc(n.nombre)}</label>`).join("")}
+      </div>
+      <button class="btn btn-gris" style="width:auto;padding:5px 10px;font-size:12px;margin-right:6px" data-replall="${l.id}">Marcar todos</button>
+      <button class="btn btn-negro" style="width:auto;padding:6px 12px;font-size:13px" data-replgo="${l.id}">Replicar</button>
+    </div>
+  </div>`;
+}
+function cmpReplicar(l, nivelIds) {
+  const c = cmpDe(st.insp);
+  const niveles = st.insp.niveles || [];
+  const nombreDe = (nid) => { const nv = niveles.find((x) => x.id === nid); return nv ? nv.nombre : ""; };
+  let n = 0;
+  if (l.derivada && l.grupo) {
+    const grupo = c.lineas.filter((x) => x.grupo === l.grupo);
+    for (const nid of nivelIds) {
+      const gid = uid();
+      for (const g of grupo) {
+        const cl = Object.assign({}, g, { id: uid(), grupo: gid, nivelId: nid, nivel: nombreDe(nid) || g.nivel, zonaId: "", fotos: [], ts: new Date().toISOString() });
+        c.lineas.push(cl);
+      }
+      n++;
+    }
+  } else {
+    for (const nid of nivelIds) {
+      const cl = Object.assign({}, l, { id: uid(), nivelId: nid, nivel: nombreDe(nid) || l.nivel, zonaId: "", fotos: [], ts: new Date().toISOString() });
+      c.lineas.push(cl);
+      n++;
+    }
+  }
+  guardar();
+  rComputos();
+  return n;
 }
 
 async function cmpCargarFotos() {
@@ -3485,6 +3531,23 @@ function rComputos() {
       rComputos();
     };
   });
+
+  $app.querySelectorAll("[data-repltoggle]").forEach((b) => (b.onclick = () => {
+    const box = document.getElementById("repl_" + b.dataset.repltoggle);
+    if (box) box.style.display = box.style.display === "none" ? "block" : "none";
+  }));
+  $app.querySelectorAll("[data-replall]").forEach((b) => (b.onclick = () => {
+    $app.querySelectorAll('[data-replniv="' + b.dataset.replall + '"]').forEach((cb) => (cb.checked = true));
+  }));
+  $app.querySelectorAll("[data-replgo]").forEach((b) => (b.onclick = () => {
+    const id = b.dataset.replgo;
+    const l = c.lineas.find((x) => x.id === id);
+    if (!l) return;
+    const ids = Array.from($app.querySelectorAll('[data-replniv="' + id + '"]')).filter((cb) => cb.checked).map((cb) => cb.value);
+    if (!ids.length) { alert("Marca al menos un nivel."); return; }
+    const nn = cmpReplicar(l, ids);
+    alert(nn + (nn === 1 ? " nivel replicado." : " niveles replicados."));
+  }));
 
   $app.querySelectorAll("[data-desp]").forEach((i) => {
     i.oninput = (e) => {
