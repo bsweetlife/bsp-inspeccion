@@ -121,8 +121,9 @@
 <script>
 "use strict";
 /* ================= Constantes ================= */
-const VERSION = "3.35";
+const VERSION = "3.36";
 const CHANGELOG = [
+  ["3.36", "Cada foto guarda las coordenadas y la altitud del GPS (aproximada) para ubicar el piso si se pierde la referencia. Las coordenadas del edificio ahora incluyen la elevación."],
   ["3.35", "La opción solo lo intervenido está en todos los componentes de área y longitud, y permite calcular el área como ancho por alto y sumar varias áreas o tramos."],
   ["3.34", "Editar y corregir una línea simple ya guardada: cambiar la partida, las medidas, la observación o la ubicación sin borrarla ni perder su foto."],
   ["3.33", "En tratamiento de grietas, opción de sumar varios tramos de distinta longitud en una sola línea."],
@@ -838,6 +839,43 @@ let cmpVer = null;
 let cmpEditId = null;
 let cmpModo = "simple";
 let cmpComp = { id: "", base: {}, comps: {} };
+let _geoUlt = null;
+function geoCapturar() {
+  return new Promise((resolve) => {
+    if (!navigator.geolocation) return resolve(null);
+    navigator.geolocation.getCurrentPosition(
+      (pos) => {
+        const c = pos.coords;
+        _geoUlt = {
+          lat: c.latitude, lon: c.longitude, acc: c.accuracy,
+          alt: (c.altitude != null ? c.altitude : null),
+          altAcc: (c.altitudeAccuracy != null ? c.altitudeAccuracy : null),
+          ts: new Date().toISOString()
+        };
+        resolve(_geoUlt);
+      },
+      () => resolve(_geoUlt),
+      { enableHighAccuracy: true, timeout: 8000, maximumAge: 30000 }
+    );
+  });
+}
+function geoTxt(g) {
+  if (!g) return "";
+  let t = g.lat.toFixed(6) + ", " + g.lon.toFixed(6);
+  if (g.alt != null) t += " · alt " + Math.round(g.alt) + " m aprox.";
+  t += " · ±" + Math.round(g.acc) + " m";
+  return t;
+}
+function geoAdjuntar(foto, refrescar) {
+  if (_geoUlt) foto.geo = _geoUlt;
+  geoCapturar().then((g) => {
+    if (!g) return;
+    foto.geo = g;
+    guardar();
+    const ae = document.activeElement;
+    if (refrescar && !(ae && (ae.tagName === "TEXTAREA" || ae.tagName === "INPUT"))) refrescar();
+  });
+}
 function cmpDescartar() {
   if (cmpBorrador.fotos && cmpBorrador.fotos.length) {
     if (!confirm("Hay fotos adjuntas a una línea que no ha guardado. ¿Salir y descartarlas?")) return false;
@@ -1106,7 +1144,7 @@ function rSetup() {
       <div class="fila">
         <div style="flex:1">
           <div class="etiq" style="margin:0">Ubicación GPS</div>
-          <p class="aviso" style="margin:2px 0 0" id="gpsTxt">${b.gps ? `${b.gps.lat.toFixed(6)}, ${b.gps.lon.toFixed(6)} (±${Math.round(b.gps.acc)} m)` : "Sin capturar"}</p>
+          <p class="aviso" style="margin:2px 0 0" id="gpsTxt">${b.gps ? `${b.gps.lat.toFixed(6)}, ${b.gps.lon.toFixed(6)} (±${Math.round(b.gps.acc)} m)${b.gps.alt != null ? ` · alt ${Math.round(b.gps.alt)} m aprox.` : ""}` : "Sin capturar"}</p>
         </div>
         <button class="btn btn-linea" style="flex:0 0 auto;width:auto;padding:9px 12px;font-size:13px" id="bGps">📍 Capturar</button>
       </div>
@@ -1179,8 +1217,10 @@ function rSetup() {
     t.textContent = "Obteniendo posición…";
     navigator.geolocation.getCurrentPosition(
       (pos) => {
-        b.gps = { lat: pos.coords.latitude, lon: pos.coords.longitude, acc: pos.coords.accuracy };
-        t.textContent = `${b.gps.lat.toFixed(6)}, ${b.gps.lon.toFixed(6)} (±${Math.round(b.gps.acc)} m)`;
+        b.gps = { lat: pos.coords.latitude, lon: pos.coords.longitude, acc: pos.coords.accuracy,
+          alt: (pos.coords.altitude != null ? pos.coords.altitude : null),
+          altAcc: (pos.coords.altitudeAccuracy != null ? pos.coords.altitudeAccuracy : null) };
+        t.textContent = `${b.gps.lat.toFixed(6)}, ${b.gps.lon.toFixed(6)} (±${Math.round(b.gps.acc)} m)` + (b.gps.alt != null ? ` · alt ${Math.round(b.gps.alt)} m aprox.` : "");
         guardar();
       },
       (err) => { t.textContent = "No se pudo obtener (" + err.message + "). Revisa permisos de ubicación."; },
@@ -1707,6 +1747,7 @@ function rUnidad() {
           <button class="btn-gris" style="width:auto;padding:5px 9px;border-radius:8px;font-size:12px;${f.star ? "background:#fbbf24;border-color:#f59e0b;color:var(--ink);font-weight:700" : ""}" data-star="${f.id}">${f.star ? "★ En el informe" : "☆ Incluir en informe"}</button>
           <button class="btn-rojo-linea" style="width:auto;padding:5px 9px;border-radius:8px;font-size:12px" data-delfoto="${f.id}">Eliminar</button>
         </div>
+        <p class="aviso" data-geo="${f.id}" style="margin:0 0 6px">${f.geo ? "📍 " + geoTxt(f.geo) : ""}</p>
         <textarea rows="2" placeholder="Descripción de lo observado…" data-desc="${f.id}">${esc(f.desc)}</textarea>
         <div class="pildoras" style="margin:6px 0 2px">
           ${FRASES.map((fr) => `<button data-frase="${f.id}|${esc(fr)}" style="font-size:12px;padding:5px 9px">${esc(fr)}</button>`).join("")}
@@ -1774,7 +1815,9 @@ function rUnidad() {
         const blob = await comprimir(file);
         const fid = uid();
         await blobSet("photo:" + fid, blob);
-        u.fotos.push({ id: fid, desc: "", dano: "", atc: "", star: false });
+        const _f = { id: fid, desc: "", dano: "", atc: "", star: false };
+        u.fotos.push(_f);
+        geoAdjuntar(_f, rUnidad);
       } catch (ex) {
         err.textContent = "No se pudo guardar una foto: " + (ex && ex.message ? ex.message : ex);
         err.style.color = "var(--rojo)";
@@ -2000,7 +2043,7 @@ function textoExport() {
   L.push(`Nombre: ${b.nombre || "-"}`);
   L.push(`Dirección: ${b.direccion || "-"}`);
   L.push(`Parroquia: ${b.parroquia || "-"} · Municipio: ${b.municipio || "-"} · Estado: ${b.estado || "-"}`);
-  if (b.gps) L.push(`Coordenadas GPS: ${b.gps.lat.toFixed(6)}, ${b.gps.lon.toFixed(6)} (precisión ±${Math.round(b.gps.acc)} m)`);
+  if (b.gps) L.push(`Coordenadas GPS: ${b.gps.lat.toFixed(6)}, ${b.gps.lon.toFixed(6)} (precisión ±${Math.round(b.gps.acc)} m)${b.gps.alt != null ? `, elevación ${Math.round(b.gps.alt)} m (aprox.)` : ""}`);
   L.push(`Año de construcción: ${b.anio || "-"}`);
   L.push(`N.° de pisos: ${b.pisos || "-"}`);
   L.push(`Sistema estructural: ${b.sistema || "-"}`);
@@ -2533,7 +2576,7 @@ function cmpDetalleLinea(l) {
     ${fotos.length ? fotos.map((f) => `
       <div class="foto-card" style="margin-bottom:8px">
         <img data-foto="${f.id}" alt="Fotografía de respaldo" style="background:var(--borde);min-height:60px" />
-        <div class="cuerpo"><p class="aviso" style="margin:0">${esc(f.pie || "")}</p></div>
+        <div class="cuerpo"><p class="aviso" style="margin:0">${esc(f.pie || "")}</p>${f.geo ? `<p class="aviso" style="margin:4px 0 0">📍 ${geoTxt(f.geo)}</p>` : ""}</div>
       </div>`).join("") : `<p class="aviso" style="margin:0">Esta línea no tiene fotografías de respaldo.</p>`}
     ${!l.derivada ? `<button class="btn btn-linea" style="width:auto;padding:6px 11px;font-size:12px;margin:0 6px 6px 0" data-editln="${l.id}">✎ Editar / corregir</button>` : `<p class="aviso" style="margin:6px 0 0;font-style:italic">La edición de partidas compuestas llegará en una próxima versión.</p>`}
     ${cmpReplicarUI(l)}
@@ -2833,7 +2876,7 @@ function cmpEditarLinea(id) {
     elemento: l.elemento || "",
     obs: l.obs || "",
     dims: {},
-    fotos: (l.fotos || []).map((f) => ({ id: f.id, ts: l.ts, pie: f.pie }))
+    fotos: (l.fotos || []).map((f) => ({ id: f.id, ts: l.ts, pie: f.pie, geo: f.geo }))
   };
   for (const cc of cmpCampos(p)) cmpBorrador.dims[cc] = l[cc] != null ? l[cc] : "";
   if (l.parcialFijo != null) cmpBorrador.fijo = { valor: l.parcialFijo, unidad: l.unidad };
@@ -2879,7 +2922,7 @@ async function cmpPintarFotos() {
     const d = document.createElement("div");
     d.className = "lista-foto";
     d.innerHTML = `<img class="mini" src="${u || ""}" alt="" />
-      <span style="flex:1">Foto ${i + 1}</span>
+      <span style="flex:1">Foto ${i + 1}${f.geo ? `<br /><span class="aviso">📍 ${geoTxt(f.geo)}</span>` : ""}</span>
       <button class="btn btn-rojo-linea" style="width:auto;padding:6px 12px" data-quitar="${i}">Quitar</button>`;
     cont.appendChild(d);
   }
@@ -3183,7 +3226,7 @@ function cmpGuardarCompuesta() {
         (e.alcance === "parcial" ? "  ·  alcance parcial declarado" : ""),
       ts: new Date().toISOString(), fotos: []
     };
-    if (primera) { l.fotos = cmpBorrador.fotos.map((f) => ({ id: f.id, pie: cmpPie(l, p, f.ts) })); primera = false; }
+    if (primera) { l.fotos = cmpBorrador.fotos.map((f) => ({ id: f.id, pie: cmpPie(l, p, f.ts), geo: f.geo })); primera = false; }
     c.lineas.push(l);
   }
 
@@ -3627,7 +3670,9 @@ function rComputos() {
         const blob = await comprimir(file);
         const fid = uid();
         await blobSet("photo:" + fid, blob);
-        cmpBorrador.fotos.push({ id: fid, ts: new Date().toISOString() });
+        const _cf = { id: fid, ts: new Date().toISOString() };
+        cmpBorrador.fotos.push(_cf);
+        geoAdjuntar(_cf, cmpPintarFotos);
         err.textContent = "";
       } catch (ex) {
         err.textContent = "No se pudo guardar una foto: " + (ex && ex.message ? ex.message : ex);
@@ -3667,13 +3712,13 @@ function rComputos() {
       const ied = c.lineas.findIndex((x) => x.id === cmpEditId);
       l.id = cmpEditId;
       l.ts = ied >= 0 ? c.lineas[ied].ts : new Date().toISOString();
-      l.fotos = (cmpBorrador.fotos || []).map((f) => ({ id: f.id, pie: cmpPie(l, p, f.ts || l.ts) }));
+      l.fotos = (cmpBorrador.fotos || []).map((f) => ({ id: f.id, pie: cmpPie(l, p, f.ts || l.ts), geo: f.geo }));
       if (ied >= 0) c.lineas[ied] = l; else c.lineas.push(l);
       cmpEditId = null;
     } else {
       l.id = uid();
       l.ts = new Date().toISOString();
-      l.fotos = cmpBorrador.fotos.map((f) => ({ id: f.id, pie: cmpPie(l, p, f.ts) }));
+      l.fotos = cmpBorrador.fotos.map((f) => ({ id: f.id, pie: cmpPie(l, p, f.ts), geo: f.geo }));
       c.lineas.push(l);
     }
     cmpUltObs = l.obs || cmpUltObs;
