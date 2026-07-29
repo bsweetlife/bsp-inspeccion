@@ -121,8 +121,9 @@
 <script>
 "use strict";
 /* ================= Constantes ================= */
-const VERSION = "3.32";
+const VERSION = "3.33";
 const CHANGELOG = [
+  ["3.33", "En tratamiento de grietas, opción de sumar varios tramos de distinta longitud en una sola línea."],
   ["3.32", "La observación ya no se queda pegada al guardar una línea, con botón para reutilizar la anterior. Nuevas partidas 04.10 y 04.11: reemplazo de rodapié pintado y de material."],
   ["3.31", "Replicar una línea de cómputo a varios niveles a la vez, por ejemplo una junta de dilatación dañada piso por piso."],
   ["3.30", "Cálculo automático del acarreo de escombros: volumen suelto y viajes de volqueta a partir de las demoliciones."],
@@ -735,6 +736,7 @@ const CMP_COMPUESTAS = [
     nombre: "Tratamiento de grieta en pared",
     campos: ["cantidad", "largo", "ancho"],
     etiquetas: { cantidad: "N.° de grietas", largo: "Longitud de la grieta (m)", ancho: "Ancho de banda a resanar (m)" },
+    sumable: "largo",
     magnitud: "Longitud de grieta",
     unidad: "m",
     baseCampo: "largo",
@@ -771,15 +773,24 @@ function cmpSugerencias() {
 }
 
 /* Superficie o longitud base de la partida compuesta */
+function cmpSegSuma() {
+  return (cmpComp.segs || []).reduce((sum, x) => sum + cmpNum(x), 0);
+}
+// Valor efectivo de un campo base, respetando el modo "sumar varias".
+function cmpBaseCampoVal(a, cc) {
+  if (cmpComp.segsOn && a && a.sumable === cc) return cmpRed(cmpSegSuma());
+  if (cc === "cantidad" && cmpComp.segsOn) return 1;
+  return cmpNum(cmpComp.base[cc], cc === "cantidad" ? 1 : 0);
+}
 function cmpBaseCompuesta() {
   const a = cmpCompuesta(cmpComp.id);
   if (!a) return 0;
   // La magnitud principal que se muestra en el recuadro. Si la compuesta
   // declara baseCampo, esa es la magnitud rectora (p. ej. la longitud de la
   // grieta); si no, se multiplican todos los campos dimensionales.
-  if (a.baseCampo) return cmpRed(cmpNum(cmpComp.base.cantidad, 1) * cmpNum(cmpComp.base[a.baseCampo]));
-  let v = cmpNum(cmpComp.base.cantidad, 1);
-  for (const c of a.campos) { if (c === "cantidad") continue; v *= cmpNum(cmpComp.base[c]); }
+  if (a.baseCampo) return cmpRed(cmpBaseCampoVal(a, "cantidad") * cmpBaseCampoVal(a, a.baseCampo));
+  let v = cmpBaseCampoVal(a, "cantidad");
+  for (const c of a.campos) { if (c === "cantidad") continue; v *= cmpBaseCampoVal(a, c); }
   return cmpRed(v);
 }
 
@@ -787,11 +798,11 @@ function cmpBaseCompuesta() {
 // el área completa ("area") o, por defecto, la base general de la compuesta.
 function cmpBaseDe(comp) {
   const a = cmpCompuesta(cmpComp.id);
-  const n = cmpNum(cmpComp.base.cantidad, 1);
-  if (comp.base === "largo") return cmpRed(n * cmpNum(cmpComp.base.largo));
+  const n = cmpBaseCampoVal(a, "cantidad");
+  if (comp.base === "largo") return cmpRed(n * cmpBaseCampoVal(a, "largo"));
   if (comp.base === "area") {
     let v = n;
-    for (const c of a.campos) { if (c === "cantidad") continue; v *= cmpNum(cmpComp.base[c]); }
+    for (const c of a.campos) { if (c === "cantidad") continue; v *= cmpBaseCampoVal(a, c); }
     return cmpRed(v);
   }
   return cmpBaseCompuesta();
@@ -2848,6 +2859,28 @@ function cmpCapturar() {
   if (ob) cmpBorrador.obs = ob.value;
 }
 
+function cmpCampoHtml(a, cc) {
+  const seg = a.sumable === cc;
+  if (cc === "cantidad" && cmpComp.segsOn) return "";
+  if (seg && cmpComp.segsOn) {
+    const segs = cmpComp.segs || [];
+    return `<div class="campo" style="grid-column:1 / -1">
+      <span>${esc(a.etiquetas[cc] || CMP_TXT[cc])} · ${segs.length} ${segs.length === 1 ? "tramo" : "tramos"}</span>
+      ${segs.map((v, i) => `<div style="display:flex;gap:6px;margin-bottom:5px">
+        <input data-seg="${i}" inputmode="decimal" value="${esc(v)}" placeholder="0,00" style="text-align:right;font-weight:600" />
+        <button class="btn btn-rojo-linea" style="width:auto;padding:6px 11px" data-segdel="${i}">✕</button></div>`).join("")}
+      <div style="display:flex;gap:8px;align-items:center;margin-top:2px">
+        <button class="btn btn-linea" style="width:auto;padding:6px 11px;font-size:13px" data-segadd>+ agregar</button>
+        <button class="btn btn-linea" style="width:auto;padding:6px 11px;font-size:13px" data-segoff>una sola</button>
+        <b class="mono" id="cmSegSuma" style="margin-left:auto">Σ ${cmpFmt(cmpRed(cmpSegSuma()))} m</b>
+      </div></div>`;
+  }
+  return `<label class="campo"><span>${esc(a.etiquetas[cc] || CMP_TXT[cc])}</span>
+    <input data-base="${cc}" inputmode="decimal" style="text-align:right;font-weight:600"
+      value="${esc(cmpComp.base[cc] == null ? (cc === "cantidad" ? "1" : "") : cmpComp.base[cc])}"
+      placeholder="${cc === "cantidad" ? "1" : "0,00"}" />
+    ${seg ? `<button class="btn btn-linea" style="width:auto;padding:4px 11px;font-size:12px;margin-top:6px" data-segon>Σ sumar varias</button>` : ""}</label>`;
+}
 function cmpPintarCompuesta() {
   const cont = document.getElementById("cmComp");
   if (!cont) return;
@@ -2856,10 +2889,7 @@ function cmpPintarCompuesta() {
   const base = cmpBaseCompuesta();
 
   const auxCampo = (a.id === "columna" || a.id === "viga" || a.id === "encamisado") ? "ancho" : "";
-  const dims = a.campos.map((cc) => `<label class="campo"><span>${esc(a.etiquetas[cc] || CMP_TXT[cc])}</span>
-    <input data-base="${cc}" inputmode="decimal" style="text-align:right;font-weight:600"
-      value="${esc(cmpComp.base[cc] == null ? (cc === "cantidad" ? "1" : "") : cmpComp.base[cc])}"
-      placeholder="${cc === "cantidad" ? "1" : "0,00"}" /></label>`).join("");
+  const dims = a.campos.map((cc) => cmpCampoHtml(a, cc)).join("");
 
   const comps = a.componentes.map((comp) => {
     const p = cmpPartida(comp.partida) || { descripcion: "", unidad: "m2" };
@@ -2925,6 +2955,26 @@ function cmpPintarCompuesta() {
       cmpActualizarComp();
     };
   });
+  cont.querySelectorAll("[data-seg]").forEach((i) => {
+    i.oninput = (e) => {
+      cmpComp.segs[+e.target.dataset.seg] = e.target.value;
+      const sm = document.getElementById("cmSegSuma");
+      if (sm) sm.textContent = "Σ " + cmpFmt(cmpRed(cmpSegSuma())) + " m";
+      cmpActualizarComp();
+    };
+  });
+  cont.querySelectorAll("[data-segon]").forEach((b) => (b.onclick = () => {
+    cmpComp.segsOn = true;
+    if (!cmpComp.segs || !cmpComp.segs.length) cmpComp.segs = [cmpComp.base[a.sumable] || ""];
+    cmpPintarCompuesta();
+  }));
+  cont.querySelectorAll("[data-segoff]").forEach((b) => (b.onclick = () => { cmpComp.segsOn = false; cmpPintarCompuesta(); }));
+  cont.querySelectorAll("[data-segadd]").forEach((b) => (b.onclick = () => { (cmpComp.segs = cmpComp.segs || []).push(""); cmpPintarCompuesta(); }));
+  cont.querySelectorAll("[data-segdel]").forEach((b) => (b.onclick = () => {
+    cmpComp.segs.splice(+b.dataset.segdel, 1);
+    if (!cmpComp.segs.length) cmpComp.segsOn = false;
+    cmpPintarCompuesta();
+  }));
   cont.querySelectorAll("[data-caras]").forEach((b) => {
     b.onclick = () => {
       const [tipo, n] = b.dataset.caras.split("|");
@@ -3004,9 +3054,12 @@ function cmpGuardarCompuesta() {
   }
 
   const gid = uid();
-  const baseTxt = cmpFmt(cmpNum(cmpComp.base.cantidad, 1), 0) + " × " +
-    a.campos.filter((x) => x !== "cantidad").map((x) => cmpFmt(cmpNum(cmpComp.base[x])) + " m").join(" × ") +
-    " = " + cmpFmt(cmpBaseCompuesta()) + " " + CMP_UNI[a.unidad];
+  const baseTxt = cmpComp.segsOn
+    ? ("longitud sumada de " + (cmpComp.segs || []).filter((x) => cmpNum(x) > 0).length + " tramos = " + cmpFmt(cmpSegSuma()) + " m" +
+       (cmpNum(cmpComp.base.ancho) > 0 ? " · banda " + cmpFmt(cmpNum(cmpComp.base.ancho)) + " m" : ""))
+    : (cmpFmt(cmpNum(cmpComp.base.cantidad, 1), 0) + " × " +
+       a.campos.filter((x) => x !== "cantidad").map((x) => cmpFmt(cmpNum(cmpComp.base[x])) + " m").join(" × ") +
+       " = " + cmpFmt(cmpBaseCompuesta()) + " " + CMP_UNI[a.unidad]);
 
   let primera = true;
   for (const x of incl) {
