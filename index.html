@@ -121,8 +121,9 @@
 <script>
 "use strict";
 /* ================= Constantes ================= */
-const VERSION = "3.40";
+const VERSION = "3.41";
 const CHANGELOG = [
+  ["3.41", "En la pintura de grietas se corrigen los rótulos: Todo el paño es ahora el modo manual para indicar el área del paño, y Solo la banda es el área automática de la banda."],
   ["3.40", "En tratamiento de grietas, la pintura ya no arranca con el área de la banda: parte de cero para que agregues el área real del paño con la función de sumar áreas."],
   ["3.39", "Corregido de raíz: al editar una línea, los botones Guardar cambios y Cancelar ahora sí responden (un error interno los dejaba sin funcionar)."],
   ["3.38", "Corregido: al editar una línea, Guardar cambios la reemplaza a la primera; el aviso de valor atípico ya no bloquea la edición."],
@@ -751,7 +752,7 @@ const CMP_COMPUESTAS = [
     componentes: [
       { partida: "04.02", factor: 1, base: "largo", nota: "Sellado de la grieta, por su longitud" },
       { partida: "04.04", factor: 1, base: "area", nota: "Friso de la banda: longitud por ancho" },
-      { partida: "04.05", factor: 1, base: "area", alcance: true, alcanceDef: "parcial", nota: "Pintura, por lo general de todo el paño" }
+      { partida: "04.05", factor: 1, base: "area", alcance: true, alcanceDef: "parcial", labTotal: "Solo la banda", labParcial: "Todo el paño", labCampo: "Superficie del paño", nota: "Pintura, por lo general de todo el paño" }
     ]
   }
 ];
@@ -3019,7 +3020,8 @@ function cmpAlcanceHtml(comp, p, e, inc) {
   if (!inc || (p.unidad !== "m2" && p.unidad !== "m")) return "";
   const parcial = (e.alcance || comp.alcanceDef) === "parcial";
   const esArea = p.unidad === "m2";
-  const etiqSolo = esArea ? "Solo lo intervenido" : "Solo el tramo";
+  const etiqSolo = comp.labParcial || (esArea ? "Solo lo intervenido" : "Solo el tramo");
+  const etiqTodo = comp.labTotal || "Todo el paño";
   let campo = "";
   if (parcial) {
     if (e.segsOn) {
@@ -3042,13 +3044,13 @@ function cmpAlcanceHtml(comp, p, e, inc) {
           <b class="mono" data-cqtot="${comp.partida}" style="margin-left:auto">Σ ${cmpFmt(cmpCompParcial(p, e))} ${CMP_UNI[p.unidad]}</b>
         </div></div>`;
     } else {
-      campo = `<label class="campo" style="margin:8px 0 0"><span>${esArea ? "Superficie intervenida" : "Longitud intervenida"} (${CMP_UNI[p.unidad]})</span>
+      campo = `<label class="campo" style="margin:8px 0 0"><span>${comp.labCampo || (esArea ? "Superficie intervenida" : "Longitud intervenida")} (${CMP_UNI[p.unidad]})</span>
         <input data-cant="${comp.partida}" inputmode="decimal" style="text-align:right" value="${esc(e.cant || "")}" placeholder="0,00" />
         <button class="btn btn-linea" style="width:auto;padding:4px 11px;font-size:12px;margin-top:6px" data-csegon="${comp.partida}">Σ sumar varias</button></label>`;
     }
   }
   return `<div class="pildoras" style="margin-top:8px">
-      <button data-alc="${comp.partida}|total" class="${parcial ? "" : "on"}">Todo el paño</button>
+      <button data-alc="${comp.partida}|total" class="${parcial ? "" : "on"}">${etiqTodo}</button>
       <button data-alc="${comp.partida}|parcial" class="${parcial ? "on" : ""}">${etiqSolo}</button>
     </div>${campo}`;
 }
