@@ -121,7 +121,26 @@
 <script>
 "use strict";
 /* ================= Constantes ================= */
-const VERSION = "3.29";
+const VERSION = "3.30";
+const CHANGELOG = [
+  ["3.30", "Cálculo automático del acarreo de escombros: volumen suelto y viajes de volqueta a partir de las demoliciones."],
+  ["3.29", "Nueva partida 02.08, demolición de revestimiento cerámico en pisos."],
+  ["3.28", "Compuestas de pared perimetral con cara de fachada y marca D/R en las fotos exportadas."],
+  ["3.27", "Exportación en ZIP de las fotos de inspección ya marcadas para el informe."],
+  ["3.26", "Caras de friso y pintura controlables por separado en las compuestas de pared."],
+  ["3.25", "Cuatro partidas compuestas nuevas y compuesta de grieta con base de medición mixta."],
+  ["3.23", "Partidas de cielo raso suspendido."],
+  ["3.22", "El teclado ya no se cierra al escribir medidas en una partida compuesta."],
+  ["3.21", "Guía hacia el dictado del teclado en Android."],
+  ["3.20", "Transcripción de voz en Android."],
+  ["3.18", "Mover unidad entre niveles, numeración corrida y renumerar en lote."],
+  ["3.17", "Medición sobre fotografía con escala de referencia."],
+  ["3.16", "Porcentaje de desperdicio por partida, calculadora de perímetro y aviso de valores atípicos."],
+  ["3.15", "Sugerencias de partidas según el daño y partidas compuestas."],
+  ["3.13", "Ver fotos de líneas guardadas y exportación en ZIP."],
+  ["3.12", "Revestimiento cerámico separado en paredes y en pisos."],
+  ["3.9", "Módulo de cómputos métricos con memoria fotográfica."]
+];
 const ATC = ["INSPECCIONADO", "USO RESTRINGIDO", "NO HABITABLE"];
 const ATC_CLS = { "INSPECCIONADO": "v", "USO RESTRINGIDO": "a", "NO HABITABLE": "r" };
 const ATC_CORTO = { "INSPECCIONADO": "INSPECC.", "USO RESTRINGIDO": "USO RESTR.", "NO HABITABLE": "NO HABITABLE" };
@@ -511,10 +530,58 @@ function cmpAgrupar(lineas) {
   }
   return Array.from(m.values()).sort((a, b) => a.codigo.localeCompare(b.codigo));
 }
+
+/* Acarreo de escombros: volumen suelto derivado de las demoliciones.
+   Volumen en banco = suma(area de cada demolicion x espesor propio de la partida),
+   volumen suelto = banco x (1 + esponjamiento). Esponjamiento tipico de escombro
+   de construccion mixto entre 30% y 50% (por defecto 40%). */
+const ESPESOR_ESCOMBRO = { "02.01": 0.025, "02.02": 0.025, "02.03": 0.15, "02.04": 0.04, "02.05": 0.02, "02.06": 0.05, "02.07": 0.01, "02.08": 0.03 };
+const ACARREO_DEF = { esponjamiento: 0.40, viaje: 6 };
+function cmpAcarreo(c) {
+  const ac = c.acarreo || {};
+  const esp = (ac.esponjamiento != null && ac.esponjamiento !== "") ? cmpNum(ac.esponjamiento) : ACARREO_DEF.esponjamiento;
+  const viaje = (ac.viaje != null && ac.viaje !== "") ? cmpNum(ac.viaje) : ACARREO_DEF.viaje;
+  const espesores = Object.assign({}, ESPESOR_ESCOMBRO, ac.espesores || {});
+  let banco = 0;
+  for (const l of (c.lineas || [])) {
+    const e = espesores[l.partida];
+    if (e == null) continue;
+    banco += cmpNum(l.parcial) * e;
+  }
+  const suelto = banco * (1 + esp);
+  const viajes = viaje > 0 ? Math.ceil(suelto / viaje) : 0;
+  return { banco: banco, suelto: suelto, esp: esp, viaje: viaje, viajes: viajes };
+}
+function cmpResumen(c) {
+  const res = cmpAgrupar(c.lineas || []);
+  const ac = cmpAcarreo(c);
+  if (ac.suelto > 0) {
+    const p = cmpPartida("01.04");
+    const idx = res.findIndex((x) => x.codigo === "01.04");
+    const fila = { codigo: "01.04", descripcion: p ? p.descripcion : "Carga, transporte y disposición de escombros", unidad: "m3", total: ac.suelto, n: 0, estimada: true, acarreo: ac };
+    if (idx >= 0) res[idx] = fila; else res.push(fila);
+    res.sort((a, b) => a.codigo.localeCompare(b.codigo));
+  }
+  return res;
+}
+function cmpFilaAcarreo(r) {
+  const ac = r.acarreo;
+  return `<div class="lista-foto">
+      <span style="flex:1"><b>${r.codigo}</b> ${esc(r.descripcion)} <span class="chip a">automático</span>
+        <br /><span class="aviso">Banco ${cmpFmt(cmpRed(ac.banco, 2))} m³ · esponjamiento
+        <input data-acesp inputmode="decimal" value="${esc(String(Math.round(ac.esp * 100)))}"
+          style="width:46px;display:inline-block;padding:2px 6px;min-height:0;text-align:right;font-size:12px" /> %
+        · viaje <input data-acviaje inputmode="decimal" value="${esc(String(ac.viaje))}"
+          style="width:46px;display:inline-block;padding:2px 6px;min-height:0;text-align:right;font-size:12px" /> m³
+        · <span data-acnv>${ac.viajes}</span> viajes</span></span>
+      <b class="mono" style="font-size:14px" data-acout>${cmpFmt(cmpRed(ac.suelto, 2))} m³</b>
+    </div>`;
+}
 function cmpDe(insp) {
   if (!insp.computos) insp.computos = { fecha: new Date().toISOString().slice(0, 10), responsable: "", rev: 1, lineas: [] };
   if (!insp.computos.lineas) insp.computos.lineas = [];
   if (!insp.computos.desperdicio) insp.computos.desperdicio = {};
+  if (!insp.computos.acarreo) insp.computos.acarreo = {};
   return insp.computos;
 }
 let cmpBorrador = { origen: "sitio", fotos: [] };
@@ -2355,7 +2422,7 @@ async function cmpZip() {
         mapa[f.id] = nombre;
       }
     }
-    const res = cmpAgrupar(c.lineas);
+    const res = cmpResumen(c);
     const salida = {
       informe: b.informe ? base : "",
       edificacion: b.nombre, direccion: b.direccion,
@@ -2367,7 +2434,8 @@ async function cmpZip() {
         cantidad_neta: cmpRed(r.total, 2),
         desperdicio_pct: cmpDespDe(r.codigo),
         cantidad_con_desperdicio: cmpRed(r.total * (1 + cmpDespDe(r.codigo) / 100), 2),
-        lineas: r.n, tiene_estimaciones: r.estimada
+        lineas: r.n, tiene_estimaciones: r.estimada,
+        ...(r.acarreo ? { viajes: r.acarreo.viajes, m3_por_viaje: r.acarreo.viaje, esponjamiento_pct: Math.round(r.acarreo.esp * 100) } : {})
       })),
       lineas: c.lineas.map((l) => Object.assign({}, l, {
         fotos: (l.fotos || []).map((f) => ({ id: f.id, pie: f.pie, archivo: mapa[f.id] || null }))
@@ -3207,8 +3275,9 @@ function rComputos() {
       </div>
     </div>` : "";
 
-  const res = cmpAgrupar(c.lineas);
+  const res = cmpResumen(c);
   const resHtml = res.length ? res.map((r) => {
+    if (r.acarreo) return cmpFilaAcarreo(r);
     const d = cmpDespDe(r.codigo);
     return `<div class="lista-foto">
       <span style="flex:1"><b>${r.codigo}</b> ${esc(r.descripcion)}${r.estimada ? ' <span class="chip a">estimada</span>' : ""}
@@ -3421,10 +3490,33 @@ function rComputos() {
     i.oninput = (e) => {
       const cod = e.target.dataset.desp;
       c.desperdicio[cod] = e.target.value;
-      const r = cmpAgrupar(c.lineas).find((x) => x.codigo === cod);
+      const r = cmpResumen(c).find((x) => x.codigo === cod);
       const b2 = $app.querySelector('[data-total="' + cod + '"]');
       if (r && b2) b2.textContent = cmpFmt(cmpRed(r.total * (1 + cmpDespDe(cod) / 100), 2)) + " " + CMP_UNI[r.unidad];
       guardar();
+    };
+  });
+
+  const cmAcUpd = () => {
+    const a2 = cmpAcarreo(c);
+    const out = $app.querySelector("[data-acout]"); if (out) out.textContent = cmpFmt(cmpRed(a2.suelto, 2)) + " m³";
+    const nv = $app.querySelector("[data-acnv]"); if (nv) nv.textContent = a2.viajes;
+    guardar();
+  };
+  $app.querySelectorAll("[data-acesp]").forEach((i) => {
+    i.oninput = (e) => {
+      if (!c.acarreo) c.acarreo = {};
+      const v = e.target.value.trim();
+      c.acarreo.esponjamiento = v === "" ? null : cmpNum(v) / 100;
+      cmAcUpd();
+    };
+  });
+  $app.querySelectorAll("[data-acviaje]").forEach((i) => {
+    i.oninput = (e) => {
+      if (!c.acarreo) c.acarreo = {};
+      const v = e.target.value.trim();
+      c.acarreo.viaje = v === "" ? null : cmpNum(v);
+      cmAcUpd();
     };
   });
 
@@ -3438,12 +3530,13 @@ function rComputos() {
       edificacion: b.nombre, direccion: b.direccion,
       fecha_medicion: c.fecha, responsable: c.responsable, revision: c.rev || 1,
       generado_en: new Date().toISOString(),
-      resumen: cmpAgrupar(c.lineas).map((r) => ({
+      resumen: cmpResumen(c).map((r) => ({
         codigo: r.codigo, descripcion: r.descripcion, unidad: r.unidad,
         cantidad_neta: cmpRed(r.total, 2),
         desperdicio_pct: cmpDespDe(r.codigo),
         cantidad_con_desperdicio: cmpRed(r.total * (1 + cmpDespDe(r.codigo) / 100), 2),
-        lineas: r.n, tiene_estimaciones: r.estimada
+        lineas: r.n, tiene_estimaciones: r.estimada,
+        ...(r.acarreo ? { viajes: r.acarreo.viajes, m3_por_viaje: r.acarreo.viaje, esponjamiento_pct: Math.round(r.acarreo.esp * 100) } : {})
       })),
       lineas: c.lineas
     };
@@ -3463,8 +3556,15 @@ function rAjustes() {
       <div style="flex:1">
         <div class="etiq" style="margin:0">Versión de la app</div>
         <div style="font-size:26px;font-weight:800;font-family:ui-monospace,monospace">v${VERSION}</div>
+        <p class="aviso" id="msgUpd" style="margin:4px 0 0"></p>
       </div>
       <button class="btn btn-gris" style="width:auto" id="bActualizar">Buscar actualización</button>
+    </div>
+    <div class="tarjeta">
+      <div class="etiq">Historial de versiones</div>
+      ${CHANGELOG.map((cl) => `<div style="display:flex;gap:10px;padding:7px 0;border-bottom:1px solid #eee">
+        <b class="mono" style="min-width:46px;font-size:13px">v${cl[0]}</b>
+        <span style="flex:1;font-size:13px;line-height:1.35">${esc(cl[1])}</span></div>`).join("")}
     </div>
     <div class="tarjeta">
       <div class="etiq">☁ Cuenta en la nube (sincronización)</div>
@@ -3503,11 +3603,16 @@ function rAjustes() {
     <p class="aviso">BSP (Building Safety Program) 2026 · Ing. Eduardo Lubo · CIV N.° 115.692 · App de campo <b>v${VERSION}</b></p>`;
   const mN = (t) => (document.getElementById("msgNube").textContent = t);
   document.getElementById("bActualizar").onclick = async () => {
+    const m = document.getElementById("msgUpd");
+    if (m) m.textContent = "Buscando actualización…";
     if ("serviceWorker" in navigator) {
       const reg = await navigator.serviceWorker.getRegistration();
-      if (reg) await reg.update();
+      if (reg) {
+        await reg.update();
+        if (reg.waiting || reg.installing) { if (m) m.textContent = "Instalando nueva versión…"; setTimeout(() => location.reload(), 600); return; }
+      }
     }
-    location.reload();
+    if (m) m.textContent = "Ya tienes la última versión instalada (v" + VERSION + ").";
   };
   if (ses) {
     document.getElementById("bSync").onclick = async () => { mN("Sincronizando…"); await sincronizar(false); mN(nube.estado === "ok" ? "✓ Sincronizado." : "✗ " + nube.msg); };
