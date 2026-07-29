@@ -121,8 +121,9 @@
 <script>
 "use strict";
 /* ================= Constantes ================= */
-const VERSION = "3.31";
+const VERSION = "3.32";
 const CHANGELOG = [
+  ["3.32", "La observación ya no se queda pegada al guardar una línea, con botón para reutilizar la anterior. Nuevas partidas 04.10 y 04.11: reemplazo de rodapié pintado y de material."],
   ["3.31", "Replicar una línea de cómputo a varios niveles a la vez, por ejemplo una junta de dilatación dañada piso por piso."],
   ["3.30", "Cálculo automático del acarreo de escombros: volumen suelto y viajes de volqueta a partir de las demoliciones."],
   ["3.29", "Nueva partida 02.08, demolición de revestimiento cerámico en pisos."],
@@ -448,6 +449,8 @@ const CMP_CAT = [
   ["04.07", "04 Mampostería y acabados", "Reposición de revestimiento cerámico en pisos", "m2", "Área en planta."],
   ["04.08", "04 Mampostería y acabados", "Anclaje de paredes no estructurales a la estructura", "m", "Longitud de encuentro pared-estructura tratado."],
   ["04.09", "04 Mampostería y acabados", "Suministro y colocación de cielo raso suspendido", "m2", "Área en planta. El tipo de lámina se declara en la observación."],
+  ["04.10", "04 Mampostería y acabados", "Reemplazo de rodapié pintado", "m", "Longitud de rodapié. Acabado en pintura."],
+  ["04.11", "04 Mampostería y acabados", "Reemplazo de rodapié de material", "m", "Longitud de rodapié. El material (cerámico, madera, otro) va en la observación."],
   ["05.01", "05 Impermeabilización e instalaciones", "Impermeabilización de losa de azotea", "m2", "Área en planta más medias cañas y remates."],
   ["05.02", "05 Impermeabilización e instalaciones", "Reparación de juntas de dilatación", "m", "Longitud de junta intervenida."],
   ["05.03", "05 Impermeabilización e instalaciones", "Desincorporación de tanque elevado", "und", "Se computa por tanque. No incluye el sistema sustituto."],
@@ -586,6 +589,7 @@ function cmpDe(insp) {
   return insp.computos;
 }
 let cmpBorrador = { origen: "sitio", fotos: [] };
+let cmpUltObs = "";
 /* Partidas que suelen aplicar según el daño registrado en la unidad.
    Se ofrecen, nunca se imponen. */
 const CMP_SUGER = {
@@ -3027,8 +3031,10 @@ function cmpGuardarCompuesta() {
     c.lineas.push(l);
   }
 
+  cmpUltObs = String(cmpBorrador.obs || "").trim() || cmpUltObs;
   cmpBorrador.fotos = [];
   cmpBorrador.elemento = "";
+  cmpBorrador.obs = "";
   cmpComp = { id: cmpComp.id, base: {}, comps: {}, carasFrisar: 0, carasPintar: 0 };
   guardar();
   rComputos();
@@ -3387,6 +3393,7 @@ function rComputos() {
         ${orig.map(([v, t]) => `<button data-org="${v}" class="${cmpBorrador.origen === v ? "on" : ""}">${t}</button>`).join("")}
       </div>
       <label class="campo"><span>Observación</span><textarea id="cmObs" rows="2" placeholder="Espesor, sección, criterio de estimación">${esc(cmpBorrador.obs || "")}</textarea></label>
+      ${cmpUltObs && !cmpBorrador.obs ? `<button class="btn btn-linea" id="cmObsPrev" style="width:auto;padding:5px 10px;font-size:12px;margin:-4px 0 8px">↩ Usar anotación anterior</button>` : ""}
       <input type="file" accept="image/*" capture="environment" id="cmCam" style="display:none" />
       <input type="file" accept="image/*" multiple id="cmGal" style="display:none" />
       <div class="grid2" style="margin-bottom:8px">
@@ -3434,6 +3441,8 @@ function rComputos() {
   if (pt) pt.onchange = (e) => { cmpBorrador.partida = e.target.value; cmpBorrador.dims = {}; cmpBorrador.atipicoOk = false; cmpPintarDims(); };
   document.getElementById("cmElem").oninput = (e) => { cmpBorrador.elemento = e.target.value; };
   document.getElementById("cmObs").oninput = (e) => { cmpBorrador.obs = e.target.value; };
+  const bObsPrev = document.getElementById("cmObsPrev");
+  if (bObsPrev) bObsPrev.onclick = () => { cmpBorrador.obs = cmpUltObs; const t = document.getElementById("cmObs"); if (t) { t.value = cmpUltObs; t.focus(); } bObsPrev.style.display = "none"; };
   document.getElementById("cmFecha").onchange = (e) => { c.fecha = e.target.value; guardar(); };
   document.getElementById("cmResp").oninput = (e) => { c.responsable = e.target.value; guardar(); };
 
@@ -3497,8 +3506,10 @@ function rComputos() {
     l.ts = new Date().toISOString();
     l.fotos = cmpBorrador.fotos.map((f) => ({ id: f.id, pie: cmpPie(l, p, f.ts) }));
     c.lineas.push(l);
+    cmpUltObs = l.obs || cmpUltObs;
     cmpBorrador.fotos = [];
     cmpBorrador.elemento = "";
+    cmpBorrador.obs = "";
     cmpBorrador.dims = {};
     cmpBorrador.fijo = null;
     cmpBorrador.medicion = null;
