@@ -121,8 +121,9 @@
 <script>
 "use strict";
 /* ================= Constantes ================= */
-const VERSION = "3.34";
+const VERSION = "3.35";
 const CHANGELOG = [
+  ["3.35", "La opción solo lo intervenido está en todos los componentes de área y longitud, y permite calcular el área como ancho por alto y sumar varias áreas o tramos."],
   ["3.34", "Editar y corregir una línea simple ya guardada: cambiar la partida, las medidas, la observación o la ubicación sin borrarla ni perder su foto."],
   ["3.33", "En tratamiento de grietas, opción de sumar varios tramos de distinta longitud en una sola línea."],
   ["3.32", "La observación ya no se queda pegada al guardar una línea, con botón para reutilizar la anterior. Nuevas partidas 04.10 y 04.11: reemplazo de rodapié pintado y de material."],
@@ -817,9 +818,19 @@ function cmpCarasDe(tipo) {
   return 1;
 }
 
+// Cantidad intervenida de un componente: numero directo, o suma de renglones
+// (ancho por alto para area, longitudes para metros lineales).
+function cmpCompParcial(p, e) {
+  if (e.segsOn) {
+    const segs = e.segs || [];
+    if (p.unidad === "m2") return cmpRed(segs.reduce((s, x) => s + cmpNum(x.a) * cmpNum(x.b), 0), 2);
+    return cmpRed(segs.reduce((s, x) => s + cmpNum(x.a), 0), 2);
+  }
+  return cmpRed(cmpNum(e.cant), 2);
+}
 function cmpCantidadComponente(comp) {
   const e = cmpComp.comps[comp.partida] || {};
-  if (e.alcance === "parcial") return cmpRed(cmpNum(e.cant), 2);
+  if (e.alcance === "parcial") return cmpCompParcial(cmpPartida(comp.partida) || { unidad: "m2" }, e);
   const caras = comp.caras ? cmpCarasDe(comp.caras) : 1;
   return cmpRed(cmpBaseDe(comp) * comp.factor * caras, 2);
 }
@@ -2911,6 +2922,43 @@ function cmpCampoHtml(a, cc) {
       placeholder="${cc === "cantidad" ? "1" : "0,00"}" />
     ${seg ? `<button class="btn btn-linea" style="width:auto;padding:4px 11px;font-size:12px;margin-top:6px" data-segon>Σ sumar varias</button>` : ""}</label>`;
 }
+function cmpAlcanceHtml(comp, p, e, inc) {
+  if (!inc || (p.unidad !== "m2" && p.unidad !== "m")) return "";
+  const parcial = e.alcance === "parcial";
+  const esArea = p.unidad === "m2";
+  const etiqSolo = esArea ? "Solo lo intervenido" : "Solo el tramo";
+  let campo = "";
+  if (parcial) {
+    if (e.segsOn) {
+      const segs = e.segs || [];
+      const filas = segs.map((sg, i) => esArea
+        ? `<div style="display:flex;gap:6px;align-items:center;margin-bottom:5px">
+            <input data-cseg="${comp.partida}|${i}|a" inputmode="decimal" value="${esc(sg.a || "")}" placeholder="ancho" style="text-align:right" />
+            <span style="opacity:.6">×</span>
+            <input data-cseg="${comp.partida}|${i}|b" inputmode="decimal" value="${esc(sg.b || "")}" placeholder="alto" style="text-align:right" />
+            <button class="btn btn-rojo-linea" style="width:auto;padding:6px 10px" data-csegdel="${comp.partida}|${i}">✕</button></div>`
+        : `<div style="display:flex;gap:6px;align-items:center;margin-bottom:5px">
+            <input data-cseg="${comp.partida}|${i}|a" inputmode="decimal" value="${esc(sg.a || "")}" placeholder="longitud" style="text-align:right" />
+            <button class="btn btn-rojo-linea" style="width:auto;padding:6px 10px" data-csegdel="${comp.partida}|${i}">✕</button></div>`).join("");
+      campo = `<div class="campo" style="margin:8px 0 0">
+        <span>${esArea ? "Áreas intervenidas" : "Tramos intervenidos"} · ${segs.length} ${segs.length === 1 ? "renglón" : "renglones"}</span>
+        ${filas}
+        <div style="display:flex;gap:8px;align-items:center;margin-top:2px">
+          <button class="btn btn-linea" style="width:auto;padding:6px 11px;font-size:13px" data-csegadd="${comp.partida}">+ agregar</button>
+          <button class="btn btn-linea" style="width:auto;padding:6px 11px;font-size:13px" data-csegoff="${comp.partida}">una sola</button>
+          <b class="mono" data-cqtot="${comp.partida}" style="margin-left:auto">Σ ${cmpFmt(cmpCompParcial(p, e))} ${CMP_UNI[p.unidad]}</b>
+        </div></div>`;
+    } else {
+      campo = `<label class="campo" style="margin:8px 0 0"><span>${esArea ? "Superficie intervenida" : "Longitud intervenida"} (${CMP_UNI[p.unidad]})</span>
+        <input data-cant="${comp.partida}" inputmode="decimal" style="text-align:right" value="${esc(e.cant || "")}" placeholder="0,00" />
+        <button class="btn btn-linea" style="width:auto;padding:4px 11px;font-size:12px;margin-top:6px" data-csegon="${comp.partida}">Σ sumar varias</button></label>`;
+    }
+  }
+  return `<div class="pildoras" style="margin-top:8px">
+      <button data-alc="${comp.partida}|total" class="${parcial ? "" : "on"}">Todo el paño</button>
+      <button data-alc="${comp.partida}|parcial" class="${parcial ? "on" : ""}">${etiqSolo}</button>
+    </div>${campo}`;
+}
 function cmpPintarCompuesta() {
   const cont = document.getElementById("cmComp");
   if (!cont) return;
@@ -2933,14 +2981,7 @@ function cmpPintarCompuesta() {
           <br /><span class="aviso">${esc(comp.nota || "")}${comp.caras ? " · " + cmpCarasDe(comp.caras) + (cmpCarasDe(comp.caras) === 1 ? " cara" : " caras") : (comp.factor !== 1 ? " · factor ×" + comp.factor : "")}</span></span>
         <b class="mono" style="font-size:14px" data-qcomp="${comp.partida}">${inc ? cmpFmt(q) + " " + CMP_UNI[p.unidad] : "—"}</b>
       </div>
-      ${inc && comp.alcance ? `
-        <div class="pildoras" style="margin-top:8px">
-          <button data-alc="${comp.partida}|total" class="${e.alcance === "parcial" ? "" : "on"}">Todo el paño</button>
-          <button data-alc="${comp.partida}|parcial" class="${e.alcance === "parcial" ? "on" : ""}">Solo lo intervenido</button>
-        </div>
-        ${e.alcance === "parcial" ? `<label class="campo" style="margin:8px 0 0"><span>Superficie a pintar (${CMP_UNI[p.unidad]})</span>
-          <input data-cant="${comp.partida}" inputmode="decimal" style="text-align:right"
-            value="${esc(e.cant || "")}" placeholder="0,00" /></label>` : ""}` : ""}
+      ${cmpAlcanceHtml(comp, p, e, inc)}
     </div>`;
   }).join("");
 
@@ -3039,6 +3080,38 @@ function cmpPintarCompuesta() {
       const comp = a.componentes.find((x) => x.partida === k);
       const p = cmpPartida(k);
       if (b) b.textContent = cmpFmt(cmpCantidadComponente(comp)) + " " + CMP_UNI[p.unidad];
+    };
+  });
+  cont.querySelectorAll("[data-csegon]").forEach((b) => (b.onclick = () => {
+    const k = b.dataset.csegon; const e = (cmpComp.comps[k] = cmpComp.comps[k] || {});
+    e.segsOn = true;
+    if (!e.segs || !e.segs.length) e.segs = [{ a: e.cant || "", b: "" }];
+    cmpPintarCompuesta();
+  }));
+  cont.querySelectorAll("[data-csegoff]").forEach((b) => (b.onclick = () => {
+    const k = b.dataset.csegoff; (cmpComp.comps[k] = cmpComp.comps[k] || {}).segsOn = false; cmpPintarCompuesta();
+  }));
+  cont.querySelectorAll("[data-csegadd]").forEach((b) => (b.onclick = () => {
+    const k = b.dataset.csegadd; const e = (cmpComp.comps[k] = cmpComp.comps[k] || {});
+    (e.segs = e.segs || []).push({ a: "", b: "" }); cmpPintarCompuesta();
+  }));
+  cont.querySelectorAll("[data-csegdel]").forEach((b) => (b.onclick = () => {
+    const [k, i] = b.dataset.csegdel.split("|"); const e = cmpComp.comps[k] || {};
+    if (e.segs) e.segs.splice(+i, 1);
+    if (e.segs && !e.segs.length) e.segsOn = false;
+    cmpPintarCompuesta();
+  }));
+  cont.querySelectorAll("[data-cseg]").forEach((i) => {
+    i.oninput = (ev) => {
+      const [k, idx, campo] = ev.target.dataset.cseg.split("|");
+      const e = (cmpComp.comps[k] = cmpComp.comps[k] || {});
+      e.segs = e.segs || [];
+      e.segs[+idx] = e.segs[+idx] || { a: "", b: "" };
+      e.segs[+idx][campo] = ev.target.value;
+      const p = cmpPartida(k);
+      const t = cont.querySelector('[data-cqtot="' + k + '"]');
+      if (t) t.textContent = "Σ " + cmpFmt(cmpCompParcial(p, e)) + " " + CMP_UNI[p.unidad];
+      cmpActualizarComp();
     };
   });
 }
