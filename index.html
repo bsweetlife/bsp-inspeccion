@@ -121,8 +121,9 @@
 <script>
 "use strict";
 /* ================= Constantes ================= */
-const VERSION = "3.37";
+const VERSION = "3.38";
 const CHANGELOG = [
+  ["3.38", "Corregido: al editar una línea, Guardar cambios la reemplaza a la primera; el aviso de valor atípico ya no bloquea la edición."],
   ["3.37", "El editor de fotos ahora permite dibujar flechas, círculos y elipses, además del trazo a mano alzada."],
   ["3.36", "Cada foto guarda las coordenadas y la altitud del GPS (aproximada) para ubicar el piso si se pierde la referencia. Las coordenadas del edificio ahora incluyen la elevación."],
   ["3.35", "La opción solo lo intervenido está en todos los componentes de área y longitud, y permite calcular el área como ancho por alto y sumar varias áreas o tramos."],
@@ -3745,7 +3746,7 @@ function rComputos() {
       return;
     }
     const at = cmpAtipico(l, p);
-    if (at && !cmpBorrador.atipicoOk) {
+    if (at && !cmpBorrador.atipicoOk && !cmpEditId) {
       box.style.color = "var(--ambar-tx)";
       box.innerHTML = esc(at) + "<br />Vuelva a tocar Guardar línea si la cantidad es correcta.";
       cmpBorrador.atipicoOk = true;
