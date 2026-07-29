@@ -121,8 +121,9 @@
 <script>
 "use strict";
 /* ================= Constantes ================= */
-const VERSION = "3.36";
+const VERSION = "3.37";
 const CHANGELOG = [
+  ["3.37", "El editor de fotos ahora permite dibujar flechas, círculos y elipses, además del trazo a mano alzada."],
   ["3.36", "Cada foto guarda las coordenadas y la altitud del GPS (aproximada) para ubicar el piso si se pierde la referencia. Las coordenadas del edificio ahora incluyen la elevación."],
   ["3.35", "La opción solo lo intervenido está en todos los componentes de área y longitud, y permite calcular el área como ancho por alto y sumar varias áreas o tramos."],
   ["3.34", "Editar y corregir una línea simple ya guardada: cambiar la partida, las medidas, la observación o la ubicación sin borrarla ni perder su foto."],
@@ -1923,6 +1924,12 @@ async function abrirEditorFoto(fid) {
       <button id="edDeshacer" style="background:#374151;color:#fff;border:none;border-radius:8px;padding:8px 12px;font-weight:600">↩ Deshacer</button>
       <button id="edCerrar" style="background:#374151;color:#fff;border:none;border-radius:8px;padding:8px 12px;font-weight:600">Cancelar</button>
     </div>
+    <div id="edHerr" style="display:flex;gap:6px;justify-content:center;flex-wrap:wrap;padding:0 14px 8px">
+      <button data-t="flecha" style="color:#fff;border:none;border-radius:8px;padding:8px 12px;font-weight:600;font-size:13px">➤ Flecha</button>
+      <button data-t="circulo" style="color:#fff;border:none;border-radius:8px;padding:8px 12px;font-weight:600;font-size:13px">◯ Círculo</button>
+      <button data-t="elipse" style="color:#fff;border:none;border-radius:8px;padding:8px 12px;font-weight:600;font-size:13px">⬭ Elipse</button>
+      <button data-t="libre" style="color:#fff;border:none;border-radius:8px;padding:8px 12px;font-weight:600;font-size:13px">✎ Libre</button>
+    </div>
     <div style="flex:1;display:flex;align-items:center;justify-content:center;overflow:hidden;padding:0 8px">
       <canvas id="edCanvas" style="max-width:100%;max-height:100%;touch-action:none;border-radius:8px"></canvas>
     </div>
@@ -1940,32 +1947,72 @@ async function abrirEditorFoto(fid) {
   canvas.width = img.naturalWidth; canvas.height = img.naturalHeight;
   const ctx = canvas.getContext("2d");
   let color = "#e11d48";
-  const trazos = [];
+  let tool = "flecha";
+  const formas = [];
   let actual = null;
   const grosor = Math.max(4, Math.round(canvas.width / 220));
+  function flecha(x0, y0, x1, y1, col) {
+    ctx.strokeStyle = col; ctx.fillStyle = col; ctx.lineWidth = grosor; ctx.lineCap = "round"; ctx.lineJoin = "round";
+    ctx.beginPath(); ctx.moveTo(x0, y0); ctx.lineTo(x1, y1); ctx.stroke();
+    const ang = Math.atan2(y1 - y0, x1 - x0), h = grosor * 4;
+    ctx.beginPath(); ctx.moveTo(x1, y1);
+    ctx.lineTo(x1 - h * Math.cos(ang - Math.PI / 7), y1 - h * Math.sin(ang - Math.PI / 7));
+    ctx.lineTo(x1 - h * Math.cos(ang + Math.PI / 7), y1 - h * Math.sin(ang + Math.PI / 7));
+    ctx.closePath(); ctx.fill();
+  }
+  function dibujarForma(f) {
+    ctx.strokeStyle = f.color; ctx.lineWidth = grosor; ctx.lineCap = "round"; ctx.lineJoin = "round";
+    if (f.tipo === "libre") {
+      ctx.beginPath();
+      f.pts.forEach((p, i) => (i ? ctx.lineTo(p[0], p[1]) : ctx.moveTo(p[0], p[1])));
+      ctx.stroke();
+    } else if (f.tipo === "flecha") {
+      flecha(f.x0, f.y0, f.x1, f.y1, f.color);
+    } else {
+      const cx = (f.x0 + f.x1) / 2, cy = (f.y0 + f.y1) / 2;
+      let rx = Math.abs(f.x1 - f.x0) / 2, ry = Math.abs(f.y1 - f.y0) / 2;
+      if (f.tipo === "circulo") { const r = Math.min(rx, ry); rx = r; ry = r; }
+      ctx.beginPath(); ctx.ellipse(cx, cy, rx, ry, 0, 0, Math.PI * 2); ctx.stroke();
+    }
+  }
   function redibujar() {
     ctx.drawImage(img, 0, 0);
-    for (const t of trazos) {
-      ctx.strokeStyle = t.color; ctx.lineWidth = grosor; ctx.lineCap = "round"; ctx.lineJoin = "round";
-      ctx.beginPath();
-      t.pts.forEach((p, i) => (i ? ctx.lineTo(p[0], p[1]) : ctx.moveTo(p[0], p[1])));
-      ctx.stroke();
-    }
+    for (const f of formas) dibujarForma(f);
+    if (actual) dibujarForma(actual);
   }
   redibujar();
   const pos = (e) => {
     const r = canvas.getBoundingClientRect();
     return [((e.clientX - r.left) / r.width) * canvas.width, ((e.clientY - r.top) / r.height) * canvas.height];
   };
-  canvas.onpointerdown = (e) => { e.preventDefault(); canvas.setPointerCapture(e.pointerId); actual = { color, pts: [pos(e)] }; trazos.push(actual); };
-  canvas.onpointermove = (e) => { if (!actual) return; e.preventDefault(); actual.pts.push(pos(e)); redibujar(); };
-  canvas.onpointerup = () => { actual = null; };
+  canvas.onpointerdown = (e) => {
+    e.preventDefault(); canvas.setPointerCapture(e.pointerId);
+    const p = pos(e);
+    actual = tool === "libre" ? { tipo: "libre", color, pts: [p] } : { tipo: tool, color, x0: p[0], y0: p[1], x1: p[0], y1: p[1] };
+  };
+  canvas.onpointermove = (e) => {
+    if (!actual) return; e.preventDefault();
+    const p = pos(e);
+    if (actual.tipo === "libre") actual.pts.push(p); else { actual.x1 = p[0]; actual.y1 = p[1]; }
+    redibujar();
+  };
+  canvas.onpointerup = () => {
+    if (actual) {
+      const ok = actual.tipo === "libre" ? actual.pts.length > 1 : (Math.abs(actual.x1 - actual.x0) > 3 || Math.abs(actual.y1 - actual.y0) > 3);
+      if (ok) formas.push(actual);
+    }
+    actual = null; redibujar();
+  };
+  const herr = ov.querySelector("#edHerr");
+  const marcarTool = () => herr.querySelectorAll("button").forEach((b) => (b.style.background = b.dataset.t === tool ? "#2563eb" : "#374151"));
+  herr.querySelectorAll("button").forEach((b) => (b.onclick = () => { tool = b.dataset.t; marcarTool(); }));
+  marcarTool();
   ov.querySelector("#edColores").querySelectorAll("button").forEach((bt) => (bt.onclick = () => {
     color = bt.dataset.c;
     ov.querySelector("#edColores").querySelectorAll("button").forEach((x) => (x.style.borderColor = x === bt ? "#fff" : "transparent"));
     if (color === "#ffffff") bt.style.borderColor = "#facc15";
   }));
-  ov.querySelector("#edDeshacer").onclick = () => { trazos.pop(); redibujar(); };
+  ov.querySelector("#edDeshacer").onclick = () => { formas.pop(); redibujar(); };
   const cerrar = () => { URL.revokeObjectURL(url); ov.remove(); };
   ov.querySelector("#edCerrar").onclick = cerrar;
   ov.querySelector("#edGuardar").onclick = () => {
