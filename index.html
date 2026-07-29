@@ -121,8 +121,9 @@
 <script>
 "use strict";
 /* ================= Constantes ================= */
-const VERSION = "3.39";
+const VERSION = "3.40";
 const CHANGELOG = [
+  ["3.40", "En tratamiento de grietas, la pintura ya no arranca con el área de la banda: parte de cero para que agregues el área real del paño con la función de sumar áreas."],
   ["3.39", "Corregido de raíz: al editar una línea, los botones Guardar cambios y Cancelar ahora sí responden (un error interno los dejaba sin funcionar)."],
   ["3.38", "Corregido: al editar una línea, Guardar cambios la reemplaza a la primera; el aviso de valor atípico ya no bloquea la edición."],
   ["3.37", "El editor de fotos ahora permite dibujar flechas, círculos y elipses, además del trazo a mano alzada."],
@@ -750,7 +751,7 @@ const CMP_COMPUESTAS = [
     componentes: [
       { partida: "04.02", factor: 1, base: "largo", nota: "Sellado de la grieta, por su longitud" },
       { partida: "04.04", factor: 1, base: "area", nota: "Friso de la banda: longitud por ancho" },
-      { partida: "04.05", factor: 1, base: "area", alcance: true, nota: "Pintura de la banda" }
+      { partida: "04.05", factor: 1, base: "area", alcance: true, alcanceDef: "parcial", nota: "Pintura, por lo general de todo el paño" }
     ]
   }
 ];
@@ -834,7 +835,7 @@ function cmpCompParcial(p, e) {
 }
 function cmpCantidadComponente(comp) {
   const e = cmpComp.comps[comp.partida] || {};
-  if (e.alcance === "parcial") return cmpCompParcial(cmpPartida(comp.partida) || { unidad: "m2" }, e);
+  if ((e.alcance || comp.alcanceDef) === "parcial") return cmpCompParcial(cmpPartida(comp.partida) || { unidad: "m2" }, e);
   const caras = comp.caras ? cmpCarasDe(comp.caras) : 1;
   return cmpRed(cmpBaseDe(comp) * comp.factor * caras, 2);
 }
@@ -3016,7 +3017,7 @@ function cmpCampoHtml(a, cc) {
 }
 function cmpAlcanceHtml(comp, p, e, inc) {
   if (!inc || (p.unidad !== "m2" && p.unidad !== "m")) return "";
-  const parcial = e.alcance === "parcial";
+  const parcial = (e.alcance || comp.alcanceDef) === "parcial";
   const esArea = p.unidad === "m2";
   const etiqSolo = esArea ? "Solo lo intervenido" : "Solo el tramo";
   let campo = "";
@@ -3272,7 +3273,7 @@ function cmpGuardarCompuesta() {
       derivada: true, grupo: gid, compuesta: a.nombre,
       baseMedida: baseTxt + (x.factor !== 1 ? "  ×" + x.factor : "") +
         (x.caras ? "  ·  " + cmpCarasDe(x.caras) + (cmpCarasDe(x.caras) === 1 ? " cara" : " caras") : "") +
-        (e.alcance === "parcial" ? "  ·  alcance parcial declarado" : ""),
+        ((e.alcance || x.alcanceDef) === "parcial" ? "  ·  alcance parcial declarado" : ""),
       ts: new Date().toISOString(), fotos: []
     };
     if (primera) { l.fotos = cmpBorrador.fotos.map((f) => ({ id: f.id, pie: cmpPie(l, p, f.ts), geo: f.geo })); primera = false; }
