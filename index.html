@@ -121,8 +121,9 @@
 <script>
 "use strict";
 /* ================= Constantes ================= */
-const VERSION = "3.42";
+const VERSION = "3.43";
 const CHANGELOG = [
+  ["3.43", "Las fotos de cómputos ahora se pueden ampliar y anotar (flechas, círculos, elipses), igual que las de inspección."],
   ["3.42", "Nuevas partidas de piezas sanitarias: desmontaje y montaje, y reemplazo, para poceta, lavamanos y ducha."],
   ["3.41", "En la pintura de grietas se corrigen los rótulos: Todo el paño es ahora el modo manual para indicar el área del paño, y Solo la banda es el área automática de la banda."],
   ["3.40", "En tratamiento de grietas, la pintura ya no arranca con el área de la banda: parte de cero para que agregues el área real del paño con la función de sumar áreas."],
@@ -1921,7 +1922,7 @@ async function verFoto(fid) {
 }
 
 /* ================= Editor de anotaciones sobre fotos ================= */
-async function abrirEditorFoto(fid) {
+async function abrirEditorFoto(fid, despues) {
   const blob = await blobGet("photo:" + fid);
   if (!blob) return;
   const img = new Image();
@@ -2036,7 +2037,7 @@ async function abrirEditorFoto(fid) {
         await kvSet("subidos", JSON.stringify(s));
         guardar();
       }
-      cerrar(); render();
+      cerrar(); (despues || render)();
     }, "image/jpeg", 0.85);
   };
 }
@@ -2634,7 +2635,8 @@ function cmpDetalleLinea(l) {
     ${fotos.length ? fotos.map((f) => `
       <div class="foto-card" style="margin-bottom:8px">
         <img data-foto="${f.id}" alt="Fotografía de respaldo" style="background:var(--borde);min-height:60px" />
-        <div class="cuerpo"><p class="aviso" style="margin:0">${esc(f.pie || "")}</p>${f.geo ? `<p class="aviso" style="margin:4px 0 0">📍 ${geoTxt(f.geo)}</p>` : ""}</div>
+        <div class="cuerpo"><p class="aviso" style="margin:0">${esc(f.pie || "")}</p>${f.geo ? `<p class="aviso" style="margin:4px 0 0">📍 ${geoTxt(f.geo)}</p>` : ""}
+          <button class="btn btn-linea" style="width:auto;padding:5px 10px;font-size:12px;margin-top:8px" data-anotarl="${f.id}">✏️ Anotar / ampliar</button></div>
       </div>`).join("") : `<p class="aviso" style="margin:0">Esta línea no tiene fotografías de respaldo.</p>`}
     ${!l.derivada ? `<button class="btn btn-linea" style="width:auto;padding:6px 11px;font-size:12px;margin:0 6px 6px 0" data-editln="${l.id}">✎ Editar / corregir</button>` : `<p class="aviso" style="margin:6px 0 0;font-style:italic">La edición de partidas compuestas llegará en una próxima versión.</p>`}
     ${cmpReplicarUI(l)}
@@ -2979,8 +2981,9 @@ async function cmpPintarFotos() {
     const u = await urlFoto(f.id);
     const d = document.createElement("div");
     d.className = "lista-foto";
-    d.innerHTML = `<img class="mini" src="${u || ""}" alt="" />
+    d.innerHTML = `<img class="mini" src="${u || ""}" alt="" data-anotarb="${f.id}" style="cursor:pointer" />
       <span style="flex:1">Foto ${i + 1}${f.geo ? `<br /><span class="aviso">📍 ${geoTxt(f.geo)}</span>` : ""}</span>
+      <button class="btn btn-linea" style="width:auto;padding:6px 11px;margin-right:6px" data-anotarb="${f.id}">✏️ Anotar</button>
       <button class="btn btn-rojo-linea" style="width:auto;padding:6px 12px" data-quitar="${i}">Quitar</button>`;
     cont.appendChild(d);
   }
@@ -2992,6 +2995,7 @@ async function cmpPintarFotos() {
       cmpPintarFotos();
     };
   });
+  cont.querySelectorAll("[data-anotarb]").forEach((b) => (b.onclick = () => abrirEditorFoto(b.dataset.anotarb, cmpPintarFotos)));
 }
 
 function cmpCapturar() {
@@ -3819,6 +3823,7 @@ function rComputos() {
   });
 
   $app.querySelectorAll("[data-editln]").forEach((b) => (b.onclick = () => cmpEditarLinea(b.dataset.editln)));
+  $app.querySelectorAll("[data-anotarl]").forEach((b) => (b.onclick = () => abrirEditorFoto(b.dataset.anotarl, rComputos)));
   const bEditCancel = document.getElementById("cmEditCancel");
   if (bEditCancel) bEditCancel.onclick = () => { cmpEditId = null; cmpBorrador = { origen: "sitio", fotos: [] }; rComputos(); window.scrollTo(0, 0); };
   $app.querySelectorAll("[data-repltoggle]").forEach((b) => (b.onclick = () => {
