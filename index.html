@@ -121,8 +121,9 @@
 <script>
 "use strict";
 /* ================= Constantes ================= */
-const VERSION = "3.44";
+const VERSION = "3.45";
 const CHANGELOG = [
+  ["3.45", "Corregido: al sumar tramos de grieta, ya no da el error de longitud en blanco al guardar; la validación usa la suma de tramos."],
   ["3.44", "Nueva partida Otro para líneas simples: se elige del selector, se escribe su descripción y su unidad, y en el resumen cada Otro se agrupa por su descripción."],
   ["3.43", "Las fotos de cómputos ahora se pueden ampliar y anotar (flechas, círculos, elipses), igual que las de inspección."],
   ["3.42", "Nuevas partidas de piezas sanitarias: desmontaje y montaje, y reemplazo, para poceta, lavamanos y ducha."],
@@ -3263,9 +3264,12 @@ function cmpGuardarCompuesta() {
   const errs = [];
   if (!String(cmpBorrador.zona || "").trim()) errs.push("Indique la zona donde tomó la medida.");
   for (const cc of a.campos) {
+    if (cmpComp.segsOn && a.sumable === cc) continue;
+    if (cmpComp.segsOn && cc === "cantidad") continue;
     const v = cmpNum(cmpComp.base[cc], cc === "cantidad" ? 1 : NaN);
     if (!Number.isFinite(v) || v <= 0) errs.push((a.etiquetas[cc] || CMP_TXT[cc]) + " debe ser mayor que cero.");
   }
+  if (cmpComp.segsOn && a.sumable && cmpSegSuma() <= 0) errs.push("Agregue al menos un tramo con longitud mayor que cero.");
   const incl = a.componentes.filter((x) => (cmpComp.comps[x.partida] || {}).incluir !== false);
   if (!incl.length) errs.push("Debe incluir al menos una partida.");
   for (const x of incl) if (cmpCantidadComponente(x) <= 0)
