@@ -121,8 +121,9 @@
 <script>
 "use strict";
 /* ================= Constantes ================= */
-const VERSION = "3.43";
+const VERSION = "3.44";
 const CHANGELOG = [
+  ["3.44", "Nueva partida Otro para líneas simples: se elige del selector, se escribe su descripción y su unidad, y en el resumen cada Otro se agrupa por su descripción."],
   ["3.43", "Las fotos de cómputos ahora se pueden ampliar y anotar (flechas, círculos, elipses), igual que las de inspección."],
   ["3.42", "Nuevas partidas de piezas sanitarias: desmontaje y montaje, y reemplazo, para poceta, lavamanos y ducha."],
   ["3.41", "En la pintura de grietas se corrigen los rótulos: Todo el paño es ahora el modo manual para indicar el área del paño, y Solo la banda es el área automática de la banda."],
@@ -474,11 +475,21 @@ const CMP_CAT = [
   ["05.10", "05 Impermeabilización e instalaciones", "Reemplazo de ducha", "und", "Cantidad de duchas nuevas. Incluye retiro de la existente."],
   ["06.01", "06 Fachadas", "Demolición de friso en fachada", "m2", "Cara externa. Incluye trabajo en altura con andamio o fachadero."],
   ["06.02", "06 Fachadas", "Friso liso en fachada", "m2", "Cara externa desarrollada. Rendimiento de fachada, distinto del interior."],
-  ["06.03", "06 Fachadas", "Pintura o recubrimiento de fachada", "m2", "Cara externa. Acabado de fachada, no pintura de caucho interior."]
+  ["06.03", "06 Fachadas", "Pintura o recubrimiento de fachada", "m2", "Cara externa. Acabado de fachada, no pintura de caucho interior."],
+  ["99.99", "99 Otros", "Otro (describir abajo)", "und", "Partida personalizada. Indique la descripción y la unidad."]
 ].map(([codigo, grupo, descripcion, unidad, notas]) =>
   Object.assign({ codigo, grupo, descripcion, unidad, notas }, CMP_MEDIDA[codigo] || {}));
 
 const cmpPartida = (cod) => CMP_CAT.find((p) => p.codigo === cod) || null;
+function cmpPartidaBorrador() {
+  const cod = cmpBorrador.partida;
+  if (cod === "99.99") return { codigo: "99.99", grupo: "99 Otros", descripcion: cmpBorrador.otroDesc || "Otro", unidad: cmpBorrador.otroUni || "und", notas: "Partida personalizada." };
+  return cmpPartida(cod);
+}
+function cmpPartidaLinea(l) {
+  if (l.partida === "99.99") return { codigo: "99.99", grupo: "99 Otros", descripcion: l.otroDesc || "Otro", unidad: l.unidad || "und", notas: "" };
+  return cmpPartida(l.partida);
+}
 const cmpCampos = (p) => (p && p.campos) || (p && CMP_UNI_CAMPOS[p.unidad]) || [];
 const cmpEtiq = (p, c) => (p && p.etiquetas && p.etiquetas[c]) || CMP_TXT[c] || c;
 function cmpNum(v, d) {
@@ -505,6 +516,7 @@ function cmpParcial(l, p) {
 }
 function cmpValidar(l, p) {
   const e = [];
+  if (l.partida === "99.99" && !String(l.otroDesc || "").trim()) e.push("Describa la partida 'Otro'.");
   if (!String(l.zona || "").trim()) e.push("Indique la zona donde tomó la medida.");
   if (l.parcialFijo != null) {
     if (cmpNum(l.parcialFijo) <= 0) e.push("La cantidad medida debe ser mayor que cero.");
@@ -544,12 +556,16 @@ function cmpAgrupar(lineas) {
   for (const l of lineas) {
     const p = cmpPartida(l.partida);
     if (!p) continue;
-    if (!m.has(p.codigo)) m.set(p.codigo, { codigo: p.codigo, descripcion: p.descripcion, unidad: p.unidad, total: 0, n: 0, estimada: false });
-    const a = m.get(p.codigo);
+    const esOtro = l.partida === "99.99";
+    const desc = esOtro ? (l.otroDesc || "Otro") : p.descripcion;
+    const uni = esOtro ? (l.unidad || "und") : p.unidad;
+    const key = esOtro ? "99.99|" + desc : p.codigo;
+    if (!m.has(key)) m.set(key, { codigo: p.codigo, descripcion: desc, unidad: uni, total: 0, n: 0, estimada: false });
+    const a = m.get(key);
     a.total += cmpNum(l.parcial); a.n++;
     if (l.origen === "planos" || l.origen === "muestreo") a.estimada = true;
   }
-  return Array.from(m.values()).sort((a, b) => a.codigo.localeCompare(b.codigo));
+  return Array.from(m.values()).sort((a, b) => a.codigo.localeCompare(b.codigo) || a.descripcion.localeCompare(b.descripcion));
 }
 
 /* Acarreo de escombros: volumen suelto derivado de las demoliciones.
@@ -2593,7 +2609,7 @@ async function cmpZip() {
     T.push("");
     T.push("DETALLE POR LÍNEA");
     for (const l of c.lineas) {
-      const p = cmpPartida(l.partida) || {};
+      const p = cmpPartidaLinea(l) || {};
       const med = cmpCampos(p).filter((x) => x !== "cantidad")
         .map((x) => cmpEtiq(p, x) + " " + (x === "diametro" ? (l.diametro || "") : cmpFmt(cmpNum(l[x])))).join("  ·  ");
       T.push("  " + l.partida + "  " + [l.elemento, l.zona, l.nivel].filter(Boolean).join(" · "));
@@ -2621,7 +2637,7 @@ async function cmpZip() {
 }
 
 function cmpDetalleLinea(l) {
-  const p = cmpPartida(l.partida) || {};
+  const p = cmpPartidaLinea(l) || {};
   const med = cmpCampos(p).map((x) =>
     cmpEtiq(p, x) + ": " + (x === "diametro" ? (l.diametro || "—") : cmpFmt(cmpNum(l[x])))).join("  ·  ");
   const org = l.origen === "sitio" ? "Medida en sitio"
@@ -2835,6 +2851,7 @@ function cmpAuxWire(cont, destino, aplicar) {
 
 /* Aviso de valor atípico: compara contra la mediana de la misma partida */
 function cmpAtipico(l, p) {
+  if (l.partida === "99.99") return null;
   const c = cmpDe(st.insp);
   const otras = c.lineas.filter((x) => x.partida === l.partida)
     .map((x) => cmpNum(x.parcial)).filter((v) => v > 0).sort((a, b) => a - b);
@@ -2850,7 +2867,7 @@ function cmpAtipico(l, p) {
 }
 
 function cmpPintarDims() {
-  const p = cmpPartida(cmpBorrador.partida);
+  const p = cmpPartidaBorrador();
   const cont = document.getElementById("cmDims");
   if (!cont || !p) return;
   const crit = document.getElementById("cmCrit");
@@ -2901,7 +2918,7 @@ function cmpPintarDims() {
 }
 
 function cmpLeer() {
-  const p = cmpPartida(cmpBorrador.partida);
+  const p = cmpPartidaBorrador();
   const D = cmpBorrador.dims || {};
   const l = {
     partida: cmpBorrador.partida,
@@ -2915,6 +2932,7 @@ function cmpLeer() {
   for (const c of cmpCampos(p)) l[c] = D[c] === undefined ? (c === "cantidad" ? "1" : "") : D[c];
   if (cmpBorrador.fijo) l.parcialFijo = cmpBorrador.fijo.valor;
   if (cmpBorrador.medicion) l.medicion = cmpBorrador.medicion;
+  if (cmpBorrador.partida === "99.99") l.otroDesc = String(cmpBorrador.otroDesc || "").trim();
   return l;
 }
 
@@ -2922,7 +2940,7 @@ function cmpEditarLinea(id) {
   const c = cmpDe(st.insp);
   const l = c.lineas.find((x) => x.id === id);
   if (!l || l.derivada) return;
-  const p = cmpPartida(l.partida);
+  const p = cmpPartidaLinea(l);
   cmpModo = "simple";
   cmpEditId = id;
   cmpVer = null;
@@ -2938,6 +2956,7 @@ function cmpEditarLinea(id) {
     dims: {},
     fotos: (l.fotos || []).map((f) => ({ id: f.id, ts: l.ts, pie: f.pie, geo: f.geo }))
   };
+  if (l.partida === "99.99") { cmpBorrador.otroDesc = l.otroDesc || ""; cmpBorrador.otroUni = l.unidad || "und"; }
   for (const cc of cmpCampos(p)) cmpBorrador.dims[cc] = l[cc] != null ? l[cc] : "";
   if (l.parcialFijo != null) cmpBorrador.fijo = { valor: l.parcialFijo, unidad: l.unidad };
   if (l.medicion) cmpBorrador.medicion = l.medicion;
@@ -2946,7 +2965,7 @@ function cmpEditarLinea(id) {
 }
 
 function cmpCinta() {
-  const p = cmpPartida(cmpBorrador.partida);
+  const p = cmpPartidaBorrador();
   const el = document.getElementById("cmCinta");
   if (!el || !p) return;
   const l = cmpLeer();
@@ -3603,7 +3622,7 @@ function rComputos() {
   }).join("") : `<p class="aviso">Aún no hay cantidades computadas.</p>`;
 
   const linHtml = c.lineas.length ? c.lineas.slice().reverse().map((l) => {
-    const p2 = cmpPartida(l.partida) || { descripcion: "" };
+    const p2 = cmpPartidaLinea(l) || { descripcion: "" };
     const meta = [l.elemento, l.zona, l.nivel].filter(Boolean).join(" · ");
     const nf = (l.fotos || []).length;
     const abierta = cmpVer === l.id;
@@ -3641,6 +3660,9 @@ function rComputos() {
 
       <div id="cmSimple" ${simple ? "" : 'style="display:none"'}>
         <label class="campo"><span>Partida</span><select id="cmPart">${opts}</select></label>
+        ${cmpBorrador.partida === "99.99" ? `
+        <label class="campo"><span>Descripción de la partida</span><input id="cmOtroDesc" value="${esc(cmpBorrador.otroDesc || "")}" placeholder="Describa el trabajo" /></label>
+        <label class="campo"><span>Unidad</span><select id="cmOtroUni">${[["und", "und"], ["m2", "m²"], ["m", "m (lineal)"], ["m3", "m³"], ["kg", "kg"]].map(([v, t]) => `<option value="${v}" ${(cmpBorrador.otroUni || "und") === v ? "selected" : ""}>${t}</option>`).join("")}</select></label>` : ""}
         <p class="aviso" id="cmCrit" style="margin-top:-6px"></p>
         <div class="etiq">Medidas</div>
         <div class="grid2" id="cmDims"></div>
@@ -3706,7 +3728,11 @@ function rComputos() {
   });
 
   const pt = document.getElementById("cmPart");
-  if (pt) pt.onchange = (e) => { cmpBorrador.partida = e.target.value; cmpBorrador.dims = {}; cmpBorrador.atipicoOk = false; cmpPintarDims(); };
+  if (pt) pt.onchange = (e) => { cmpBorrador.partida = e.target.value; cmpBorrador.dims = {}; cmpBorrador.atipicoOk = false; rComputos(); };
+  const od = document.getElementById("cmOtroDesc");
+  if (od) od.oninput = (e) => { cmpBorrador.otroDesc = e.target.value; };
+  const ou = document.getElementById("cmOtroUni");
+  if (ou) ou.onchange = (e) => { cmpBorrador.otroUni = e.target.value; cmpBorrador.dims = {}; rComputos(); };
   document.getElementById("cmElem").oninput = (e) => { cmpBorrador.elemento = e.target.value; };
   document.getElementById("cmObs").oninput = (e) => { cmpBorrador.obs = e.target.value; };
   const bObsPrev = document.getElementById("cmObsPrev");
@@ -3751,7 +3777,7 @@ function rComputos() {
 
   const bg = document.getElementById("cmGuardar");
   if (bg) bg.onclick = () => {
-    const p = cmpPartida(cmpBorrador.partida);
+    const p = cmpPartidaBorrador();
     const l = cmpLeer();
     const errs = cmpValidar(l, p);
     const box = document.getElementById("cmErr");
