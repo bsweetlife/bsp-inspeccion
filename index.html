@@ -121,8 +121,9 @@
 <script>
 "use strict";
 /* ================= Constantes ================= */
-const VERSION = "3.48";
+const VERSION = "3.49";
 const CHANGELOG = [
+  ["3.49", "El dictado con IA ahora reconoce tus compuestas predefinidas: si dictas algo que calza con una (por ejemplo reposición de pared), carga esa compuesta completa con todas sus partidas; si no, arma una a medida."],
   ["3.48", "La compuesta de reposición de pared incluye ahora rodapié (pintado o de material) como opciones a lo largo del paño; se activan tildándolas."],
   ["3.47", "En Ajustes, botones para pegar y ver/ocultar la clave API, y mensaje claro cuando la conexión con la API falla."],
   ["3.46", "Dicta por voz todo lo que hay que hacerle a un elemento y la IA arma la compuesta a medida con las partidas que correspondan; tú solo metes las dimensiones."],
@@ -818,12 +819,34 @@ async function cmpDictarTareas(btn) {
   if (btn) { btn.disabled = true; btn.textContent = "Interpretando…"; }
   try {
     const cat = CMP_CAT.filter((p) => p.codigo !== "99.99").map((p) => p.codigo + " | " + p.descripcion + " | " + p.unidad).join("\n");
-    const prompt = "Eres asistente de un ingeniero estructural en Venezuela armando el computo metrico de reparacion de UN elemento tras un sismo. El ingeniero dicta las tareas a ejecutar. Elige del catalogo las partidas que correspondan y decide si el elemento se mide por area o por longitud.\n\nCatalogo (codigo | descripcion | unidad):\n" + cat + "\n\nDictado del ingeniero: \"" + texto + "\"\n\nReglas:\n- Elige solo codigos que existan en el catalogo.\n- En \"partidas\" incluye solo las de unidad m o m2 (las que comparten la medida del elemento).\n- \"base\" es \"area\" si el elemento se mide por superficie (largo por alto), o \"largo\" si se mide por longitud.\n- Las tareas por unidad (und) o peso (kg) NO van en \"partidas\"; mencionalas en \"aparte\" como texto.\n- Responde SOLO con JSON valido, sin markdown ni texto extra, con esta forma exacta:\n{\"base\":\"area\",\"partidas\":[\"02.01\",\"04.03\"],\"aparte\":[],\"nota\":\"breve\"}";
+    const paquetes = CMP_COMPUESTAS.map((x) => x.id + " | " + x.nombre + " | partidas: " + x.componentes.map((c) => c.partida).join(", ")).join("\n");
+    const prompt = `Eres asistente de un ingeniero estructural en Venezuela armando el computo metrico de reparacion de UN elemento tras un sismo. El ingeniero dicta las tareas. Tienes DOS formas de responder.
+
+PAQUETES PREDEFINIDOS (compuestas ya armadas por el ingeniero: id | nombre | partidas):
+${paquetes}
+
+CATALOGO DE PARTIDAS (codigo | descripcion | unidad):
+${cat}
+
+Dictado del ingeniero: "${texto}"
+
+Decide:
+1) Si el dictado corresponde claramente a UNO de los paquetes predefinidos (por ejemplo "reposicion de pared" es el paquete pared; "columna con cabillas expuestas" es columna; "tratar grieta" es grieta), responde SOLO con este JSON usando su id exacto: {"compuesta":"pared"}
+2) Si NO calza con ningun paquete, arma una a medida eligiendo del catalogo: en "partidas" pon solo codigos de unidad m o m2 (los que comparten la medida del elemento); "base" es "area" si se mide por superficie (largo por alto) o "largo" si por longitud; las tareas de unidad (und) o peso (kg) van en "aparte" como texto. Responde SOLO con este JSON: {"base":"area","partidas":["02.01","04.03"],"aparte":[],"nota":"breve"}
+
+Responde UNICAMENTE con el JSON, sin markdown ni texto extra.`;
     let r = await llamarClaude(prompt, 500);
     r = r.replace(/```json|```/g, "").trim();
     const ini = r.indexOf("{"), fin = r.lastIndexOf("}");
     if (ini >= 0 && fin > ini) r = r.slice(ini, fin + 1);
     const data = JSON.parse(r);
+    if (data.compuesta && data.compuesta !== "__medida" && cmpCompuesta(data.compuesta)) {
+      cmpModo = "compuesta";
+      cmpComp = { id: data.compuesta, base: {}, comps: {}, carasFrisar: 0, carasPintar: 0 };
+      cmpDictado = { abierto: false, texto: "", cargando: false };
+      rComputos();
+      return;
+    }
     const base = data.base === "largo" ? "largo" : "area";
     const codes = Array.isArray(data.partidas) ? data.partidas : [];
     const n = cmpArmarMedida(base, codes);
