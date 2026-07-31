@@ -121,8 +121,9 @@
 <script>
 "use strict";
 /* ================= Constantes ================= */
-const VERSION = "3.49";
+const VERSION = "3.50";
 const CHANGELOG = [
+  ["3.50", "Al guardar una partida sin foto, la app pregunta si quieres guardarla así. Y el dictado con IA ahora sugiere partidas de línea sueltas (desmontar poceta, lavamanos, etc.) que agregas con un toque."],
   ["3.49", "El dictado con IA ahora reconoce tus compuestas predefinidas: si dictas algo que calza con una (por ejemplo reposición de pared), carga esa compuesta completa con todas sus partidas; si no, arma una a medida."],
   ["3.48", "La compuesta de reposición de pared incluye ahora rodapié (pintado o de material) como opciones a lo largo del paño; se activan tildándolas."],
   ["3.47", "En Ajustes, botones para pegar y ver/ocultar la clave API, y mensaje claro cuando la conexión con la API falla."],
@@ -830,9 +831,11 @@ ${cat}
 
 Dictado del ingeniero: "${texto}"
 
-Decide:
-1) Si el dictado corresponde claramente a UNO de los paquetes predefinidos (por ejemplo "reposicion de pared" es el paquete pared; "columna con cabillas expuestas" es columna; "tratar grieta" es grieta), responde SOLO con este JSON usando su id exacto: {"compuesta":"pared"}
-2) Si NO calza con ningun paquete, arma una a medida eligiendo del catalogo: en "partidas" pon solo codigos de unidad m o m2 (los que comparten la medida del elemento); "base" es "area" si se mide por superficie (largo por alto) o "largo" si por longitud; las tareas de unidad (und) o peso (kg) van en "aparte" como texto. Responde SOLO con este JSON: {"base":"area","partidas":["02.01","04.03"],"aparte":[],"nota":"breve"}
+Ademas, en cualquier caso, si el dictado incluye tareas que se cuentan por unidad (und) o peso (kg) y existen en el catalogo (por ejemplo desmontar o reemplazar poceta, lavamanos o ducha), agrega sus codigos en "lineas"; se crearan como partidas de linea aparte para poner la cantidad.
+
+Decide el paquete principal:
+1) Si el dictado corresponde claramente a UNO de los paquetes predefinidos (por ejemplo "reposicion de pared" es pared; "columna con cabillas expuestas" es columna; "tratar grieta" es grieta), responde con: {"compuesta":"pared","lineas":[]}
+2) Si NO calza con ningun paquete, arma una a medida: en "partidas" pon solo codigos de unidad m o m2 (los que comparten la medida); "base" es "area" (largo por alto) o "largo" (longitud). Responde con: {"base":"area","partidas":["02.08"],"aparte":[],"lineas":[],"nota":"breve"}
 
 Responde UNICAMENTE con el JSON, sin markdown ni texto extra.`;
     let r = await llamarClaude(prompt, 500);
@@ -840,6 +843,7 @@ Responde UNICAMENTE con el JSON, sin markdown ni texto extra.`;
     const ini = r.indexOf("{"), fin = r.lastIndexOf("}");
     if (ini >= 0 && fin > ini) r = r.slice(ini, fin + 1);
     const data = JSON.parse(r);
+    cmpDictadoLineas = (Array.isArray(data.lineas) ? data.lineas : []).filter((cc) => cmpPartida(cc));
     if (data.compuesta && data.compuesta !== "__medida" && cmpCompuesta(data.compuesta)) {
       cmpModo = "compuesta";
       cmpComp = { id: data.compuesta, base: {}, comps: {}, carasFrisar: 0, carasPintar: 0 };
@@ -859,6 +863,15 @@ Responde UNICAMENTE con el JSON, sin markdown ni texto extra.`;
     alert("No se pudo interpretar: " + e.message);
     if (btn) { btn.disabled = false; btn.textContent = "Interpretar con IA"; }
   }
+}
+function cmpDictLineasHtml() {
+  if (!cmpDictadoLineas.length) return "";
+  return `<div class="tarjeta" style="padding:12px;background:var(--ambar-bg);border-color:var(--ambar)">
+    <div class="etiq" style="color:var(--ambar-tx)">Partidas sueltas del dictado (tócalas para agregarlas)</div>
+    <div class="pildoras">
+      ${cmpDictadoLineas.map((cod) => { const p = cmpPartida(cod); return p ? `<button data-dictln="${cod}">${cod} ${esc(p.descripcion)}</button>` : ""; }).join("")}
+    </div>
+  </div>`;
 }
 function cmpDictadoHtml() {
   if (!cmpDictado.abierto) return `<button class="btn btn-ambar" id="cmDictarAbrir" style="margin-bottom:10px">🎙 Dictar tareas (la IA arma la compuesta)</button>`;
@@ -966,6 +979,7 @@ let cmpModo = "simple";
 let cmpComp = { id: "", base: {}, comps: {} };
 let cmpMedidaDef = null;
 let cmpDictado = { abierto: false, texto: "", cargando: false };
+let cmpDictadoLineas = [];
 let _geoUlt = null;
 function geoCapturar() {
   return new Promise((resolve) => {
@@ -3393,6 +3407,7 @@ function cmpGuardarCompuesta() {
     return;
   }
 
+  if (!(cmpBorrador.fotos || []).length && !confirm("Esta partida no tiene foto de respaldo. ¿Guardarla así, sin foto?")) return;
   const gid = uid();
   const baseTxt = cmpComp.segsOn
     ? ("longitud sumada de " + (cmpComp.segs || []).filter((x) => cmpNum(x) > 0).length + " tramos = " + cmpFmt(cmpSegSuma()) + " m" +
@@ -3767,6 +3782,7 @@ function rComputos() {
         <button data-modo="compuesta" class="${simple ? "" : "on"}">⊞ Partida compuesta</button>
       </div>`}
       <div id="cmUbic"></div>
+      ${cmpDictLineasHtml()}
       ${sugHtml}
       <label class="campo"><span>Elemento</span><input id="cmElem" value="${esc(cmpBorrador.elemento || "")}" placeholder="Columna C-4" /></label>
 
@@ -3829,6 +3845,12 @@ function rComputos() {
   if (_elModo) _elModo.querySelectorAll("[data-modo]").forEach((btn) => {
     btn.onclick = () => { cmpCapturar(); cmpModo = btn.dataset.modo; rComputos(); };
   });
+  $app.querySelectorAll("[data-dictln]").forEach((btn) => (btn.onclick = () => {
+    const cod = btn.dataset.dictln;
+    cmpCapturar(); cmpModo = "simple"; cmpBorrador.partida = cod; cmpBorrador.dims = {};
+    cmpDictadoLineas = cmpDictadoLineas.filter((x) => x !== cod);
+    rComputos();
+  }));
   $app.querySelectorAll("[data-sug]").forEach((btn) => {
     btn.onclick = () => { cmpCapturar(); cmpModo = "simple"; cmpBorrador.partida = btn.dataset.sug; rComputos(); };
   });
