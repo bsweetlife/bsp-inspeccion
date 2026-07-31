@@ -121,8 +121,9 @@
 <script>
 "use strict";
 /* ================= Constantes ================= */
-const VERSION = "3.46";
+const VERSION = "3.47";
 const CHANGELOG = [
+  ["3.47", "En Ajustes, botones para pegar y ver/ocultar la clave API, y mensaje claro cuando la conexión con la API falla."],
   ["3.46", "Dicta por voz todo lo que hay que hacerle a un elemento y la IA arma la compuesta a medida con las partidas que correspondan; tú solo metes las dimensiones."],
   ["3.45", "Corregido: al sumar tramos de grieta, ya no da el error de longitud en blanco al guardar; la validación usa la suma de tramos."],
   ["3.44", "Nueva partida Otro para líneas simples: se elige del selector, se escribe su descripción y su unidad, y en el resumen cada Otro se agrupa por su descripción."],
@@ -4045,6 +4046,10 @@ function rAjustes() {
     <div class="tarjeta">
       <label class="campo"><span>Clave API de Anthropic (sk-ant-…)</span>
         <input id="inKey" type="password" value="${esc(st.apiKey)}" placeholder="sk-ant-api03-…" /></label>
+      <div style="display:flex;gap:8px;margin:-4px 0 8px">
+        <button class="btn btn-linea" id="bPegarKey" style="width:auto;padding:6px 12px;font-size:13px">📋 Pegar</button>
+        <button class="btn btn-linea" id="bVerKey" style="width:auto;padding:6px 12px;font-size:13px">👁 Ver</button>
+      </div>
       <p class="aviso">La clave se guarda solo en este teléfono. Se obtiene en console.anthropic.com (cuenta con crédito prepagado, se cobra por uso). Sin clave, la app funciona 100% igual; solo se desactiva el botón "✨ Redactar con Claude".</p>
       <button class="btn btn-negro" id="bGuardarKey">Guardar</button>
       <button class="btn btn-gris" id="bProbarKey" style="margin-top:8px">Probar conexión</button>
@@ -4099,6 +4104,23 @@ function rAjustes() {
     await kvSet("apikey", st.apiKey);
     document.getElementById("msgKey").textContent = "✓ Guardada.";
   };
+  const bPeg = document.getElementById("bPegarKey");
+  if (bPeg) bPeg.onclick = async () => {
+    try {
+      const t = await navigator.clipboard.readText();
+      const el = document.getElementById("inKey");
+      if (el && t) el.value = t.replace(/\s+/g, "");
+      document.getElementById("msgKey").textContent = t ? "Pegada. Ahora toca Guardar." : "El portapapeles está vacío.";
+    } catch (e) {
+      document.getElementById("msgKey").textContent = "No se pudo leer el portapapeles. Pégala a mano manteniendo presionado el campo.";
+    }
+  };
+  const bVer = document.getElementById("bVerKey");
+  if (bVer) bVer.onclick = () => {
+    const el = document.getElementById("inKey");
+    el.type = el.type === "password" ? "text" : "password";
+    bVer.textContent = el.type === "password" ? "👁 Ver" : "🙈 Ocultar";
+  };
   document.getElementById("bProbarKey").onclick = async () => {
     const m = document.getElementById("msgKey");
     st.apiKey = document.getElementById("inKey").value.replace(/\s+/g, "");
@@ -4107,7 +4129,7 @@ function rAjustes() {
     try {
       const r = await llamarClaude("Responde únicamente: OK", 20);
       m.textContent = r.includes("OK") ? "✓ Conexión con Claude funcionando." : "Respuesta inesperada: " + r.slice(0, 80);
-    } catch (e) { m.textContent = "✗ " + e.message; }
+    } catch (e) { m.textContent = /fetch/i.test(e.message) ? "✗ No se pudo conectar (failed to fetch). Revisa el internet, prueba Wi-Fi o datos, o si la red bloquea api.anthropic.com." : "✗ " + e.message; }
   };
   if (navigator.storage && navigator.storage.estimate) {
     navigator.storage.estimate().then((est) => {
@@ -4145,7 +4167,8 @@ function rAjustes() {
 }
 async function llamarClaude(prompt, maxTokens) {
   if (!st.apiKey) throw new Error("Configura primero la clave API en Ajustes.");
-  const resp = await fetch("https://api.anthropic.com/v1/messages", {
+  let resp;
+  try { resp = await fetch("https://api.anthropic.com/v1/messages", {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
@@ -4158,7 +4181,7 @@ async function llamarClaude(prompt, maxTokens) {
       max_tokens: maxTokens || 800,
       messages: [{ role: "user", content: prompt }]
     })
-  });
+  }); } catch (eNet) { throw new Error("No se pudo conectar con la API (failed to fetch). Revisa el internet, prueba Wi-Fi o datos, o si la red bloquea api.anthropic.com."); }
   if (!resp.ok) {
     const t = await resp.text();
     throw new Error("API " + resp.status + ": " + t.slice(0, 120));
