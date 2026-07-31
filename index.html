@@ -121,8 +121,9 @@
 <script>
 "use strict";
 /* ================= Constantes ================= */
-const VERSION = "3.47";
+const VERSION = "3.48";
 const CHANGELOG = [
+  ["3.48", "La compuesta de reposición de pared incluye ahora rodapié (pintado o de material) como opciones a lo largo del paño; se activan tildándolas."],
   ["3.47", "En Ajustes, botones para pegar y ver/ocultar la clave API, y mensaje claro cuando la conexión con la API falla."],
   ["3.46", "Dicta por voz todo lo que hay que hacerle a un elemento y la IA arma la compuesta a medida con las partidas que correspondan; tú solo metes las dimensiones."],
   ["3.45", "Corregido: al sumar tramos de grieta, ya no da el error de longitud en blanco al guardar; la validación usa la suma de tramos."],
@@ -667,7 +668,9 @@ const CMP_COMPUESTAS = [
       { partida: "02.03", factor: 1, nota: "Demolición de la pared existente" },
       { partida: "04.01", factor: 1, nota: "Pared nueva de bloque" },
       { partida: "04.04", factor: 1, caras: "frisar", nota: "Friso" },
-      { partida: "04.05", factor: 1, caras: "pintar", alcance: true, nota: "Pintura" }
+      { partida: "04.05", factor: 1, caras: "pintar", alcance: true, nota: "Pintura" },
+      { partida: "04.10", factor: 1, base: "largo", defOff: true, nota: "Rodapié pintado (opcional, a lo largo del paño)" },
+      { partida: "04.11", factor: 1, base: "largo", defOff: true, nota: "Rodapié de material (opcional, a lo largo del paño)" }
     ]
   },
   {
@@ -922,6 +925,11 @@ function cmpCompParcial(p, e) {
     return cmpRed(segs.reduce((s, x) => s + cmpNum(x.a), 0), 2);
   }
   return cmpRed(cmpNum(e.cant), 2);
+}
+function cmpIncluido(comp) {
+  const e = cmpComp.comps[comp.partida] || {};
+  if (e.incluir === undefined) return !comp.defOff;
+  return e.incluir !== false;
 }
 function cmpCantidadComponente(comp) {
   const e = cmpComp.comps[comp.partida] || {};
@@ -3164,7 +3172,7 @@ function cmpPintarCompuesta() {
   const comps = a.componentes.map((comp) => {
     const p = cmpPartida(comp.partida) || { descripcion: "", unidad: "m2" };
     const e = cmpComp.comps[comp.partida] || {};
-    const inc = e.incluir !== false;
+    const inc = cmpIncluido(comp);
     const q = cmpCantidadComponente(comp);
     return `<div class="tarjeta" style="padding:10px;margin-bottom:8px;background:${inc ? "var(--blanco)" : "var(--fondo)"}">
       <div class="fila" style="align-items:flex-start;gap:8px">
@@ -3177,7 +3185,7 @@ function cmpPintarCompuesta() {
     </div>`;
   }).join("");
 
-  const incl = a.componentes.filter((x) => (cmpComp.comps[x.partida] || {}).incluir !== false);
+  const incl = a.componentes.filter((x) => cmpIncluido(x));
 
   cont.innerHTML = `
     ${cmpDictadoHtml()}
@@ -3261,7 +3269,8 @@ function cmpPintarCompuesta() {
     btn.onclick = () => {
       const k = btn.dataset.inc;
       cmpComp.comps[k] = cmpComp.comps[k] || {};
-      cmpComp.comps[k].incluir = cmpComp.comps[k].incluir === false;
+      const _ck = a.componentes.find((x) => x.partida === k);
+      cmpComp.comps[k].incluir = !cmpIncluido(_ck);
       cmpPintarCompuesta();
     };
   });
@@ -3325,7 +3334,7 @@ function cmpActualizarComp() {
   const bv = document.getElementById("cmBaseVal");
   if (bv) bv.innerHTML = cmpFmt(base) + ' <span style="font-size:13px;opacity:.75">' + CMP_UNI[a.unidad] + "</span>";
   for (const comp of a.componentes) {
-    const inc = (cmpComp.comps[comp.partida] || {}).incluir !== false;
+    const inc = cmpIncluido(comp);
     const b = document.querySelector('[data-qcomp="' + comp.partida + '"]');
     if (!b) continue;
     const p = cmpPartida(comp.partida);
@@ -3346,7 +3355,7 @@ function cmpGuardarCompuesta() {
     if (!Number.isFinite(v) || v <= 0) errs.push((a.etiquetas[cc] || CMP_TXT[cc]) + " debe ser mayor que cero.");
   }
   if (cmpComp.segsOn && a.sumable && cmpSegSuma() <= 0) errs.push("Agregue al menos un tramo con longitud mayor que cero.");
-  const incl = a.componentes.filter((x) => (cmpComp.comps[x.partida] || {}).incluir !== false);
+  const incl = a.componentes.filter((x) => cmpIncluido(x));
   if (!incl.length) errs.push("Debe incluir al menos una partida.");
   for (const x of incl) if (cmpCantidadComponente(x) <= 0)
     errs.push("La cantidad de la partida " + x.partida + " debe ser mayor que cero.");
