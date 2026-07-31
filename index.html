@@ -121,8 +121,9 @@
 <script>
 "use strict";
 /* ================= Constantes ================= */
-const VERSION = "3.50";
+const VERSION = "3.51";
 const CHANGELOG = [
+  ["3.51", "Nueva partida 02.09, demolición de revestimiento cerámico en paredes (antes solo existía la de pisos)."],
   ["3.50", "Al guardar una partida sin foto, la app pregunta si quieres guardarla así. Y el dictado con IA ahora sugiere partidas de línea sueltas (desmontar poceta, lavamanos, etc.) que agregas con un toque."],
   ["3.49", "El dictado con IA ahora reconoce tus compuestas predefinidas: si dictas algo que calza con una (por ejemplo reposición de pared), carga esa compuesta completa con todas sus partidas; si no, arma una a medida."],
   ["3.48", "La compuesta de reposición de pared incluye ahora rodapié (pintado o de material) como opciones a lo largo del paño; se activan tildándolas."],
@@ -448,6 +449,7 @@ const CMP_CAT = [
   ["02.06", "02 Demoliciones", "Demolición de recubrimiento en losa", "m2", "Área en planta."],
   ["02.07", "02 Demoliciones", "Demolición de cielo raso suspendido, láminas y perfilería", "m2", "Área en planta del cielo raso retirado."],
   ["02.08", "02 Demoliciones", "Demolición de revestimiento cerámico en pisos", "m2", "Área en planta del cerámico demolido."],
+  ["02.09", "02 Demoliciones", "Demolición de revestimiento cerámico en paredes", "m2", "Área de pared (largo por alto) del cerámico demolido."],
   ["03.01", "03 Reparación estructural", "Limpieza y tratamiento anticorrosivo de cabillas expuestas", "m2", "Superficie desarrollada de la cabilla tratada."],
   ["03.02", "03 Reparación estructural", "Suministro y colocación de cabillas de refuerzo", "kg", "Barras por longitud por peso teórico según diámetro."],
   ["03.03", "03 Reparación estructural", "Inyección de grietas con resina epóxica", "m", "Longitud real de la grieta inyectada."],
