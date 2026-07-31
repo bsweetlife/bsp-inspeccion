@@ -121,8 +121,9 @@
 <script>
 "use strict";
 /* ================= Constantes ================= */
-const VERSION = "3.51";
+const VERSION = "3.52";
 const CHANGELOG = [
+  ["3.52", "El dictado con IA aplica criterios de obra: por ejemplo, al reponer cerámica de piso de baño agrega el desmontaje y montaje de poceta y lavamanos aunque no los menciones."],
   ["3.51", "Nueva partida 02.09, demolición de revestimiento cerámico en paredes (antes solo existía la de pisos)."],
   ["3.50", "Al guardar una partida sin foto, la app pregunta si quieres guardarla así. Y el dictado con IA ahora sugiere partidas de línea sueltas (desmontar poceta, lavamanos, etc.) que agregas con un toque."],
   ["3.49", "El dictado con IA ahora reconoce tus compuestas predefinidas: si dictas algo que calza con una (por ejemplo reposición de pared), carga esa compuesta completa con todas sus partidas; si no, arma una a medida."],
@@ -832,6 +833,9 @@ CATALOGO DE PARTIDAS (codigo | descripcion | unidad):
 ${cat}
 
 Dictado del ingeniero: "${texto}"
+
+CRITERIOS DE OBRA (aplicalos aunque no se mencionen explicitamente):
+- Si se demuele o repone ceramica de PISO de un baño o cocina, para hacerlo hay que desmontar y volver a montar las piezas sanitarias que se apoyan en ese piso: agrega en "lineas" el desmontaje y montaje de poceta (05.05) y de lavamanos (05.07).
 
 Ademas, en cualquier caso, si el dictado incluye tareas que se cuentan por unidad (und) o peso (kg) y existen en el catalogo (por ejemplo desmontar o reemplazar poceta, lavamanos o ducha), agrega sus codigos en "lineas"; se crearan como partidas de linea aparte para poner la cantidad.
 
