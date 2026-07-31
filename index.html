@@ -121,8 +121,9 @@
 <script>
 "use strict";
 /* ================= Constantes ================= */
-const VERSION = "3.45";
+const VERSION = "3.46";
 const CHANGELOG = [
+  ["3.46", "Dicta por voz todo lo que hay que hacerle a un elemento y la IA arma la compuesta a medida con las partidas que correspondan; tú solo metes las dimensiones."],
   ["3.45", "Corregido: al sumar tramos de grieta, ya no da el error de longitud en blanco al guardar; la validación usa la suma de tramos."],
   ["3.44", "Nueva partida Otro para líneas simples: se elige del selector, se escribe su descripción y su unidad, y en el resumen cada Otro se agrupa por su descripción."],
   ["3.43", "Las fotos de cómputos ahora se pueden ampliar y anotar (flechas, círculos, elipses), igual que las de inspección."],
@@ -782,7 +783,69 @@ const CMP_COMPUESTAS = [
   }
 ];
 
-const cmpCompuesta = (id) => CMP_COMPUESTAS.find((x) => x.id === id) || null;
+const cmpCompuesta = (id) => (id === "__medida" && cmpMedidaDef) ? cmpMedidaDef : (CMP_COMPUESTAS.find((x) => x.id === id) || null);
+function cmpArmarMedida(base, codes) {
+  const esArea = base !== "largo";
+  const comps = [], aparte = [];
+  for (const cod of codes) {
+    const p = cmpPartida(cod);
+    if (!p) continue;
+    if (p.unidad === "m") comps.push({ partida: cod, factor: 1, base: "largo", nota: p.descripcion });
+    else if (p.unidad === "m2") comps.push({ partida: cod, factor: 1, base: "area", nota: p.descripcion });
+    else aparte.push(p.codigo + " " + p.descripcion + " (" + CMP_UNI[p.unidad] + ")");
+  }
+  cmpMedidaDef = {
+    id: "__medida",
+    nombre: "Compuesta a medida (dictada)",
+    campos: esArea ? ["cantidad", "largo", "alto"] : ["cantidad", "largo"],
+    etiquetas: esArea ? { cantidad: "N.° de elementos", largo: "Largo (m)", alto: "Alto (m)" } : { cantidad: "N.° de elementos", largo: "Longitud (m)" },
+    magnitud: esArea ? "Área" : "Longitud",
+    unidad: esArea ? "m2" : "m",
+    baseCampo: esArea ? undefined : "largo",
+    nota: "Compuesta armada desde tu dictado. Revisa y ajusta lo que haga falta." + (aparte.length ? " Aparte, agrégalas como líneas simples: " + aparte.join("; ") + "." : ""),
+    componentes: comps
+  };
+  return comps.length;
+}
+async function cmpDictarTareas(btn) {
+  const texto = String(cmpDictado.texto || "").trim();
+  if (!texto) { alert("Dicta o escribe primero las tareas."); return; }
+  if (!st.apiKey) { alert("Configura primero la clave API en Ajustes."); return; }
+  if (btn) { btn.disabled = true; btn.textContent = "Interpretando…"; }
+  try {
+    const cat = CMP_CAT.filter((p) => p.codigo !== "99.99").map((p) => p.codigo + " | " + p.descripcion + " | " + p.unidad).join("\n");
+    const prompt = "Eres asistente de un ingeniero estructural en Venezuela armando el computo metrico de reparacion de UN elemento tras un sismo. El ingeniero dicta las tareas a ejecutar. Elige del catalogo las partidas que correspondan y decide si el elemento se mide por area o por longitud.\n\nCatalogo (codigo | descripcion | unidad):\n" + cat + "\n\nDictado del ingeniero: \"" + texto + "\"\n\nReglas:\n- Elige solo codigos que existan en el catalogo.\n- En \"partidas\" incluye solo las de unidad m o m2 (las que comparten la medida del elemento).\n- \"base\" es \"area\" si el elemento se mide por superficie (largo por alto), o \"largo\" si se mide por longitud.\n- Las tareas por unidad (und) o peso (kg) NO van en \"partidas\"; mencionalas en \"aparte\" como texto.\n- Responde SOLO con JSON valido, sin markdown ni texto extra, con esta forma exacta:\n{\"base\":\"area\",\"partidas\":[\"02.01\",\"04.03\"],\"aparte\":[],\"nota\":\"breve\"}";
+    let r = await llamarClaude(prompt, 500);
+    r = r.replace(/```json|```/g, "").trim();
+    const ini = r.indexOf("{"), fin = r.lastIndexOf("}");
+    if (ini >= 0 && fin > ini) r = r.slice(ini, fin + 1);
+    const data = JSON.parse(r);
+    const base = data.base === "largo" ? "largo" : "area";
+    const codes = Array.isArray(data.partidas) ? data.partidas : [];
+    const n = cmpArmarMedida(base, codes);
+    if (!n) { alert("La IA no encontro partidas de area o longitud. Revisa el dictado."); if (btn) { btn.disabled = false; btn.textContent = "Interpretar con IA"; } return; }
+    cmpModo = "compuesta";
+    cmpComp = { id: "__medida", base: {}, comps: {}, carasFrisar: 0, carasPintar: 0 };
+    cmpDictado = { abierto: false, texto: "", cargando: false };
+    rComputos();
+  } catch (e) {
+    alert("No se pudo interpretar: " + e.message);
+    if (btn) { btn.disabled = false; btn.textContent = "Interpretar con IA"; }
+  }
+}
+function cmpDictadoHtml() {
+  if (!cmpDictado.abierto) return `<button class="btn btn-ambar" id="cmDictarAbrir" style="margin-bottom:10px">🎙 Dictar tareas (la IA arma la compuesta)</button>`;
+  return `<div class="tarjeta" style="background:var(--ambar-bg);border-color:var(--ambar);margin-bottom:10px">
+    <div class="etiq" style="color:var(--ambar-tx)">Dicta todo lo que hay que hacerle al elemento</div>
+    <p class="aviso" style="margin-top:0">Ejemplo: "columna con grieta, picar hasta concreto sano, anticorrosivo a las cabillas, mortero de reparación, frisar y pintar". Usa el micrófono del teclado para dictar.</p>
+    <textarea id="cmDictarTxt" rows="3" placeholder="Dicta o escribe las tareas…">${esc(cmpDictado.texto || "")}</textarea>
+    <div class="grid2" style="margin-top:8px">
+      <button class="btn btn-negro" id="cmDictarIr">Interpretar con IA</button>
+      <button class="btn btn-linea" id="cmDictarCerrar">Cancelar</button>
+    </div>
+    ${st.apiKey ? "" : `<p class="aviso" style="color:var(--rojo);margin-bottom:0">Falta configurar la clave API en Ajustes.</p>`}
+  </div>`;
+}
 
 function cmpUnidadActual() {
   const id = cmpBorrador.zonaId;
@@ -869,6 +932,8 @@ let cmpVer = null;
 let cmpEditId = null;
 let cmpModo = "simple";
 let cmpComp = { id: "", base: {}, comps: {} };
+let cmpMedidaDef = null;
+let cmpDictado = { abierto: false, texto: "", cargando: false };
 let _geoUlt = null;
 function geoCapturar() {
   return new Promise((resolve) => {
@@ -3114,8 +3179,10 @@ function cmpPintarCompuesta() {
   const incl = a.componentes.filter((x) => (cmpComp.comps[x.partida] || {}).incluir !== false);
 
   cont.innerHTML = `
+    ${cmpDictadoHtml()}
     <label class="campo"><span>Partida compuesta</span>
       <select id="cmCompSel">
+        ${cmpComp.id === "__medida" ? `<option value="__medida" selected>${esc((cmpMedidaDef && cmpMedidaDef.nombre) || "Compuesta a medida")}</option>` : ""}
         ${CMP_COMPUESTAS.map((x) => `<option value="${x.id}" ${x.id === cmpComp.id ? "selected" : ""}>${esc(x.nombre)}</option>`).join("")}
       </select></label>
     ${a.nota ? `<p class="aviso" style="margin-top:-6px">${esc(a.nota)}</p>` : ""}
@@ -3145,6 +3212,14 @@ function cmpPintarCompuesta() {
   document.getElementById("cmCompSel").onchange = (e) => {
     cmpCapturar(); cmpComp = { id: e.target.value, base: {}, comps: {}, carasFrisar: 0, carasPintar: 0 }; rComputos();
   };
+  const bDicAbrir = document.getElementById("cmDictarAbrir");
+  if (bDicAbrir) bDicAbrir.onclick = () => { cmpDictado.abierto = true; rComputos(); };
+  const bDicCerrar = document.getElementById("cmDictarCerrar");
+  if (bDicCerrar) bDicCerrar.onclick = () => { cmpDictado = { abierto: false, texto: "", cargando: false }; rComputos(); };
+  const tDic = document.getElementById("cmDictarTxt");
+  if (tDic) tDic.oninput = (e) => { cmpDictado.texto = e.target.value; };
+  const bDicIr = document.getElementById("cmDictarIr");
+  if (bDicIr) bDicIr.onclick = () => cmpDictarTareas(bDicIr);
   cont.querySelectorAll("[data-base]").forEach((i) => {
     i.id = "cmB_" + i.dataset.base;
     i.oninput = (e) => {
