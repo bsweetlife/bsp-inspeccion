@@ -121,8 +121,9 @@
 <script>
 "use strict";
 /* ================= Constantes ================= */
-const VERSION = "3.53";
+const VERSION = "3.54";
 const CHANGELOG = [
+  ["3.54", "Reparación de vigas y de columnas con cabillas expuestas: la sección se mide por ancho de la zona y profundidad, en lugar del perímetro; el mortero de reparación se computa ahora por volumen (m³) con la nueva partida 03.11. Nueva compuesta: reparación de techo (losa nervada) con nervios expuestos, que mide el área de losa y suma la superficie de los nervios reparados."],
   ["3.53", "Al exportar los cómputos, las fotos salen más livianas y el ZIP se divide en partes de menos de 1 MB para poder analizarlas. El botón avisa mientras trabaja y ya no se dispara varias veces."],
   ["3.52", "El dictado con IA aplica criterios de obra: por ejemplo, al reponer cerámica de piso de baño agrega el desmontaje y montaje de poceta y lavamanos aunque no los menciones."],
   ["3.51", "Nueva partida 02.09, demolición de revestimiento cerámico en paredes (antes solo existía la de pisos)."],
@@ -462,6 +463,7 @@ const CMP_CAT = [
   ["03.08", "03 Reparación estructural", "Puente de adherencia entre concreto nuevo y existente", "m2", "Superficie de contacto tratada."],
   ["03.09", "03 Reparación estructural", "Anclajes químicos en concreto existente", "und", "Cantidad de anclajes. Diámetro y profundidad en la observación."],
   ["03.10", "03 Reparación estructural", "Confinamiento de nodo viga-columna", "und", "Cantidad de nodos intervenidos."],
+  ["03.11", "03 Reparación estructural", "Mortero de reparación estructural tixotrópico (por volumen)", "m3", "Volumen reparado: superficie del parche por la profundidad."],
   ["04.01", "04 Mampostería y acabados", "Construcción de paredes de bloque de arcilla", "m2", "Largo por alto del paño construido."],
   ["04.02", "04 Mampostería y acabados", "Sellado de grietas en paredes de mampostería", "m", "Longitud real de la grieta."],
   ["04.03", "04 Mampostería y acabados", "Friso liso sobre elementos estructurales", "m2", "Superficie desarrollada del elemento."],
@@ -550,7 +552,7 @@ function cmpPie(l, p, iso) {
   if (u) t.push(u);
   if (p.unidad === "kg" && l.diametro) t.push("Cabilla " + l.diametro);
   const mag = { m: "Longitud medida", m2: "Superficie medida", m3: "Volumen medido", kg: "Peso computado" }[p.unidad] || "Cantidad";
-  t.push(mag + ": " + cmpFmt(cmpParcial(l, p)) + " " + CMP_UNI[p.unidad]);
+  t.push(mag + ": " + cmpFmt(cmpParcial(l, p), p.unidad === "m3" ? 3 : 2) + " " + CMP_UNI[p.unidad]);
   if (l.origen === "planos") t.push("Cantidad tomada de planos");
   if (l.origen === "muestreo") t.push("Cantidad estimada por muestreo");
   if (l.origen === "foto") t.push("Medida sobre fotografía con escala");
@@ -638,7 +640,7 @@ let cmpUltObs = "";
 const CMP_SUGER = {
   "Mampostería menor": { partidas: ["04.02", "04.04", "04.05"], compuestas: ["friso"] },
   "Mampostería mayor": { partidas: ["02.02", "02.03", "04.01", "04.04", "04.05"], compuestas: ["pared", "friso", "grieta", "perimetral_demo", "perimetral_friso"] },
-  "Daño estructural": { partidas: ["02.01", "02.04", "03.01", "03.02", "03.03", "03.05", "04.03", "04.05"], compuestas: ["columna", "viga", "encamisado"] },
+  "Daño estructural": { partidas: ["02.01", "02.04", "03.01", "03.02", "03.03", "03.05", "04.03", "04.05"], compuestas: ["columna", "viga", "encamisado", "techo_nervado"] },
   "Preexistente no sísmico": { partidas: ["04.04", "04.05", "05.01", "05.02"], compuestas: [] }
 };
 
@@ -648,16 +650,17 @@ const CMP_COMPUESTAS = [
   {
     id: "columna",
     nombre: "Reparación de columna con cabillas expuestas",
-    campos: ["cantidad", "largo", "ancho"],
-    etiquetas: { cantidad: "N.° de columnas", largo: "Longitud a reparar (m)", ancho: "Perímetro de sección (m)" },
-    magnitud: "Superficie desarrollada",
+    campos: ["cantidad", "largo", "ancho", "profundidad"],
+    etiquetas: { cantidad: "N.° de columnas", largo: "Longitud a reparar (m)", ancho: "Ancho de la zona (m)", profundidad: "Profundidad (m)" },
+    camposInfo: ["profundidad"],
+    magnitud: "Superficie a reparar",
     unidad: "m2",
     nota: "Las cabillas nuevas se computan aparte, en kg, con la partida 03.02.",
     componentes: [
       { partida: "02.01", factor: 1, nota: "Demolición del friso en el tramo a reparar" },
       { partida: "02.04", factor: 1, nota: "Picado hasta concreto sano" },
       { partida: "03.01", factor: 1, nota: "Limpieza y anticorrosivo en las cabillas" },
-      { partida: "03.05", factor: 1, nota: "Mortero de reparación" },
+      { partida: "03.11", factor: 1, base: "volumen", unidad: "m3", nota: "Mortero de reparación (volumen = ancho × largo × profundidad)" },
       { partida: "04.03", factor: 1, nota: "Friso nuevo sobre el elemento" },
       { partida: "04.05", factor: 1, alcance: true, nota: "Pintura" }
     ]
@@ -732,16 +735,17 @@ const CMP_COMPUESTAS = [
   {
     id: "viga",
     nombre: "Reparación de viga con cabillas expuestas",
-    campos: ["cantidad", "largo", "ancho"],
-    etiquetas: { cantidad: "N.° de vigas", largo: "Longitud a reparar (m)", ancho: "Perímetro de sección (m)" },
-    magnitud: "Superficie desarrollada",
+    campos: ["cantidad", "largo", "ancho", "profundidad"],
+    etiquetas: { cantidad: "N.° de vigas", largo: "Longitud a reparar (m)", ancho: "Ancho de la zona (m)", profundidad: "Profundidad (m)" },
+    camposInfo: ["profundidad"],
+    magnitud: "Superficie a reparar",
     unidad: "m2",
     nota: "Las cabillas nuevas se computan aparte, en kg, con la partida 03.02.",
     componentes: [
       { partida: "02.01", factor: 1, nota: "Demolición del friso en el tramo a reparar" },
       { partida: "02.04", factor: 1, nota: "Picado hasta concreto sano" },
       { partida: "03.01", factor: 1, nota: "Limpieza y anticorrosivo en las cabillas" },
-      { partida: "03.05", factor: 1, nota: "Mortero de reparación" },
+      { partida: "03.11", factor: 1, base: "volumen", unidad: "m3", nota: "Mortero de reparación (volumen = ancho × largo × profundidad)" },
       { partida: "04.03", factor: 1, nota: "Friso nuevo sobre el elemento" },
       { partida: "04.05", factor: 1, alcance: true, nota: "Pintura" }
     ]
@@ -773,6 +777,24 @@ const CMP_COMPUESTAS = [
     componentes: [
       { partida: "02.07", factor: 1, nota: "Demolición del cielo raso existente" },
       { partida: "04.09", factor: 1, alcance: true, nota: "Cielo raso nuevo" }
+    ]
+  },
+  {
+    id: "techo_nervado",
+    nombre: "Reparación de techo (losa nervada) con nervios expuestos",
+    campos: ["largo", "ancho", "nervios", "largoNervio", "anchoNervio"],
+    etiquetas: { largo: "Largo del área (m)", ancho: "Ancho del área (m)", nervios: "N.° de nervios a reparar", largoNervio: "Largo del nervio (m)", anchoNervio: "Ancho desarrollado del nervio (m)" },
+    magnitud: "Superficie a reparar",
+    unidad: "m2",
+    baseCalc: "techo_nervado",
+    nota: "Se mide el área de losa en planta y se le suma la superficie de los nervios reparados (N.° × largo × ancho desarrollado). Las cabillas nuevas se computan aparte, en kg, con la partida 03.02.",
+    componentes: [
+      { partida: "02.01", factor: 1, nota: "Demolición del friso en la zona a reparar" },
+      { partida: "02.04", factor: 1, nota: "Picado hasta concreto sano" },
+      { partida: "03.01", factor: 1, nota: "Limpieza y anticorrosivo en las cabillas" },
+      { partida: "03.05", factor: 1, nota: "Mortero de reparación" },
+      { partida: "04.03", factor: 1, nota: "Friso nuevo sobre la superficie" },
+      { partida: "04.05", factor: 1, alcance: true, nota: "Pintura" }
     ]
   },
   {
@@ -928,13 +950,44 @@ function cmpBaseCampoVal(a, cc) {
 function cmpBaseCompuesta() {
   const a = cmpCompuesta(cmpComp.id);
   if (!a) return 0;
+  if (a.baseCalc === "techo_nervado") {
+    const aLosa = cmpNum(cmpComp.base.largo) * cmpNum(cmpComp.base.ancho);
+    const aNerv = cmpNum(cmpComp.base.nervios) * cmpNum(cmpComp.base.largoNervio) * cmpNum(cmpComp.base.anchoNervio);
+    return cmpRed(aLosa + aNerv);
+  }
   // La magnitud principal que se muestra en el recuadro. Si la compuesta
   // declara baseCampo, esa es la magnitud rectora (p. ej. la longitud de la
   // grieta); si no, se multiplican todos los campos dimensionales.
   if (a.baseCampo) return cmpRed(cmpBaseCampoVal(a, "cantidad") * cmpBaseCampoVal(a, a.baseCampo));
   let v = cmpBaseCampoVal(a, "cantidad");
-  for (const c of a.campos) { if (c === "cantidad") continue; v *= cmpBaseCampoVal(a, c); }
+  for (const c of a.campos) { if (c === "cantidad" || (a.camposInfo && a.camposInfo.indexOf(c) >= 0)) continue; v *= cmpBaseCampoVal(a, c); }
   return cmpRed(v);
+}
+
+function cmpBaseMedidaTxt() {
+  const a = cmpCompuesta(cmpComp.id);
+  if (!a) return "";
+  const info = a.camposInfo || [];
+  if (cmpComp.segsOn) {
+    return "longitud sumada de " + (cmpComp.segs || []).filter((x) => cmpNum(x) > 0).length + " tramos = " + cmpFmt(cmpSegSuma()) + " m" +
+      (cmpNum(cmpComp.base.ancho) > 0 ? " · banda " + cmpFmt(cmpNum(cmpComp.base.ancho)) + " m" : "");
+  }
+  if (a.baseCalc === "techo_nervado") {
+    const la = cmpNum(cmpComp.base.largo), an = cmpNum(cmpComp.base.ancho);
+    const nn = cmpNum(cmpComp.base.nervios), ln = cmpNum(cmpComp.base.largoNervio), wn = cmpNum(cmpComp.base.anchoNervio);
+    const aLosa = cmpRed(la * an), aNerv = cmpRed(nn * ln * wn);
+    let t = "losa " + cmpFmt(la) + " × " + cmpFmt(an) + " = " + cmpFmt(aLosa) + " m²";
+    if (aNerv > 0) t += " + " + cmpFmt(nn, 0) + " nervios × " + cmpFmt(ln) + " × " + cmpFmt(wn) + " = " + cmpFmt(aNerv) + " m²";
+    return t + " = " + cmpFmt(cmpBaseCompuesta()) + " " + CMP_UNI[a.unidad];
+  }
+  const dim = a.campos.filter((x) => x !== "cantidad" && info.indexOf(x) < 0);
+  let t = cmpFmt(cmpNum(cmpComp.base.cantidad, 1), 0) + " × " +
+    dim.map((x) => cmpFmt(cmpNum(cmpComp.base[x])) + " m").join(" × ") +
+    " = " + cmpFmt(cmpBaseCompuesta()) + " " + CMP_UNI[a.unidad];
+  const infoVals = info.filter((x) => cmpNum(cmpComp.base[x]) > 0)
+    .map((x) => (a.etiquetas[x] || x).replace(/\s*\(m\)\s*$/, "") + " " + cmpFmt(cmpNum(cmpComp.base[x])) + " m");
+  if (infoVals.length) t += "  ·  " + infoVals.join("  ·  ");
+  return t;
 }
 
 // Cantidad de un componente, respetando que use la magnitud rectora ("largo"),
@@ -942,10 +995,11 @@ function cmpBaseCompuesta() {
 function cmpBaseDe(comp) {
   const a = cmpCompuesta(cmpComp.id);
   const n = cmpBaseCampoVal(a, "cantidad");
+  if (comp.base === "volumen") return cmpRed(n * cmpBaseCampoVal(a, "largo") * cmpBaseCampoVal(a, "ancho") * cmpBaseCampoVal(a, "profundidad"));
   if (comp.base === "largo") return cmpRed(n * cmpBaseCampoVal(a, "largo"));
   if (comp.base === "area") {
     let v = n;
-    for (const c of a.campos) { if (c === "cantidad") continue; v *= cmpBaseCampoVal(a, c); }
+    for (const c of a.campos) { if (c === "cantidad" || (a.camposInfo && a.camposInfo.indexOf(c) >= 0)) continue; v *= cmpBaseCampoVal(a, c); }
     return cmpRed(v);
   }
   return cmpBaseCompuesta();
@@ -978,7 +1032,7 @@ function cmpCantidadComponente(comp) {
   const e = cmpComp.comps[comp.partida] || {};
   if ((e.alcance || comp.alcanceDef) === "parcial") return cmpCompParcial(cmpPartida(comp.partida) || { unidad: "m2" }, e);
   const caras = comp.caras ? cmpCarasDe(comp.caras) : 1;
-  return cmpRed(cmpBaseDe(comp) * comp.factor * caras, 2);
+  return cmpRed(cmpBaseDe(comp) * comp.factor * caras, comp.base === "volumen" ? 3 : 2);
 }
 let cmpVer = null;
 let cmpEditId = null;
@@ -2955,7 +3009,7 @@ const CMP_DESP = {
   "01.01": 0, "01.02": 0, "01.03": 5, "01.04": 0,
   "02.01": 0, "02.02": 0, "02.03": 0, "02.04": 0, "02.05": 0, "02.06": 0,
   "03.01": 0, "03.02": 7, "03.03": 10, "03.04": 8, "03.05": 10,
-  "03.06": 5, "03.07": 5, "03.08": 8, "03.09": 3, "03.10": 5,
+  "03.06": 5, "03.07": 5, "03.08": 8, "03.09": 3, "03.10": 5, "03.11": 10,
   "04.01": 5, "04.02": 8, "04.03": 8, "04.04": 8, "04.05": 5,
   "04.06": 10, "04.07": 10, "04.08": 5, "04.09": 8,
   "02.07": 0,
@@ -3155,7 +3209,7 @@ function cmpCinta() {
     } else if (l[c]) piezas.push(cmpFmt(cmpNum(l[c])));
   }
   el.innerHTML = `<span style="opacity:.65">${piezas.join(" × ")}</span>
-    <b style="font-size:20px">${cmpFmt(cmpParcial(l, p))} <span style="font-size:13px;opacity:.75">${CMP_UNI[p.unidad]}</span></b>`;
+    <b style="font-size:20px">${cmpFmt(cmpParcial(l, p), p.unidad === "m3" ? 3 : 2)} <span style="font-size:13px;opacity:.75">${CMP_UNI[p.unidad]}</span></b>`;
 }
 
 async function cmpPintarFotos() {
@@ -3262,7 +3316,7 @@ function cmpPintarCompuesta() {
   if (!a) return;
   const base = cmpBaseCompuesta();
 
-  const auxCampo = (a.id === "columna" || a.id === "viga" || a.id === "encamisado") ? "ancho" : "";
+  const auxCampo = (a.id === "encamisado") ? "ancho" : "";
   const dims = a.campos.map((cc) => cmpCampoHtml(a, cc)).join("");
 
   const comps = a.componentes.map((comp) => {
@@ -3275,7 +3329,7 @@ function cmpPintarCompuesta() {
         <button data-inc="${comp.partida}" style="background:none;border:none;font-size:19px;padding:0;cursor:pointer;line-height:1">${inc ? "☑" : "☐"}</button>
         <span style="flex:1;font-size:13px"><b>${comp.partida}</b> ${esc(p.descripcion)}
           <br /><span class="aviso">${esc(comp.nota || "")}${comp.caras ? " · " + cmpCarasDe(comp.caras) + (cmpCarasDe(comp.caras) === 1 ? " cara" : " caras") : (comp.factor !== 1 ? " · factor ×" + comp.factor : "")}</span></span>
-        <b class="mono" style="font-size:14px" data-qcomp="${comp.partida}">${inc ? cmpFmt(q) + " " + CMP_UNI[p.unidad] : "—"}</b>
+        <b class="mono" style="font-size:14px" data-qcomp="${comp.partida}">${inc ? cmpFmt(q, p.unidad === "m3" ? 3 : 2) + " " + CMP_UNI[p.unidad] : "—"}</b>
       </div>
       ${cmpAlcanceHtml(comp, p, e, inc)}
     </div>`;
@@ -3386,7 +3440,7 @@ function cmpPintarCompuesta() {
       const b = cont.querySelector('[data-inc="' + k + '"]').closest(".tarjeta").querySelector("b.mono");
       const comp = a.componentes.find((x) => x.partida === k);
       const p = cmpPartida(k);
-      if (b) b.textContent = cmpFmt(cmpCantidadComponente(comp)) + " " + CMP_UNI[p.unidad];
+      if (b) b.textContent = cmpFmt(cmpCantidadComponente(comp), p.unidad === "m3" ? 3 : 2) + " " + CMP_UNI[p.unidad];
     };
   });
   cont.querySelectorAll("[data-csegon]").forEach((b) => (b.onclick = () => {
@@ -3447,9 +3501,12 @@ function cmpGuardarCompuesta() {
   for (const cc of a.campos) {
     if (cmpComp.segsOn && a.sumable === cc) continue;
     if (cmpComp.segsOn && cc === "cantidad") continue;
+    if (a.camposInfo && a.camposInfo.indexOf(cc) >= 0) continue;
+    if (a.baseCalc) continue;
     const v = cmpNum(cmpComp.base[cc], cc === "cantidad" ? 1 : NaN);
     if (!Number.isFinite(v) || v <= 0) errs.push((a.etiquetas[cc] || CMP_TXT[cc]) + " debe ser mayor que cero.");
   }
+  if (a.baseCalc && cmpBaseCompuesta() <= 0) errs.push("La superficie a reparar debe ser mayor que cero.");
   if (cmpComp.segsOn && a.sumable && cmpSegSuma() <= 0) errs.push("Agregue al menos un tramo con longitud mayor que cero.");
   const incl = a.componentes.filter((x) => cmpIncluido(x));
   if (!incl.length) errs.push("Debe incluir al menos una partida.");
@@ -3468,12 +3525,7 @@ function cmpGuardarCompuesta() {
 
   if (!(cmpBorrador.fotos || []).length && !confirm("Esta partida no tiene foto de respaldo. ¿Guardarla así, sin foto?")) return;
   const gid = uid();
-  const baseTxt = cmpComp.segsOn
-    ? ("longitud sumada de " + (cmpComp.segs || []).filter((x) => cmpNum(x) > 0).length + " tramos = " + cmpFmt(cmpSegSuma()) + " m" +
-       (cmpNum(cmpComp.base.ancho) > 0 ? " · banda " + cmpFmt(cmpNum(cmpComp.base.ancho)) + " m" : ""))
-    : (cmpFmt(cmpNum(cmpComp.base.cantidad, 1), 0) + " × " +
-       a.campos.filter((x) => x !== "cantidad").map((x) => cmpFmt(cmpNum(cmpComp.base[x])) + " m").join(" × ") +
-       " = " + cmpFmt(cmpBaseCompuesta()) + " " + CMP_UNI[a.unidad]);
+  const baseTxt = cmpBaseMedidaTxt();
 
   let primera = true;
   for (const x of incl) {
@@ -3487,9 +3539,11 @@ function cmpGuardarCompuesta() {
       elemento: String(cmpBorrador.elemento || "").trim(),
       obs: String(cmpBorrador.obs || "").trim(),
       origen: cmpBorrador.origen,
-      unidad: p.unidad, parcialFijo: q, parcial: q,
+      unidad: x.unidad || p.unidad, parcialFijo: q, parcial: q,
       derivada: true, grupo: gid, compuesta: a.nombre,
-      baseMedida: baseTxt + (x.factor !== 1 ? "  ×" + x.factor : "") +
+      baseMedida: (x.base === "volumen"
+        ? (cmpFmt(cmpBaseCompuesta()) + " m² × " + cmpFmt(cmpNum(cmpComp.base.profundidad)) + " m (prof.) = " + cmpFmt(cmpBaseDe(x), 3) + " m³")
+        : baseTxt) + (x.factor !== 1 ? "  ×" + x.factor : "") +
         (x.caras ? "  ·  " + cmpCarasDe(x.caras) + (cmpCarasDe(x.caras) === 1 ? " cara" : " caras") : "") +
         ((e.alcance || x.alcanceDef) === "parcial" ? "  ·  alcance parcial declarado" : ""),
       ts: new Date().toISOString(), fotos: []
