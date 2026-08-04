@@ -121,48 +121,7 @@
 <script>
 "use strict";
 /* ================= Constantes ================= */
-const VERSION = "3.52";
-const CHANGELOG = [
-  ["3.52", "El dictado con IA aplica criterios de obra: por ejemplo, al reponer cerámica de piso de baño agrega el desmontaje y montaje de poceta y lavamanos aunque no los menciones."],
-  ["3.51", "Nueva partida 02.09, demolición de revestimiento cerámico en paredes (antes solo existía la de pisos)."],
-  ["3.50", "Al guardar una partida sin foto, la app pregunta si quieres guardarla así. Y el dictado con IA ahora sugiere partidas de línea sueltas (desmontar poceta, lavamanos, etc.) que agregas con un toque."],
-  ["3.49", "El dictado con IA ahora reconoce tus compuestas predefinidas: si dictas algo que calza con una (por ejemplo reposición de pared), carga esa compuesta completa con todas sus partidas; si no, arma una a medida."],
-  ["3.48", "La compuesta de reposición de pared incluye ahora rodapié (pintado o de material) como opciones a lo largo del paño; se activan tildándolas."],
-  ["3.47", "En Ajustes, botones para pegar y ver/ocultar la clave API, y mensaje claro cuando la conexión con la API falla."],
-  ["3.46", "Dicta por voz todo lo que hay que hacerle a un elemento y la IA arma la compuesta a medida con las partidas que correspondan; tú solo metes las dimensiones."],
-  ["3.45", "Corregido: al sumar tramos de grieta, ya no da el error de longitud en blanco al guardar; la validación usa la suma de tramos."],
-  ["3.44", "Nueva partida Otro para líneas simples: se elige del selector, se escribe su descripción y su unidad, y en el resumen cada Otro se agrupa por su descripción."],
-  ["3.43", "Las fotos de cómputos ahora se pueden ampliar y anotar (flechas, círculos, elipses), igual que las de inspección."],
-  ["3.42", "Nuevas partidas de piezas sanitarias: desmontaje y montaje, y reemplazo, para poceta, lavamanos y ducha."],
-  ["3.41", "En la pintura de grietas se corrigen los rótulos: Todo el paño es ahora el modo manual para indicar el área del paño, y Solo la banda es el área automática de la banda."],
-  ["3.40", "En tratamiento de grietas, la pintura ya no arranca con el área de la banda: parte de cero para que agregues el área real del paño con la función de sumar áreas."],
-  ["3.39", "Corregido de raíz: al editar una línea, los botones Guardar cambios y Cancelar ahora sí responden (un error interno los dejaba sin funcionar)."],
-  ["3.38", "Corregido: al editar una línea, Guardar cambios la reemplaza a la primera; el aviso de valor atípico ya no bloquea la edición."],
-  ["3.37", "El editor de fotos ahora permite dibujar flechas, círculos y elipses, además del trazo a mano alzada."],
-  ["3.36", "Cada foto guarda las coordenadas y la altitud del GPS (aproximada) para ubicar el piso si se pierde la referencia. Las coordenadas del edificio ahora incluyen la elevación."],
-  ["3.35", "La opción solo lo intervenido está en todos los componentes de área y longitud, y permite calcular el área como ancho por alto y sumar varias áreas o tramos."],
-  ["3.34", "Editar y corregir una línea simple ya guardada: cambiar la partida, las medidas, la observación o la ubicación sin borrarla ni perder su foto."],
-  ["3.33", "En tratamiento de grietas, opción de sumar varios tramos de distinta longitud en una sola línea."],
-  ["3.32", "La observación ya no se queda pegada al guardar una línea, con botón para reutilizar la anterior. Nuevas partidas 04.10 y 04.11: reemplazo de rodapié pintado y de material."],
-  ["3.31", "Replicar una línea de cómputo a varios niveles a la vez, por ejemplo una junta de dilatación dañada piso por piso."],
-  ["3.30", "Cálculo automático del acarreo de escombros: volumen suelto y viajes de volqueta a partir de las demoliciones."],
-  ["3.29", "Nueva partida 02.08, demolición de revestimiento cerámico en pisos."],
-  ["3.28", "Compuestas de pared perimetral con cara de fachada y marca D/R en las fotos exportadas."],
-  ["3.27", "Exportación en ZIP de las fotos de inspección ya marcadas para el informe."],
-  ["3.26", "Caras de friso y pintura controlables por separado en las compuestas de pared."],
-  ["3.25", "Cuatro partidas compuestas nuevas y compuesta de grieta con base de medición mixta."],
-  ["3.23", "Partidas de cielo raso suspendido."],
-  ["3.22", "El teclado ya no se cierra al escribir medidas en una partida compuesta."],
-  ["3.21", "Guía hacia el dictado del teclado en Android."],
-  ["3.20", "Transcripción de voz en Android."],
-  ["3.18", "Mover unidad entre niveles, numeración corrida y renumerar en lote."],
-  ["3.17", "Medición sobre fotografía con escala de referencia."],
-  ["3.16", "Porcentaje de desperdicio por partida, calculadora de perímetro y aviso de valores atípicos."],
-  ["3.15", "Sugerencias de partidas según el daño y partidas compuestas."],
-  ["3.13", "Ver fotos de líneas guardadas y exportación en ZIP."],
-  ["3.12", "Revestimiento cerámico separado en paredes y en pisos."],
-  ["3.9", "Módulo de cómputos métricos con memoria fotográfica."]
-];
+const VERSION = "3.29";
 const ATC = ["INSPECCIONADO", "USO RESTRINGIDO", "NO HABITABLE"];
 const ATC_CLS = { "INSPECCIONADO": "v", "USO RESTRINGIDO": "a", "NO HABITABLE": "r" };
 const ATC_CORTO = { "INSPECCIONADO": "INSPECC.", "USO RESTRINGIDO": "USO RESTR.", "NO HABITABLE": "NO HABITABLE" };
@@ -449,8 +408,6 @@ const CMP_CAT = [
   ["02.05", "02 Demoliciones", "Remoción de revestimiento desprendido o inestable", "m2", "Área efectivamente removida."],
   ["02.06", "02 Demoliciones", "Demolición de recubrimiento en losa", "m2", "Área en planta."],
   ["02.07", "02 Demoliciones", "Demolición de cielo raso suspendido, láminas y perfilería", "m2", "Área en planta del cielo raso retirado."],
-  ["02.08", "02 Demoliciones", "Demolición de revestimiento cerámico en pisos", "m2", "Área en planta del cerámico demolido."],
-  ["02.09", "02 Demoliciones", "Demolición de revestimiento cerámico en paredes", "m2", "Área de pared (largo por alto) del cerámico demolido."],
   ["03.01", "03 Reparación estructural", "Limpieza y tratamiento anticorrosivo de cabillas expuestas", "m2", "Superficie desarrollada de la cabilla tratada."],
   ["03.02", "03 Reparación estructural", "Suministro y colocación de cabillas de refuerzo", "kg", "Barras por longitud por peso teórico según diámetro."],
   ["03.03", "03 Reparación estructural", "Inyección de grietas con resina epóxica", "m", "Longitud real de la grieta inyectada."],
@@ -470,35 +427,17 @@ const CMP_CAT = [
   ["04.07", "04 Mampostería y acabados", "Reposición de revestimiento cerámico en pisos", "m2", "Área en planta."],
   ["04.08", "04 Mampostería y acabados", "Anclaje de paredes no estructurales a la estructura", "m", "Longitud de encuentro pared-estructura tratado."],
   ["04.09", "04 Mampostería y acabados", "Suministro y colocación de cielo raso suspendido", "m2", "Área en planta. El tipo de lámina se declara en la observación."],
-  ["04.10", "04 Mampostería y acabados", "Reemplazo de rodapié pintado", "m", "Longitud de rodapié. Acabado en pintura."],
-  ["04.11", "04 Mampostería y acabados", "Reemplazo de rodapié de material", "m", "Longitud de rodapié. El material (cerámico, madera, otro) va en la observación."],
   ["05.01", "05 Impermeabilización e instalaciones", "Impermeabilización de losa de azotea", "m2", "Área en planta más medias cañas y remates."],
   ["05.02", "05 Impermeabilización e instalaciones", "Reparación de juntas de dilatación", "m", "Longitud de junta intervenida."],
   ["05.03", "05 Impermeabilización e instalaciones", "Desincorporación de tanque elevado", "und", "Se computa por tanque. No incluye el sistema sustituto."],
   ["05.04", "05 Impermeabilización e instalaciones", "Reubicación o reposición de tuberías afectadas", "m", "Longitud intervenida. Diámetro en la observación."],
-  ["05.05", "05 Impermeabilización e instalaciones", "Desmontaje y montaje de poceta", "und", "Cantidad de pocetas retiradas y reinstaladas (la misma pieza)."],
-  ["05.06", "05 Impermeabilización e instalaciones", "Reemplazo de poceta", "und", "Cantidad de pocetas nuevas. Incluye retiro de la existente."],
-  ["05.07", "05 Impermeabilización e instalaciones", "Desmontaje y montaje de lavamanos", "und", "Cantidad de lavamanos retirados y reinstalados (la misma pieza)."],
-  ["05.08", "05 Impermeabilización e instalaciones", "Reemplazo de lavamanos", "und", "Cantidad de lavamanos nuevos. Incluye retiro del existente."],
-  ["05.09", "05 Impermeabilización e instalaciones", "Desmontaje y montaje de ducha", "und", "Cantidad de duchas retiradas y reinstaladas (la misma pieza)."],
-  ["05.10", "05 Impermeabilización e instalaciones", "Reemplazo de ducha", "und", "Cantidad de duchas nuevas. Incluye retiro de la existente."],
   ["06.01", "06 Fachadas", "Demolición de friso en fachada", "m2", "Cara externa. Incluye trabajo en altura con andamio o fachadero."],
   ["06.02", "06 Fachadas", "Friso liso en fachada", "m2", "Cara externa desarrollada. Rendimiento de fachada, distinto del interior."],
-  ["06.03", "06 Fachadas", "Pintura o recubrimiento de fachada", "m2", "Cara externa. Acabado de fachada, no pintura de caucho interior."],
-  ["99.99", "99 Otros", "Otro (describir abajo)", "und", "Partida personalizada. Indique la descripción y la unidad."]
+  ["06.03", "06 Fachadas", "Pintura o recubrimiento de fachada", "m2", "Cara externa. Acabado de fachada, no pintura de caucho interior."]
 ].map(([codigo, grupo, descripcion, unidad, notas]) =>
   Object.assign({ codigo, grupo, descripcion, unidad, notas }, CMP_MEDIDA[codigo] || {}));
 
 const cmpPartida = (cod) => CMP_CAT.find((p) => p.codigo === cod) || null;
-function cmpPartidaBorrador() {
-  const cod = cmpBorrador.partida;
-  if (cod === "99.99") return { codigo: "99.99", grupo: "99 Otros", descripcion: cmpBorrador.otroDesc || "Otro", unidad: cmpBorrador.otroUni || "und", notas: "Partida personalizada." };
-  return cmpPartida(cod);
-}
-function cmpPartidaLinea(l) {
-  if (l.partida === "99.99") return { codigo: "99.99", grupo: "99 Otros", descripcion: l.otroDesc || "Otro", unidad: l.unidad || "und", notas: "" };
-  return cmpPartida(l.partida);
-}
 const cmpCampos = (p) => (p && p.campos) || (p && CMP_UNI_CAMPOS[p.unidad]) || [];
 const cmpEtiq = (p, c) => (p && p.etiquetas && p.etiquetas[c]) || CMP_TXT[c] || c;
 function cmpNum(v, d) {
@@ -525,7 +464,6 @@ function cmpParcial(l, p) {
 }
 function cmpValidar(l, p) {
   const e = [];
-  if (l.partida === "99.99" && !String(l.otroDesc || "").trim()) e.push("Describa la partida 'Otro'.");
   if (!String(l.zona || "").trim()) e.push("Indique la zona donde tomó la medida.");
   if (l.parcialFijo != null) {
     if (cmpNum(l.parcialFijo) <= 0) e.push("La cantidad medida debe ser mayor que cero.");
@@ -565,73 +503,20 @@ function cmpAgrupar(lineas) {
   for (const l of lineas) {
     const p = cmpPartida(l.partida);
     if (!p) continue;
-    const esOtro = l.partida === "99.99";
-    const desc = esOtro ? (l.otroDesc || "Otro") : p.descripcion;
-    const uni = esOtro ? (l.unidad || "und") : p.unidad;
-    const key = esOtro ? "99.99|" + desc : p.codigo;
-    if (!m.has(key)) m.set(key, { codigo: p.codigo, descripcion: desc, unidad: uni, total: 0, n: 0, estimada: false });
-    const a = m.get(key);
+    if (!m.has(p.codigo)) m.set(p.codigo, { codigo: p.codigo, descripcion: p.descripcion, unidad: p.unidad, total: 0, n: 0, estimada: false });
+    const a = m.get(p.codigo);
     a.total += cmpNum(l.parcial); a.n++;
     if (l.origen === "planos" || l.origen === "muestreo") a.estimada = true;
   }
-  return Array.from(m.values()).sort((a, b) => a.codigo.localeCompare(b.codigo) || a.descripcion.localeCompare(b.descripcion));
-}
-
-/* Acarreo de escombros: volumen suelto derivado de las demoliciones.
-   Volumen en banco = suma(area de cada demolicion x espesor propio de la partida),
-   volumen suelto = banco x (1 + esponjamiento). Esponjamiento tipico de escombro
-   de construccion mixto entre 30% y 50% (por defecto 40%). */
-const ESPESOR_ESCOMBRO = { "02.01": 0.025, "02.02": 0.025, "02.03": 0.15, "02.04": 0.04, "02.05": 0.02, "02.06": 0.05, "02.07": 0.01, "02.08": 0.03 };
-const ACARREO_DEF = { esponjamiento: 0.40, viaje: 6 };
-function cmpAcarreo(c) {
-  const ac = c.acarreo || {};
-  const esp = (ac.esponjamiento != null && ac.esponjamiento !== "") ? cmpNum(ac.esponjamiento) : ACARREO_DEF.esponjamiento;
-  const viaje = (ac.viaje != null && ac.viaje !== "") ? cmpNum(ac.viaje) : ACARREO_DEF.viaje;
-  const espesores = Object.assign({}, ESPESOR_ESCOMBRO, ac.espesores || {});
-  let banco = 0;
-  for (const l of (c.lineas || [])) {
-    const e = espesores[l.partida];
-    if (e == null) continue;
-    banco += cmpNum(l.parcial) * e;
-  }
-  const suelto = banco * (1 + esp);
-  const viajes = viaje > 0 ? Math.ceil(suelto / viaje) : 0;
-  return { banco: banco, suelto: suelto, esp: esp, viaje: viaje, viajes: viajes };
-}
-function cmpResumen(c) {
-  const res = cmpAgrupar(c.lineas || []);
-  const ac = cmpAcarreo(c);
-  if (ac.suelto > 0) {
-    const p = cmpPartida("01.04");
-    const idx = res.findIndex((x) => x.codigo === "01.04");
-    const fila = { codigo: "01.04", descripcion: p ? p.descripcion : "Carga, transporte y disposición de escombros", unidad: "m3", total: ac.suelto, n: 0, estimada: true, acarreo: ac };
-    if (idx >= 0) res[idx] = fila; else res.push(fila);
-    res.sort((a, b) => a.codigo.localeCompare(b.codigo));
-  }
-  return res;
-}
-function cmpFilaAcarreo(r) {
-  const ac = r.acarreo;
-  return `<div class="lista-foto">
-      <span style="flex:1"><b>${r.codigo}</b> ${esc(r.descripcion)} <span class="chip a">automático</span>
-        <br /><span class="aviso">Banco ${cmpFmt(cmpRed(ac.banco, 2))} m³ · esponjamiento
-        <input data-acesp inputmode="decimal" value="${esc(String(Math.round(ac.esp * 100)))}"
-          style="width:46px;display:inline-block;padding:2px 6px;min-height:0;text-align:right;font-size:12px" /> %
-        · viaje <input data-acviaje inputmode="decimal" value="${esc(String(ac.viaje))}"
-          style="width:46px;display:inline-block;padding:2px 6px;min-height:0;text-align:right;font-size:12px" /> m³
-        · <span data-acnv>${ac.viajes}</span> viajes</span></span>
-      <b class="mono" style="font-size:14px" data-acout>${cmpFmt(cmpRed(ac.suelto, 2))} m³</b>
-    </div>`;
+  return Array.from(m.values()).sort((a, b) => a.codigo.localeCompare(b.codigo));
 }
 function cmpDe(insp) {
   if (!insp.computos) insp.computos = { fecha: new Date().toISOString().slice(0, 10), responsable: "", rev: 1, lineas: [] };
   if (!insp.computos.lineas) insp.computos.lineas = [];
   if (!insp.computos.desperdicio) insp.computos.desperdicio = {};
-  if (!insp.computos.acarreo) insp.computos.acarreo = {};
   return insp.computos;
 }
 let cmpBorrador = { origen: "sitio", fotos: [] };
-let cmpUltObs = "";
 /* Partidas que suelen aplicar según el daño registrado en la unidad.
    Se ofrecen, nunca se imponen. */
 const CMP_SUGER = {
@@ -673,9 +558,7 @@ const CMP_COMPUESTAS = [
       { partida: "02.03", factor: 1, nota: "Demolición de la pared existente" },
       { partida: "04.01", factor: 1, nota: "Pared nueva de bloque" },
       { partida: "04.04", factor: 1, caras: "frisar", nota: "Friso" },
-      { partida: "04.05", factor: 1, caras: "pintar", alcance: true, nota: "Pintura" },
-      { partida: "04.10", factor: 1, base: "largo", defOff: true, nota: "Rodapié pintado (opcional, a lo largo del paño)" },
-      { partida: "04.11", factor: 1, base: "largo", defOff: true, nota: "Rodapié de material (opcional, a lo largo del paño)" }
+      { partida: "04.05", factor: 1, caras: "pintar", alcance: true, nota: "Pintura" }
     ]
   },
   {
@@ -779,7 +662,6 @@ const CMP_COMPUESTAS = [
     nombre: "Tratamiento de grieta en pared",
     campos: ["cantidad", "largo", "ancho"],
     etiquetas: { cantidad: "N.° de grietas", largo: "Longitud de la grieta (m)", ancho: "Ancho de banda a resanar (m)" },
-    sumable: "largo",
     magnitud: "Longitud de grieta",
     unidad: "m",
     baseCampo: "largo",
@@ -787,111 +669,12 @@ const CMP_COMPUESTAS = [
     componentes: [
       { partida: "04.02", factor: 1, base: "largo", nota: "Sellado de la grieta, por su longitud" },
       { partida: "04.04", factor: 1, base: "area", nota: "Friso de la banda: longitud por ancho" },
-      { partida: "04.05", factor: 1, base: "area", alcance: true, alcanceDef: "parcial", labTotal: "Solo la banda", labParcial: "Todo el paño", labCampo: "Superficie del paño", nota: "Pintura, por lo general de todo el paño" }
+      { partida: "04.05", factor: 1, base: "area", alcance: true, nota: "Pintura de la banda" }
     ]
   }
 ];
 
-const cmpCompuesta = (id) => (id === "__medida" && cmpMedidaDef) ? cmpMedidaDef : (CMP_COMPUESTAS.find((x) => x.id === id) || null);
-function cmpArmarMedida(base, codes) {
-  const esArea = base !== "largo";
-  const comps = [], aparte = [];
-  for (const cod of codes) {
-    const p = cmpPartida(cod);
-    if (!p) continue;
-    if (p.unidad === "m") comps.push({ partida: cod, factor: 1, base: "largo", nota: p.descripcion });
-    else if (p.unidad === "m2") comps.push({ partida: cod, factor: 1, base: "area", nota: p.descripcion });
-    else aparte.push(p.codigo + " " + p.descripcion + " (" + CMP_UNI[p.unidad] + ")");
-  }
-  cmpMedidaDef = {
-    id: "__medida",
-    nombre: "Compuesta a medida (dictada)",
-    campos: esArea ? ["cantidad", "largo", "alto"] : ["cantidad", "largo"],
-    etiquetas: esArea ? { cantidad: "N.° de elementos", largo: "Largo (m)", alto: "Alto (m)" } : { cantidad: "N.° de elementos", largo: "Longitud (m)" },
-    magnitud: esArea ? "Área" : "Longitud",
-    unidad: esArea ? "m2" : "m",
-    baseCampo: esArea ? undefined : "largo",
-    nota: "Compuesta armada desde tu dictado. Revisa y ajusta lo que haga falta." + (aparte.length ? " Aparte, agrégalas como líneas simples: " + aparte.join("; ") + "." : ""),
-    componentes: comps
-  };
-  return comps.length;
-}
-async function cmpDictarTareas(btn) {
-  const texto = String(cmpDictado.texto || "").trim();
-  if (!texto) { alert("Dicta o escribe primero las tareas."); return; }
-  if (!st.apiKey) { alert("Configura primero la clave API en Ajustes."); return; }
-  if (btn) { btn.disabled = true; btn.textContent = "Interpretando…"; }
-  try {
-    const cat = CMP_CAT.filter((p) => p.codigo !== "99.99").map((p) => p.codigo + " | " + p.descripcion + " | " + p.unidad).join("\n");
-    const paquetes = CMP_COMPUESTAS.map((x) => x.id + " | " + x.nombre + " | partidas: " + x.componentes.map((c) => c.partida).join(", ")).join("\n");
-    const prompt = `Eres asistente de un ingeniero estructural en Venezuela armando el computo metrico de reparacion de UN elemento tras un sismo. El ingeniero dicta las tareas. Tienes DOS formas de responder.
-
-PAQUETES PREDEFINIDOS (compuestas ya armadas por el ingeniero: id | nombre | partidas):
-${paquetes}
-
-CATALOGO DE PARTIDAS (codigo | descripcion | unidad):
-${cat}
-
-Dictado del ingeniero: "${texto}"
-
-CRITERIOS DE OBRA (aplicalos aunque no se mencionen explicitamente):
-- Si se demuele o repone ceramica de PISO de un baño o cocina, para hacerlo hay que desmontar y volver a montar las piezas sanitarias que se apoyan en ese piso: agrega en "lineas" el desmontaje y montaje de poceta (05.05) y de lavamanos (05.07).
-
-Ademas, en cualquier caso, si el dictado incluye tareas que se cuentan por unidad (und) o peso (kg) y existen en el catalogo (por ejemplo desmontar o reemplazar poceta, lavamanos o ducha), agrega sus codigos en "lineas"; se crearan como partidas de linea aparte para poner la cantidad.
-
-Decide el paquete principal:
-1) Si el dictado corresponde claramente a UNO de los paquetes predefinidos (por ejemplo "reposicion de pared" es pared; "columna con cabillas expuestas" es columna; "tratar grieta" es grieta), responde con: {"compuesta":"pared","lineas":[]}
-2) Si NO calza con ningun paquete, arma una a medida: en "partidas" pon solo codigos de unidad m o m2 (los que comparten la medida); "base" es "area" (largo por alto) o "largo" (longitud). Responde con: {"base":"area","partidas":["02.08"],"aparte":[],"lineas":[],"nota":"breve"}
-
-Responde UNICAMENTE con el JSON, sin markdown ni texto extra.`;
-    let r = await llamarClaude(prompt, 500);
-    r = r.replace(/```json|```/g, "").trim();
-    const ini = r.indexOf("{"), fin = r.lastIndexOf("}");
-    if (ini >= 0 && fin > ini) r = r.slice(ini, fin + 1);
-    const data = JSON.parse(r);
-    cmpDictadoLineas = (Array.isArray(data.lineas) ? data.lineas : []).filter((cc) => cmpPartida(cc));
-    if (data.compuesta && data.compuesta !== "__medida" && cmpCompuesta(data.compuesta)) {
-      cmpModo = "compuesta";
-      cmpComp = { id: data.compuesta, base: {}, comps: {}, carasFrisar: 0, carasPintar: 0 };
-      cmpDictado = { abierto: false, texto: "", cargando: false };
-      rComputos();
-      return;
-    }
-    const base = data.base === "largo" ? "largo" : "area";
-    const codes = Array.isArray(data.partidas) ? data.partidas : [];
-    const n = cmpArmarMedida(base, codes);
-    if (!n) { alert("La IA no encontro partidas de area o longitud. Revisa el dictado."); if (btn) { btn.disabled = false; btn.textContent = "Interpretar con IA"; } return; }
-    cmpModo = "compuesta";
-    cmpComp = { id: "__medida", base: {}, comps: {}, carasFrisar: 0, carasPintar: 0 };
-    cmpDictado = { abierto: false, texto: "", cargando: false };
-    rComputos();
-  } catch (e) {
-    alert("No se pudo interpretar: " + e.message);
-    if (btn) { btn.disabled = false; btn.textContent = "Interpretar con IA"; }
-  }
-}
-function cmpDictLineasHtml() {
-  if (!cmpDictadoLineas.length) return "";
-  return `<div class="tarjeta" style="padding:12px;background:var(--ambar-bg);border-color:var(--ambar)">
-    <div class="etiq" style="color:var(--ambar-tx)">Partidas sueltas del dictado (tócalas para agregarlas)</div>
-    <div class="pildoras">
-      ${cmpDictadoLineas.map((cod) => { const p = cmpPartida(cod); return p ? `<button data-dictln="${cod}">${cod} ${esc(p.descripcion)}</button>` : ""; }).join("")}
-    </div>
-  </div>`;
-}
-function cmpDictadoHtml() {
-  if (!cmpDictado.abierto) return `<button class="btn btn-ambar" id="cmDictarAbrir" style="margin-bottom:10px">🎙 Dictar tareas (la IA arma la compuesta)</button>`;
-  return `<div class="tarjeta" style="background:var(--ambar-bg);border-color:var(--ambar);margin-bottom:10px">
-    <div class="etiq" style="color:var(--ambar-tx)">Dicta todo lo que hay que hacerle al elemento</div>
-    <p class="aviso" style="margin-top:0">Ejemplo: "columna con grieta, picar hasta concreto sano, anticorrosivo a las cabillas, mortero de reparación, frisar y pintar". Usa el micrófono del teclado para dictar.</p>
-    <textarea id="cmDictarTxt" rows="3" placeholder="Dicta o escribe las tareas…">${esc(cmpDictado.texto || "")}</textarea>
-    <div class="grid2" style="margin-top:8px">
-      <button class="btn btn-negro" id="cmDictarIr">Interpretar con IA</button>
-      <button class="btn btn-linea" id="cmDictarCerrar">Cancelar</button>
-    </div>
-    ${st.apiKey ? "" : `<p class="aviso" style="color:var(--rojo);margin-bottom:0">Falta configurar la clave API en Ajustes.</p>`}
-  </div>`;
-}
+const cmpCompuesta = (id) => CMP_COMPUESTAS.find((x) => x.id === id) || null;
 
 function cmpUnidadActual() {
   const id = cmpBorrador.zonaId;
@@ -915,24 +698,15 @@ function cmpSugerencias() {
 }
 
 /* Superficie o longitud base de la partida compuesta */
-function cmpSegSuma() {
-  return (cmpComp.segs || []).reduce((sum, x) => sum + cmpNum(x), 0);
-}
-// Valor efectivo de un campo base, respetando el modo "sumar varias".
-function cmpBaseCampoVal(a, cc) {
-  if (cmpComp.segsOn && a && a.sumable === cc) return cmpRed(cmpSegSuma());
-  if (cc === "cantidad" && cmpComp.segsOn) return 1;
-  return cmpNum(cmpComp.base[cc], cc === "cantidad" ? 1 : 0);
-}
 function cmpBaseCompuesta() {
   const a = cmpCompuesta(cmpComp.id);
   if (!a) return 0;
   // La magnitud principal que se muestra en el recuadro. Si la compuesta
   // declara baseCampo, esa es la magnitud rectora (p. ej. la longitud de la
   // grieta); si no, se multiplican todos los campos dimensionales.
-  if (a.baseCampo) return cmpRed(cmpBaseCampoVal(a, "cantidad") * cmpBaseCampoVal(a, a.baseCampo));
-  let v = cmpBaseCampoVal(a, "cantidad");
-  for (const c of a.campos) { if (c === "cantidad") continue; v *= cmpBaseCampoVal(a, c); }
+  if (a.baseCampo) return cmpRed(cmpNum(cmpComp.base.cantidad, 1) * cmpNum(cmpComp.base[a.baseCampo]));
+  let v = cmpNum(cmpComp.base.cantidad, 1);
+  for (const c of a.campos) { if (c === "cantidad") continue; v *= cmpNum(cmpComp.base[c]); }
   return cmpRed(v);
 }
 
@@ -940,11 +714,11 @@ function cmpBaseCompuesta() {
 // el área completa ("area") o, por defecto, la base general de la compuesta.
 function cmpBaseDe(comp) {
   const a = cmpCompuesta(cmpComp.id);
-  const n = cmpBaseCampoVal(a, "cantidad");
-  if (comp.base === "largo") return cmpRed(n * cmpBaseCampoVal(a, "largo"));
+  const n = cmpNum(cmpComp.base.cantidad, 1);
+  if (comp.base === "largo") return cmpRed(n * cmpNum(cmpComp.base.largo));
   if (comp.base === "area") {
     let v = n;
-    for (const c of a.campos) { if (c === "cantidad") continue; v *= cmpBaseCampoVal(a, c); }
+    for (const c of a.campos) { if (c === "cantidad") continue; v *= cmpNum(cmpComp.base[c]); }
     return cmpRed(v);
   }
   return cmpBaseCompuesta();
@@ -958,71 +732,15 @@ function cmpCarasDe(tipo) {
   return 1;
 }
 
-// Cantidad intervenida de un componente: numero directo, o suma de renglones
-// (ancho por alto para area, longitudes para metros lineales).
-function cmpCompParcial(p, e) {
-  if (e.segsOn) {
-    const segs = e.segs || [];
-    if (p.unidad === "m2") return cmpRed(segs.reduce((s, x) => s + cmpNum(x.a) * cmpNum(x.b), 0), 2);
-    return cmpRed(segs.reduce((s, x) => s + cmpNum(x.a), 0), 2);
-  }
-  return cmpRed(cmpNum(e.cant), 2);
-}
-function cmpIncluido(comp) {
-  const e = cmpComp.comps[comp.partida] || {};
-  if (e.incluir === undefined) return !comp.defOff;
-  return e.incluir !== false;
-}
 function cmpCantidadComponente(comp) {
   const e = cmpComp.comps[comp.partida] || {};
-  if ((e.alcance || comp.alcanceDef) === "parcial") return cmpCompParcial(cmpPartida(comp.partida) || { unidad: "m2" }, e);
+  if (e.alcance === "parcial") return cmpRed(cmpNum(e.cant), 2);
   const caras = comp.caras ? cmpCarasDe(comp.caras) : 1;
   return cmpRed(cmpBaseDe(comp) * comp.factor * caras, 2);
 }
 let cmpVer = null;
-let cmpEditId = null;
 let cmpModo = "simple";
 let cmpComp = { id: "", base: {}, comps: {} };
-let cmpMedidaDef = null;
-let cmpDictado = { abierto: false, texto: "", cargando: false };
-let cmpDictadoLineas = [];
-let _geoUlt = null;
-function geoCapturar() {
-  return new Promise((resolve) => {
-    if (!navigator.geolocation) return resolve(null);
-    navigator.geolocation.getCurrentPosition(
-      (pos) => {
-        const c = pos.coords;
-        _geoUlt = {
-          lat: c.latitude, lon: c.longitude, acc: c.accuracy,
-          alt: (c.altitude != null ? c.altitude : null),
-          altAcc: (c.altitudeAccuracy != null ? c.altitudeAccuracy : null),
-          ts: new Date().toISOString()
-        };
-        resolve(_geoUlt);
-      },
-      () => resolve(_geoUlt),
-      { enableHighAccuracy: true, timeout: 8000, maximumAge: 30000 }
-    );
-  });
-}
-function geoTxt(g) {
-  if (!g) return "";
-  let t = g.lat.toFixed(6) + ", " + g.lon.toFixed(6);
-  if (g.alt != null) t += " · alt " + Math.round(g.alt) + " m aprox.";
-  t += " · ±" + Math.round(g.acc) + " m";
-  return t;
-}
-function geoAdjuntar(foto, refrescar) {
-  if (_geoUlt) foto.geo = _geoUlt;
-  geoCapturar().then((g) => {
-    if (!g) return;
-    foto.geo = g;
-    guardar();
-    const ae = document.activeElement;
-    if (refrescar && !(ae && (ae.tagName === "TEXTAREA" || ae.tagName === "INPUT"))) refrescar();
-  });
-}
 function cmpDescartar() {
   if (cmpBorrador.fotos && cmpBorrador.fotos.length) {
     if (!confirm("Hay fotos adjuntas a una línea que no ha guardado. ¿Salir y descartarlas?")) return false;
@@ -1291,7 +1009,7 @@ function rSetup() {
       <div class="fila">
         <div style="flex:1">
           <div class="etiq" style="margin:0">Ubicación GPS</div>
-          <p class="aviso" style="margin:2px 0 0" id="gpsTxt">${b.gps ? `${b.gps.lat.toFixed(6)}, ${b.gps.lon.toFixed(6)} (±${Math.round(b.gps.acc)} m)${b.gps.alt != null ? ` · alt ${Math.round(b.gps.alt)} m aprox.` : ""}` : "Sin capturar"}</p>
+          <p class="aviso" style="margin:2px 0 0" id="gpsTxt">${b.gps ? `${b.gps.lat.toFixed(6)}, ${b.gps.lon.toFixed(6)} (±${Math.round(b.gps.acc)} m)` : "Sin capturar"}</p>
         </div>
         <button class="btn btn-linea" style="flex:0 0 auto;width:auto;padding:9px 12px;font-size:13px" id="bGps">📍 Capturar</button>
       </div>
@@ -1364,10 +1082,8 @@ function rSetup() {
     t.textContent = "Obteniendo posición…";
     navigator.geolocation.getCurrentPosition(
       (pos) => {
-        b.gps = { lat: pos.coords.latitude, lon: pos.coords.longitude, acc: pos.coords.accuracy,
-          alt: (pos.coords.altitude != null ? pos.coords.altitude : null),
-          altAcc: (pos.coords.altitudeAccuracy != null ? pos.coords.altitudeAccuracy : null) };
-        t.textContent = `${b.gps.lat.toFixed(6)}, ${b.gps.lon.toFixed(6)} (±${Math.round(b.gps.acc)} m)` + (b.gps.alt != null ? ` · alt ${Math.round(b.gps.alt)} m aprox.` : "");
+        b.gps = { lat: pos.coords.latitude, lon: pos.coords.longitude, acc: pos.coords.accuracy };
+        t.textContent = `${b.gps.lat.toFixed(6)}, ${b.gps.lon.toFixed(6)} (±${Math.round(b.gps.acc)} m)`;
         guardar();
       },
       (err) => { t.textContent = "No se pudo obtener (" + err.message + "). Revisa permisos de ubicación."; },
@@ -1894,7 +1610,6 @@ function rUnidad() {
           <button class="btn-gris" style="width:auto;padding:5px 9px;border-radius:8px;font-size:12px;${f.star ? "background:#fbbf24;border-color:#f59e0b;color:var(--ink);font-weight:700" : ""}" data-star="${f.id}">${f.star ? "★ En el informe" : "☆ Incluir en informe"}</button>
           <button class="btn-rojo-linea" style="width:auto;padding:5px 9px;border-radius:8px;font-size:12px" data-delfoto="${f.id}">Eliminar</button>
         </div>
-        <p class="aviso" data-geo="${f.id}" style="margin:0 0 6px">${f.geo ? "📍 " + geoTxt(f.geo) : ""}</p>
         <textarea rows="2" placeholder="Descripción de lo observado…" data-desc="${f.id}">${esc(f.desc)}</textarea>
         <div class="pildoras" style="margin:6px 0 2px">
           ${FRASES.map((fr) => `<button data-frase="${f.id}|${esc(fr)}" style="font-size:12px;padding:5px 9px">${esc(fr)}</button>`).join("")}
@@ -1962,9 +1677,7 @@ function rUnidad() {
         const blob = await comprimir(file);
         const fid = uid();
         await blobSet("photo:" + fid, blob);
-        const _f = { id: fid, desc: "", dano: "", atc: "", star: false };
-        u.fotos.push(_f);
-        geoAdjuntar(_f, rUnidad);
+        u.fotos.push({ id: fid, desc: "", dano: "", atc: "", star: false });
       } catch (ex) {
         err.textContent = "No se pudo guardar una foto: " + (ex && ex.message ? ex.message : ex);
         err.style.color = "var(--rojo)";
@@ -2056,7 +1769,7 @@ async function verFoto(fid) {
 }
 
 /* ================= Editor de anotaciones sobre fotos ================= */
-async function abrirEditorFoto(fid, despues) {
+async function abrirEditorFoto(fid) {
   const blob = await blobGet("photo:" + fid);
   if (!blob) return;
   const img = new Image();
@@ -2069,12 +1782,6 @@ async function abrirEditorFoto(fid, despues) {
       <span style="color:#fff;font-weight:700;flex:1">Anotar foto</span>
       <button id="edDeshacer" style="background:#374151;color:#fff;border:none;border-radius:8px;padding:8px 12px;font-weight:600">↩ Deshacer</button>
       <button id="edCerrar" style="background:#374151;color:#fff;border:none;border-radius:8px;padding:8px 12px;font-weight:600">Cancelar</button>
-    </div>
-    <div id="edHerr" style="display:flex;gap:6px;justify-content:center;flex-wrap:wrap;padding:0 14px 8px">
-      <button data-t="flecha" style="color:#fff;border:none;border-radius:8px;padding:8px 12px;font-weight:600;font-size:13px">➤ Flecha</button>
-      <button data-t="circulo" style="color:#fff;border:none;border-radius:8px;padding:8px 12px;font-weight:600;font-size:13px">◯ Círculo</button>
-      <button data-t="elipse" style="color:#fff;border:none;border-radius:8px;padding:8px 12px;font-weight:600;font-size:13px">⬭ Elipse</button>
-      <button data-t="libre" style="color:#fff;border:none;border-radius:8px;padding:8px 12px;font-weight:600;font-size:13px">✎ Libre</button>
     </div>
     <div style="flex:1;display:flex;align-items:center;justify-content:center;overflow:hidden;padding:0 8px">
       <canvas id="edCanvas" style="max-width:100%;max-height:100%;touch-action:none;border-radius:8px"></canvas>
@@ -2093,72 +1800,32 @@ async function abrirEditorFoto(fid, despues) {
   canvas.width = img.naturalWidth; canvas.height = img.naturalHeight;
   const ctx = canvas.getContext("2d");
   let color = "#e11d48";
-  let tool = "flecha";
-  const formas = [];
+  const trazos = [];
   let actual = null;
   const grosor = Math.max(4, Math.round(canvas.width / 220));
-  function flecha(x0, y0, x1, y1, col) {
-    ctx.strokeStyle = col; ctx.fillStyle = col; ctx.lineWidth = grosor; ctx.lineCap = "round"; ctx.lineJoin = "round";
-    ctx.beginPath(); ctx.moveTo(x0, y0); ctx.lineTo(x1, y1); ctx.stroke();
-    const ang = Math.atan2(y1 - y0, x1 - x0), h = grosor * 4;
-    ctx.beginPath(); ctx.moveTo(x1, y1);
-    ctx.lineTo(x1 - h * Math.cos(ang - Math.PI / 7), y1 - h * Math.sin(ang - Math.PI / 7));
-    ctx.lineTo(x1 - h * Math.cos(ang + Math.PI / 7), y1 - h * Math.sin(ang + Math.PI / 7));
-    ctx.closePath(); ctx.fill();
-  }
-  function dibujarForma(f) {
-    ctx.strokeStyle = f.color; ctx.lineWidth = grosor; ctx.lineCap = "round"; ctx.lineJoin = "round";
-    if (f.tipo === "libre") {
-      ctx.beginPath();
-      f.pts.forEach((p, i) => (i ? ctx.lineTo(p[0], p[1]) : ctx.moveTo(p[0], p[1])));
-      ctx.stroke();
-    } else if (f.tipo === "flecha") {
-      flecha(f.x0, f.y0, f.x1, f.y1, f.color);
-    } else {
-      const cx = (f.x0 + f.x1) / 2, cy = (f.y0 + f.y1) / 2;
-      let rx = Math.abs(f.x1 - f.x0) / 2, ry = Math.abs(f.y1 - f.y0) / 2;
-      if (f.tipo === "circulo") { const r = Math.min(rx, ry); rx = r; ry = r; }
-      ctx.beginPath(); ctx.ellipse(cx, cy, rx, ry, 0, 0, Math.PI * 2); ctx.stroke();
-    }
-  }
   function redibujar() {
     ctx.drawImage(img, 0, 0);
-    for (const f of formas) dibujarForma(f);
-    if (actual) dibujarForma(actual);
+    for (const t of trazos) {
+      ctx.strokeStyle = t.color; ctx.lineWidth = grosor; ctx.lineCap = "round"; ctx.lineJoin = "round";
+      ctx.beginPath();
+      t.pts.forEach((p, i) => (i ? ctx.lineTo(p[0], p[1]) : ctx.moveTo(p[0], p[1])));
+      ctx.stroke();
+    }
   }
   redibujar();
   const pos = (e) => {
     const r = canvas.getBoundingClientRect();
     return [((e.clientX - r.left) / r.width) * canvas.width, ((e.clientY - r.top) / r.height) * canvas.height];
   };
-  canvas.onpointerdown = (e) => {
-    e.preventDefault(); canvas.setPointerCapture(e.pointerId);
-    const p = pos(e);
-    actual = tool === "libre" ? { tipo: "libre", color, pts: [p] } : { tipo: tool, color, x0: p[0], y0: p[1], x1: p[0], y1: p[1] };
-  };
-  canvas.onpointermove = (e) => {
-    if (!actual) return; e.preventDefault();
-    const p = pos(e);
-    if (actual.tipo === "libre") actual.pts.push(p); else { actual.x1 = p[0]; actual.y1 = p[1]; }
-    redibujar();
-  };
-  canvas.onpointerup = () => {
-    if (actual) {
-      const ok = actual.tipo === "libre" ? actual.pts.length > 1 : (Math.abs(actual.x1 - actual.x0) > 3 || Math.abs(actual.y1 - actual.y0) > 3);
-      if (ok) formas.push(actual);
-    }
-    actual = null; redibujar();
-  };
-  const herr = ov.querySelector("#edHerr");
-  const marcarTool = () => herr.querySelectorAll("button").forEach((b) => (b.style.background = b.dataset.t === tool ? "#2563eb" : "#374151"));
-  herr.querySelectorAll("button").forEach((b) => (b.onclick = () => { tool = b.dataset.t; marcarTool(); }));
-  marcarTool();
+  canvas.onpointerdown = (e) => { e.preventDefault(); canvas.setPointerCapture(e.pointerId); actual = { color, pts: [pos(e)] }; trazos.push(actual); };
+  canvas.onpointermove = (e) => { if (!actual) return; e.preventDefault(); actual.pts.push(pos(e)); redibujar(); };
+  canvas.onpointerup = () => { actual = null; };
   ov.querySelector("#edColores").querySelectorAll("button").forEach((bt) => (bt.onclick = () => {
     color = bt.dataset.c;
     ov.querySelector("#edColores").querySelectorAll("button").forEach((x) => (x.style.borderColor = x === bt ? "#fff" : "transparent"));
     if (color === "#ffffff") bt.style.borderColor = "#facc15";
   }));
-  ov.querySelector("#edDeshacer").onclick = () => { formas.pop(); redibujar(); };
+  ov.querySelector("#edDeshacer").onclick = () => { trazos.pop(); redibujar(); };
   const cerrar = () => { URL.revokeObjectURL(url); ov.remove(); };
   ov.querySelector("#edCerrar").onclick = cerrar;
   ov.querySelector("#edGuardar").onclick = () => {
@@ -2171,7 +1838,7 @@ async function abrirEditorFoto(fid, despues) {
         await kvSet("subidos", JSON.stringify(s));
         guardar();
       }
-      cerrar(); (despues || render)();
+      cerrar(); render();
     }, "image/jpeg", 0.85);
   };
 }
@@ -2236,7 +1903,7 @@ function textoExport() {
   L.push(`Nombre: ${b.nombre || "-"}`);
   L.push(`Dirección: ${b.direccion || "-"}`);
   L.push(`Parroquia: ${b.parroquia || "-"} · Municipio: ${b.municipio || "-"} · Estado: ${b.estado || "-"}`);
-  if (b.gps) L.push(`Coordenadas GPS: ${b.gps.lat.toFixed(6)}, ${b.gps.lon.toFixed(6)} (precisión ±${Math.round(b.gps.acc)} m)${b.gps.alt != null ? `, elevación ${Math.round(b.gps.alt)} m (aprox.)` : ""}`);
+  if (b.gps) L.push(`Coordenadas GPS: ${b.gps.lat.toFixed(6)}, ${b.gps.lon.toFixed(6)} (precisión ±${Math.round(b.gps.acc)} m)`);
   L.push(`Año de construcción: ${b.anio || "-"}`);
   L.push(`N.° de pisos: ${b.pisos || "-"}`);
   L.push(`Sistema estructural: ${b.sistema || "-"}`);
@@ -2663,7 +2330,11 @@ function rExport() {
 }
 
 /* ================= Ajustes / API ================= */
-async function cmpZip() {
+let cmpZipEnCurso = false;
+async function cmpZip(btn) {
+  if (cmpZipEnCurso) return;
+  cmpZipEnCurso = true;
+  if (btn) { btn.disabled = true; btn.dataset.txt = btn.textContent; btn.textContent = "Armando ZIP, espere…"; }
   const c = cmpDe(st.insp), b = st.insp.edificio;
   const base = "BSP-2026-" + (b.informe || "X");
   ponEstado("Armando ZIP…", false);
@@ -2687,7 +2358,7 @@ async function cmpZip() {
         mapa[f.id] = nombre;
       }
     }
-    const res = cmpResumen(c);
+    const res = cmpAgrupar(c.lineas);
     const salida = {
       informe: b.informe ? base : "",
       edificacion: b.nombre, direccion: b.direccion,
@@ -2699,8 +2370,7 @@ async function cmpZip() {
         cantidad_neta: cmpRed(r.total, 2),
         desperdicio_pct: cmpDespDe(r.codigo),
         cantidad_con_desperdicio: cmpRed(r.total * (1 + cmpDespDe(r.codigo) / 100), 2),
-        lineas: r.n, tiene_estimaciones: r.estimada,
-        ...(r.acarreo ? { viajes: r.acarreo.viajes, m3_por_viaje: r.acarreo.viaje, esponjamiento_pct: Math.round(r.acarreo.esp * 100) } : {})
+        lineas: r.n, tiene_estimaciones: r.estimada
       })),
       lineas: c.lineas.map((l) => Object.assign({}, l, {
         fotos: (l.fotos || []).map((f) => ({ id: f.id, pie: f.pie, archivo: mapa[f.id] || null }))
@@ -2727,7 +2397,7 @@ async function cmpZip() {
     T.push("");
     T.push("DETALLE POR LÍNEA");
     for (const l of c.lineas) {
-      const p = cmpPartidaLinea(l) || {};
+      const p = cmpPartida(l.partida) || {};
       const med = cmpCampos(p).filter((x) => x !== "cantidad")
         .map((x) => cmpEtiq(p, x) + " " + (x === "diametro" ? (l.diametro || "") : cmpFmt(cmpNum(l[x])))).join("  ·  ");
       T.push("  " + l.partida + "  " + [l.elemento, l.zona, l.nivel].filter(Boolean).join(" · "));
@@ -2741,21 +2411,29 @@ async function cmpZip() {
 
     const blob = await zip.generateAsync({ type: "blob" });
     const file = new File([blob], base + "_computos.zip", { type: "application/zip" });
-    if (navigator.canShare && navigator.canShare({ files: [file] })) {
-      try { await navigator.share({ files: [file] }); ponEstado("ZIP compartido ✓", false); return; } catch (e) {}
+    // Solo se usa la hoja de compartir en pantallas táctiles (teléfono). En la
+    // laptop se descarga directo, porque navigator.share suele fallar callado.
+    const tactil = navigator.maxTouchPoints > 0;
+    if (tactil && navigator.canShare && navigator.canShare({ files: [file] })) {
+      try { await navigator.share({ files: [file] }); ponEstado("ZIP compartido ✓", false); return; }
+      catch (e) { if (e && e.name === "AbortError") { ponEstado("Compartir cancelado", false); return; } }
     }
     const a = document.createElement("a");
-    a.href = URL.createObjectURL(blob); a.download = file.name; a.click();
-    URL.revokeObjectURL(a.href);
-    ponEstado("ZIP con " + n + " foto(s) ✓", false);
+    a.href = URL.createObjectURL(blob); a.download = file.name;
+    document.body.appendChild(a); a.click(); a.remove();
+    setTimeout(() => URL.revokeObjectURL(a.href), 4000);
+    ponEstado("ZIP descargado: " + n + " foto(s) ✓", false);
   } catch (e) {
     ponEstado("⚠ Falló el ZIP", true);
     alert("No se pudo armar el ZIP: " + (e && e.message ? e.message : e));
+  } finally {
+    cmpZipEnCurso = false;
+    if (btn) { btn.disabled = false; if (btn.dataset.txt) btn.textContent = btn.dataset.txt; }
   }
 }
 
 function cmpDetalleLinea(l) {
-  const p = cmpPartidaLinea(l) || {};
+  const p = cmpPartida(l.partida) || {};
   const med = cmpCampos(p).map((x) =>
     cmpEtiq(p, x) + ": " + (x === "diametro" ? (l.diametro || "—") : cmpFmt(cmpNum(l[x])))).join("  ·  ");
   const org = l.origen === "sitio" ? "Medida en sitio"
@@ -2769,56 +2447,9 @@ function cmpDetalleLinea(l) {
     ${fotos.length ? fotos.map((f) => `
       <div class="foto-card" style="margin-bottom:8px">
         <img data-foto="${f.id}" alt="Fotografía de respaldo" style="background:var(--borde);min-height:60px" />
-        <div class="cuerpo"><p class="aviso" style="margin:0">${esc(f.pie || "")}</p>${f.geo ? `<p class="aviso" style="margin:4px 0 0">📍 ${geoTxt(f.geo)}</p>` : ""}
-          <button class="btn btn-linea" style="width:auto;padding:5px 10px;font-size:12px;margin-top:8px" data-anotarl="${f.id}">✏️ Anotar / ampliar</button></div>
+        <div class="cuerpo"><p class="aviso" style="margin:0">${esc(f.pie || "")}</p></div>
       </div>`).join("") : `<p class="aviso" style="margin:0">Esta línea no tiene fotografías de respaldo.</p>`}
-    ${!l.derivada ? `<button class="btn btn-linea" style="width:auto;padding:6px 11px;font-size:12px;margin:0 6px 6px 0" data-editln="${l.id}">✎ Editar / corregir</button>` : `<p class="aviso" style="margin:6px 0 0;font-style:italic">La edición de partidas compuestas llegará en una próxima versión.</p>`}
-    ${cmpReplicarUI(l)}
   </div>`;
-}
-
-/* Panel para copiar una linea (o toda una compuesta) a otros niveles. */
-function cmpReplicarUI(l) {
-  const niveles = (st.insp.niveles || []).filter((n) => n.id && n.id !== l.nivelId);
-  if (!niveles.length) return "";
-  return `<div style="margin-top:6px">
-    <button class="btn btn-gris" style="width:auto;padding:6px 10px;font-size:12px" data-repltoggle="${l.id}">⧉ Replicar a otros niveles</button>
-    <div id="repl_${l.id}" style="display:none;margin-top:8px">
-      <p class="aviso" style="margin:0 0 6px">Copia esta línea (misma partida y cantidad, sin fotos) a los niveles que marques. En los pisos donde no aplique, luego la eliminas.</p>
-      <div style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:8px">
-        ${niveles.map((n) => `<label style="display:inline-flex;align-items:center;gap:5px;font-size:13px;border:1px solid var(--borde);border-radius:8px;padding:5px 9px">
-          <input type="checkbox" data-replniv="${l.id}" value="${esc(n.id)}" style="min-height:0;width:auto" /> ${esc(n.nombre)}</label>`).join("")}
-      </div>
-      <button class="btn btn-gris" style="width:auto;padding:5px 10px;font-size:12px;margin-right:6px" data-replall="${l.id}">Marcar todos</button>
-      <button class="btn btn-negro" style="width:auto;padding:6px 12px;font-size:13px" data-replgo="${l.id}">Replicar</button>
-    </div>
-  </div>`;
-}
-function cmpReplicar(l, nivelIds) {
-  const c = cmpDe(st.insp);
-  const niveles = st.insp.niveles || [];
-  const nombreDe = (nid) => { const nv = niveles.find((x) => x.id === nid); return nv ? nv.nombre : ""; };
-  let n = 0;
-  if (l.derivada && l.grupo) {
-    const grupo = c.lineas.filter((x) => x.grupo === l.grupo);
-    for (const nid of nivelIds) {
-      const gid = uid();
-      for (const g of grupo) {
-        const cl = Object.assign({}, g, { id: uid(), grupo: gid, nivelId: nid, nivel: nombreDe(nid) || g.nivel, zonaId: "", fotos: [], ts: new Date().toISOString() });
-        c.lineas.push(cl);
-      }
-      n++;
-    }
-  } else {
-    for (const nid of nivelIds) {
-      const cl = Object.assign({}, l, { id: uid(), nivelId: nid, nivel: nombreDe(nid) || l.nivel, zonaId: "", fotos: [], ts: new Date().toISOString() });
-      c.lineas.push(cl);
-      n++;
-    }
-  }
-  guardar();
-  rComputos();
-  return n;
 }
 
 async function cmpCargarFotos() {
@@ -2969,7 +2600,6 @@ function cmpAuxWire(cont, destino, aplicar) {
 
 /* Aviso de valor atípico: compara contra la mediana de la misma partida */
 function cmpAtipico(l, p) {
-  if (l.partida === "99.99") return null;
   const c = cmpDe(st.insp);
   const otras = c.lineas.filter((x) => x.partida === l.partida)
     .map((x) => cmpNum(x.parcial)).filter((v) => v > 0).sort((a, b) => a - b);
@@ -2985,7 +2615,7 @@ function cmpAtipico(l, p) {
 }
 
 function cmpPintarDims() {
-  const p = cmpPartidaBorrador();
+  const p = cmpPartida(cmpBorrador.partida);
   const cont = document.getElementById("cmDims");
   if (!cont || !p) return;
   const crit = document.getElementById("cmCrit");
@@ -3036,7 +2666,7 @@ function cmpPintarDims() {
 }
 
 function cmpLeer() {
-  const p = cmpPartidaBorrador();
+  const p = cmpPartida(cmpBorrador.partida);
   const D = cmpBorrador.dims || {};
   const l = {
     partida: cmpBorrador.partida,
@@ -3050,40 +2680,11 @@ function cmpLeer() {
   for (const c of cmpCampos(p)) l[c] = D[c] === undefined ? (c === "cantidad" ? "1" : "") : D[c];
   if (cmpBorrador.fijo) l.parcialFijo = cmpBorrador.fijo.valor;
   if (cmpBorrador.medicion) l.medicion = cmpBorrador.medicion;
-  if (cmpBorrador.partida === "99.99") l.otroDesc = String(cmpBorrador.otroDesc || "").trim();
   return l;
 }
 
-function cmpEditarLinea(id) {
-  const c = cmpDe(st.insp);
-  const l = c.lineas.find((x) => x.id === id);
-  if (!l || l.derivada) return;
-  const p = cmpPartidaLinea(l);
-  cmpModo = "simple";
-  cmpEditId = id;
-  cmpVer = null;
-  cmpBorrador = {
-    origen: l.origen || "sitio",
-    partida: l.partida,
-    zona: l.zona || "",
-    nivel: l.nivel || "",
-    nivelId: l.nivelId || "",
-    zonaSel: "__otro",
-    elemento: l.elemento || "",
-    obs: l.obs || "",
-    dims: {},
-    fotos: (l.fotos || []).map((f) => ({ id: f.id, ts: l.ts, pie: f.pie, geo: f.geo }))
-  };
-  if (l.partida === "99.99") { cmpBorrador.otroDesc = l.otroDesc || ""; cmpBorrador.otroUni = l.unidad || "und"; }
-  for (const cc of cmpCampos(p)) cmpBorrador.dims[cc] = l[cc] != null ? l[cc] : "";
-  if (l.parcialFijo != null) cmpBorrador.fijo = { valor: l.parcialFijo, unidad: l.unidad };
-  if (l.medicion) cmpBorrador.medicion = l.medicion;
-  rComputos();
-  window.scrollTo(0, 0);
-}
-
 function cmpCinta() {
-  const p = cmpPartidaBorrador();
+  const p = cmpPartida(cmpBorrador.partida);
   const el = document.getElementById("cmCinta");
   if (!el || !p) return;
   const l = cmpLeer();
@@ -3118,9 +2719,8 @@ async function cmpPintarFotos() {
     const u = await urlFoto(f.id);
     const d = document.createElement("div");
     d.className = "lista-foto";
-    d.innerHTML = `<img class="mini" src="${u || ""}" alt="" data-anotarb="${f.id}" style="cursor:pointer" />
-      <span style="flex:1">Foto ${i + 1}${f.geo ? `<br /><span class="aviso">📍 ${geoTxt(f.geo)}</span>` : ""}</span>
-      <button class="btn btn-linea" style="width:auto;padding:6px 11px;margin-right:6px" data-anotarb="${f.id}">✏️ Anotar</button>
+    d.innerHTML = `<img class="mini" src="${u || ""}" alt="" />
+      <span style="flex:1">Foto ${i + 1}</span>
       <button class="btn btn-rojo-linea" style="width:auto;padding:6px 12px" data-quitar="${i}">Quitar</button>`;
     cont.appendChild(d);
   }
@@ -3132,7 +2732,6 @@ async function cmpPintarFotos() {
       cmpPintarFotos();
     };
   });
-  cont.querySelectorAll("[data-anotarb]").forEach((b) => (b.onclick = () => abrirEditorFoto(b.dataset.anotarb, cmpPintarFotos)));
 }
 
 function cmpCapturar() {
@@ -3142,66 +2741,6 @@ function cmpCapturar() {
   if (ob) cmpBorrador.obs = ob.value;
 }
 
-function cmpCampoHtml(a, cc) {
-  const seg = a.sumable === cc;
-  if (cc === "cantidad" && cmpComp.segsOn) return "";
-  if (seg && cmpComp.segsOn) {
-    const segs = cmpComp.segs || [];
-    return `<div class="campo" style="grid-column:1 / -1">
-      <span>${esc(a.etiquetas[cc] || CMP_TXT[cc])} · ${segs.length} ${segs.length === 1 ? "tramo" : "tramos"}</span>
-      ${segs.map((v, i) => `<div style="display:flex;gap:6px;margin-bottom:5px">
-        <input data-seg="${i}" inputmode="decimal" value="${esc(v)}" placeholder="0,00" style="text-align:right;font-weight:600" />
-        <button class="btn btn-rojo-linea" style="width:auto;padding:6px 11px" data-segdel="${i}">✕</button></div>`).join("")}
-      <div style="display:flex;gap:8px;align-items:center;margin-top:2px">
-        <button class="btn btn-linea" style="width:auto;padding:6px 11px;font-size:13px" data-segadd>+ agregar</button>
-        <button class="btn btn-linea" style="width:auto;padding:6px 11px;font-size:13px" data-segoff>una sola</button>
-        <b class="mono" id="cmSegSuma" style="margin-left:auto">Σ ${cmpFmt(cmpRed(cmpSegSuma()))} m</b>
-      </div></div>`;
-  }
-  return `<label class="campo"><span>${esc(a.etiquetas[cc] || CMP_TXT[cc])}</span>
-    <input data-base="${cc}" inputmode="decimal" style="text-align:right;font-weight:600"
-      value="${esc(cmpComp.base[cc] == null ? (cc === "cantidad" ? "1" : "") : cmpComp.base[cc])}"
-      placeholder="${cc === "cantidad" ? "1" : "0,00"}" />
-    ${seg ? `<button class="btn btn-linea" style="width:auto;padding:4px 11px;font-size:12px;margin-top:6px" data-segon>Σ sumar varias</button>` : ""}</label>`;
-}
-function cmpAlcanceHtml(comp, p, e, inc) {
-  if (!inc || (p.unidad !== "m2" && p.unidad !== "m")) return "";
-  const parcial = (e.alcance || comp.alcanceDef) === "parcial";
-  const esArea = p.unidad === "m2";
-  const etiqSolo = comp.labParcial || (esArea ? "Solo lo intervenido" : "Solo el tramo");
-  const etiqTodo = comp.labTotal || "Todo el paño";
-  let campo = "";
-  if (parcial) {
-    if (e.segsOn) {
-      const segs = e.segs || [];
-      const filas = segs.map((sg, i) => esArea
-        ? `<div style="display:flex;gap:6px;align-items:center;margin-bottom:5px">
-            <input data-cseg="${comp.partida}|${i}|a" inputmode="decimal" value="${esc(sg.a || "")}" placeholder="ancho" style="text-align:right" />
-            <span style="opacity:.6">×</span>
-            <input data-cseg="${comp.partida}|${i}|b" inputmode="decimal" value="${esc(sg.b || "")}" placeholder="alto" style="text-align:right" />
-            <button class="btn btn-rojo-linea" style="width:auto;padding:6px 10px" data-csegdel="${comp.partida}|${i}">✕</button></div>`
-        : `<div style="display:flex;gap:6px;align-items:center;margin-bottom:5px">
-            <input data-cseg="${comp.partida}|${i}|a" inputmode="decimal" value="${esc(sg.a || "")}" placeholder="longitud" style="text-align:right" />
-            <button class="btn btn-rojo-linea" style="width:auto;padding:6px 10px" data-csegdel="${comp.partida}|${i}">✕</button></div>`).join("");
-      campo = `<div class="campo" style="margin:8px 0 0">
-        <span>${esArea ? "Áreas intervenidas" : "Tramos intervenidos"} · ${segs.length} ${segs.length === 1 ? "renglón" : "renglones"}</span>
-        ${filas}
-        <div style="display:flex;gap:8px;align-items:center;margin-top:2px">
-          <button class="btn btn-linea" style="width:auto;padding:6px 11px;font-size:13px" data-csegadd="${comp.partida}">+ agregar</button>
-          <button class="btn btn-linea" style="width:auto;padding:6px 11px;font-size:13px" data-csegoff="${comp.partida}">una sola</button>
-          <b class="mono" data-cqtot="${comp.partida}" style="margin-left:auto">Σ ${cmpFmt(cmpCompParcial(p, e))} ${CMP_UNI[p.unidad]}</b>
-        </div></div>`;
-    } else {
-      campo = `<label class="campo" style="margin:8px 0 0"><span>${comp.labCampo || (esArea ? "Superficie intervenida" : "Longitud intervenida")} (${CMP_UNI[p.unidad]})</span>
-        <input data-cant="${comp.partida}" inputmode="decimal" style="text-align:right" value="${esc(e.cant || "")}" placeholder="0,00" />
-        <button class="btn btn-linea" style="width:auto;padding:4px 11px;font-size:12px;margin-top:6px" data-csegon="${comp.partida}">Σ sumar varias</button></label>`;
-    }
-  }
-  return `<div class="pildoras" style="margin-top:8px">
-      <button data-alc="${comp.partida}|total" class="${parcial ? "" : "on"}">${etiqTodo}</button>
-      <button data-alc="${comp.partida}|parcial" class="${parcial ? "on" : ""}">${etiqSolo}</button>
-    </div>${campo}`;
-}
 function cmpPintarCompuesta() {
   const cont = document.getElementById("cmComp");
   if (!cont) return;
@@ -3210,12 +2749,15 @@ function cmpPintarCompuesta() {
   const base = cmpBaseCompuesta();
 
   const auxCampo = (a.id === "columna" || a.id === "viga" || a.id === "encamisado") ? "ancho" : "";
-  const dims = a.campos.map((cc) => cmpCampoHtml(a, cc)).join("");
+  const dims = a.campos.map((cc) => `<label class="campo"><span>${esc(a.etiquetas[cc] || CMP_TXT[cc])}</span>
+    <input data-base="${cc}" inputmode="decimal" style="text-align:right;font-weight:600"
+      value="${esc(cmpComp.base[cc] == null ? (cc === "cantidad" ? "1" : "") : cmpComp.base[cc])}"
+      placeholder="${cc === "cantidad" ? "1" : "0,00"}" /></label>`).join("");
 
   const comps = a.componentes.map((comp) => {
     const p = cmpPartida(comp.partida) || { descripcion: "", unidad: "m2" };
     const e = cmpComp.comps[comp.partida] || {};
-    const inc = cmpIncluido(comp);
+    const inc = e.incluir !== false;
     const q = cmpCantidadComponente(comp);
     return `<div class="tarjeta" style="padding:10px;margin-bottom:8px;background:${inc ? "var(--blanco)" : "var(--fondo)"}">
       <div class="fila" style="align-items:flex-start;gap:8px">
@@ -3224,17 +2766,22 @@ function cmpPintarCompuesta() {
           <br /><span class="aviso">${esc(comp.nota || "")}${comp.caras ? " · " + cmpCarasDe(comp.caras) + (cmpCarasDe(comp.caras) === 1 ? " cara" : " caras") : (comp.factor !== 1 ? " · factor ×" + comp.factor : "")}</span></span>
         <b class="mono" style="font-size:14px" data-qcomp="${comp.partida}">${inc ? cmpFmt(q) + " " + CMP_UNI[p.unidad] : "—"}</b>
       </div>
-      ${cmpAlcanceHtml(comp, p, e, inc)}
+      ${inc && comp.alcance ? `
+        <div class="pildoras" style="margin-top:8px">
+          <button data-alc="${comp.partida}|total" class="${e.alcance === "parcial" ? "" : "on"}">Todo el paño</button>
+          <button data-alc="${comp.partida}|parcial" class="${e.alcance === "parcial" ? "on" : ""}">Solo lo intervenido</button>
+        </div>
+        ${e.alcance === "parcial" ? `<label class="campo" style="margin:8px 0 0"><span>Superficie a pintar (${CMP_UNI[p.unidad]})</span>
+          <input data-cant="${comp.partida}" inputmode="decimal" style="text-align:right"
+            value="${esc(e.cant || "")}" placeholder="0,00" /></label>` : ""}` : ""}
     </div>`;
   }).join("");
 
-  const incl = a.componentes.filter((x) => cmpIncluido(x));
+  const incl = a.componentes.filter((x) => (cmpComp.comps[x.partida] || {}).incluir !== false);
 
   cont.innerHTML = `
-    ${cmpDictadoHtml()}
     <label class="campo"><span>Partida compuesta</span>
       <select id="cmCompSel">
-        ${cmpComp.id === "__medida" ? `<option value="__medida" selected>${esc((cmpMedidaDef && cmpMedidaDef.nombre) || "Compuesta a medida")}</option>` : ""}
         ${CMP_COMPUESTAS.map((x) => `<option value="${x.id}" ${x.id === cmpComp.id ? "selected" : ""}>${esc(x.nombre)}</option>`).join("")}
       </select></label>
     ${a.nota ? `<p class="aviso" style="margin-top:-6px">${esc(a.nota)}</p>` : ""}
@@ -3264,14 +2811,6 @@ function cmpPintarCompuesta() {
   document.getElementById("cmCompSel").onchange = (e) => {
     cmpCapturar(); cmpComp = { id: e.target.value, base: {}, comps: {}, carasFrisar: 0, carasPintar: 0 }; rComputos();
   };
-  const bDicAbrir = document.getElementById("cmDictarAbrir");
-  if (bDicAbrir) bDicAbrir.onclick = () => { cmpDictado.abierto = true; rComputos(); };
-  const bDicCerrar = document.getElementById("cmDictarCerrar");
-  if (bDicCerrar) bDicCerrar.onclick = () => { cmpDictado = { abierto: false, texto: "", cargando: false }; rComputos(); };
-  const tDic = document.getElementById("cmDictarTxt");
-  if (tDic) tDic.oninput = (e) => { cmpDictado.texto = e.target.value; };
-  const bDicIr = document.getElementById("cmDictarIr");
-  if (bDicIr) bDicIr.onclick = () => cmpDictarTareas(bDicIr);
   cont.querySelectorAll("[data-base]").forEach((i) => {
     i.id = "cmB_" + i.dataset.base;
     i.oninput = (e) => {
@@ -3279,26 +2818,6 @@ function cmpPintarCompuesta() {
       cmpActualizarComp();
     };
   });
-  cont.querySelectorAll("[data-seg]").forEach((i) => {
-    i.oninput = (e) => {
-      cmpComp.segs[+e.target.dataset.seg] = e.target.value;
-      const sm = document.getElementById("cmSegSuma");
-      if (sm) sm.textContent = "Σ " + cmpFmt(cmpRed(cmpSegSuma())) + " m";
-      cmpActualizarComp();
-    };
-  });
-  cont.querySelectorAll("[data-segon]").forEach((b) => (b.onclick = () => {
-    cmpComp.segsOn = true;
-    if (!cmpComp.segs || !cmpComp.segs.length) cmpComp.segs = [cmpComp.base[a.sumable] || ""];
-    cmpPintarCompuesta();
-  }));
-  cont.querySelectorAll("[data-segoff]").forEach((b) => (b.onclick = () => { cmpComp.segsOn = false; cmpPintarCompuesta(); }));
-  cont.querySelectorAll("[data-segadd]").forEach((b) => (b.onclick = () => { (cmpComp.segs = cmpComp.segs || []).push(""); cmpPintarCompuesta(); }));
-  cont.querySelectorAll("[data-segdel]").forEach((b) => (b.onclick = () => {
-    cmpComp.segs.splice(+b.dataset.segdel, 1);
-    if (!cmpComp.segs.length) cmpComp.segsOn = false;
-    cmpPintarCompuesta();
-  }));
   cont.querySelectorAll("[data-caras]").forEach((b) => {
     b.onclick = () => {
       const [tipo, n] = b.dataset.caras.split("|");
@@ -3312,8 +2831,7 @@ function cmpPintarCompuesta() {
     btn.onclick = () => {
       const k = btn.dataset.inc;
       cmpComp.comps[k] = cmpComp.comps[k] || {};
-      const _ck = a.componentes.find((x) => x.partida === k);
-      cmpComp.comps[k].incluir = !cmpIncluido(_ck);
+      cmpComp.comps[k].incluir = cmpComp.comps[k].incluir === false;
       cmpPintarCompuesta();
     };
   });
@@ -3336,38 +2854,6 @@ function cmpPintarCompuesta() {
       if (b) b.textContent = cmpFmt(cmpCantidadComponente(comp)) + " " + CMP_UNI[p.unidad];
     };
   });
-  cont.querySelectorAll("[data-csegon]").forEach((b) => (b.onclick = () => {
-    const k = b.dataset.csegon; const e = (cmpComp.comps[k] = cmpComp.comps[k] || {});
-    e.segsOn = true;
-    if (!e.segs || !e.segs.length) e.segs = [{ a: e.cant || "", b: "" }];
-    cmpPintarCompuesta();
-  }));
-  cont.querySelectorAll("[data-csegoff]").forEach((b) => (b.onclick = () => {
-    const k = b.dataset.csegoff; (cmpComp.comps[k] = cmpComp.comps[k] || {}).segsOn = false; cmpPintarCompuesta();
-  }));
-  cont.querySelectorAll("[data-csegadd]").forEach((b) => (b.onclick = () => {
-    const k = b.dataset.csegadd; const e = (cmpComp.comps[k] = cmpComp.comps[k] || {});
-    (e.segs = e.segs || []).push({ a: "", b: "" }); cmpPintarCompuesta();
-  }));
-  cont.querySelectorAll("[data-csegdel]").forEach((b) => (b.onclick = () => {
-    const [k, i] = b.dataset.csegdel.split("|"); const e = cmpComp.comps[k] || {};
-    if (e.segs) e.segs.splice(+i, 1);
-    if (e.segs && !e.segs.length) e.segsOn = false;
-    cmpPintarCompuesta();
-  }));
-  cont.querySelectorAll("[data-cseg]").forEach((i) => {
-    i.oninput = (ev) => {
-      const [k, idx, campo] = ev.target.dataset.cseg.split("|");
-      const e = (cmpComp.comps[k] = cmpComp.comps[k] || {});
-      e.segs = e.segs || [];
-      e.segs[+idx] = e.segs[+idx] || { a: "", b: "" };
-      e.segs[+idx][campo] = ev.target.value;
-      const p = cmpPartida(k);
-      const t = cont.querySelector('[data-cqtot="' + k + '"]');
-      if (t) t.textContent = "Σ " + cmpFmt(cmpCompParcial(p, e)) + " " + CMP_UNI[p.unidad];
-      cmpActualizarComp();
-    };
-  });
 }
 
 function cmpActualizarComp() {
@@ -3377,7 +2863,7 @@ function cmpActualizarComp() {
   const bv = document.getElementById("cmBaseVal");
   if (bv) bv.innerHTML = cmpFmt(base) + ' <span style="font-size:13px;opacity:.75">' + CMP_UNI[a.unidad] + "</span>";
   for (const comp of a.componentes) {
-    const inc = cmpIncluido(comp);
+    const inc = (cmpComp.comps[comp.partida] || {}).incluir !== false;
     const b = document.querySelector('[data-qcomp="' + comp.partida + '"]');
     if (!b) continue;
     const p = cmpPartida(comp.partida);
@@ -3392,13 +2878,10 @@ function cmpGuardarCompuesta() {
   const errs = [];
   if (!String(cmpBorrador.zona || "").trim()) errs.push("Indique la zona donde tomó la medida.");
   for (const cc of a.campos) {
-    if (cmpComp.segsOn && a.sumable === cc) continue;
-    if (cmpComp.segsOn && cc === "cantidad") continue;
     const v = cmpNum(cmpComp.base[cc], cc === "cantidad" ? 1 : NaN);
     if (!Number.isFinite(v) || v <= 0) errs.push((a.etiquetas[cc] || CMP_TXT[cc]) + " debe ser mayor que cero.");
   }
-  if (cmpComp.segsOn && a.sumable && cmpSegSuma() <= 0) errs.push("Agregue al menos un tramo con longitud mayor que cero.");
-  const incl = a.componentes.filter((x) => cmpIncluido(x));
+  const incl = a.componentes.filter((x) => (cmpComp.comps[x.partida] || {}).incluir !== false);
   if (!incl.length) errs.push("Debe incluir al menos una partida.");
   for (const x of incl) if (cmpCantidadComponente(x) <= 0)
     errs.push("La cantidad de la partida " + x.partida + " debe ser mayor que cero.");
@@ -3413,14 +2896,10 @@ function cmpGuardarCompuesta() {
     return;
   }
 
-  if (!(cmpBorrador.fotos || []).length && !confirm("Esta partida no tiene foto de respaldo. ¿Guardarla así, sin foto?")) return;
   const gid = uid();
-  const baseTxt = cmpComp.segsOn
-    ? ("longitud sumada de " + (cmpComp.segs || []).filter((x) => cmpNum(x) > 0).length + " tramos = " + cmpFmt(cmpSegSuma()) + " m" +
-       (cmpNum(cmpComp.base.ancho) > 0 ? " · banda " + cmpFmt(cmpNum(cmpComp.base.ancho)) + " m" : ""))
-    : (cmpFmt(cmpNum(cmpComp.base.cantidad, 1), 0) + " × " +
-       a.campos.filter((x) => x !== "cantidad").map((x) => cmpFmt(cmpNum(cmpComp.base[x])) + " m").join(" × ") +
-       " = " + cmpFmt(cmpBaseCompuesta()) + " " + CMP_UNI[a.unidad]);
+  const baseTxt = cmpFmt(cmpNum(cmpComp.base.cantidad, 1), 0) + " × " +
+    a.campos.filter((x) => x !== "cantidad").map((x) => cmpFmt(cmpNum(cmpComp.base[x])) + " m").join(" × ") +
+    " = " + cmpFmt(cmpBaseCompuesta()) + " " + CMP_UNI[a.unidad];
 
   let primera = true;
   for (const x of incl) {
@@ -3438,17 +2917,15 @@ function cmpGuardarCompuesta() {
       derivada: true, grupo: gid, compuesta: a.nombre,
       baseMedida: baseTxt + (x.factor !== 1 ? "  ×" + x.factor : "") +
         (x.caras ? "  ·  " + cmpCarasDe(x.caras) + (cmpCarasDe(x.caras) === 1 ? " cara" : " caras") : "") +
-        ((e.alcance || x.alcanceDef) === "parcial" ? "  ·  alcance parcial declarado" : ""),
+        (e.alcance === "parcial" ? "  ·  alcance parcial declarado" : ""),
       ts: new Date().toISOString(), fotos: []
     };
-    if (primera) { l.fotos = cmpBorrador.fotos.map((f) => ({ id: f.id, pie: cmpPie(l, p, f.ts), geo: f.geo })); primera = false; }
+    if (primera) { l.fotos = cmpBorrador.fotos.map((f) => ({ id: f.id, pie: cmpPie(l, p, f.ts) })); primera = false; }
     c.lineas.push(l);
   }
 
-  cmpUltObs = String(cmpBorrador.obs || "").trim() || cmpUltObs;
   cmpBorrador.fotos = [];
   cmpBorrador.elemento = "";
-  cmpBorrador.obs = "";
   cmpComp = { id: cmpComp.id, base: {}, comps: {}, carasFrisar: 0, carasPintar: 0 };
   guardar();
   rComputos();
@@ -3741,9 +3218,8 @@ function rComputos() {
       </div>
     </div>` : "";
 
-  const res = cmpResumen(c);
+  const res = cmpAgrupar(c.lineas);
   const resHtml = res.length ? res.map((r) => {
-    if (r.acarreo) return cmpFilaAcarreo(r);
     const d = cmpDespDe(r.codigo);
     return `<div class="lista-foto">
       <span style="flex:1"><b>${r.codigo}</b> ${esc(r.descripcion)}${r.estimada ? ' <span class="chip a">estimada</span>' : ""}
@@ -3755,7 +3231,7 @@ function rComputos() {
   }).join("") : `<p class="aviso">Aún no hay cantidades computadas.</p>`;
 
   const linHtml = c.lineas.length ? c.lineas.slice().reverse().map((l) => {
-    const p2 = cmpPartidaLinea(l) || { descripcion: "" };
+    const p2 = cmpPartida(l.partida) || { descripcion: "" };
     const meta = [l.elemento, l.zona, l.nivel].filter(Boolean).join(" · ");
     const nf = (l.fotos || []).length;
     const abierta = cmpVer === l.id;
@@ -3783,20 +3259,16 @@ function rComputos() {
     </div>
 
     <div class="tarjeta">
-      ${cmpEditId ? "" : `<div class="pildoras" id="cmModo" style="margin-bottom:12px">
+      <div class="pildoras" id="cmModo" style="margin-bottom:12px">
         <button data-modo="simple" class="${simple ? "on" : ""}">Línea simple</button>
         <button data-modo="compuesta" class="${simple ? "" : "on"}">⊞ Partida compuesta</button>
-      </div>`}
+      </div>
       <div id="cmUbic"></div>
-      ${cmpDictLineasHtml()}
       ${sugHtml}
       <label class="campo"><span>Elemento</span><input id="cmElem" value="${esc(cmpBorrador.elemento || "")}" placeholder="Columna C-4" /></label>
 
       <div id="cmSimple" ${simple ? "" : 'style="display:none"'}>
         <label class="campo"><span>Partida</span><select id="cmPart">${opts}</select></label>
-        ${cmpBorrador.partida === "99.99" ? `
-        <label class="campo"><span>Descripción de la partida</span><input id="cmOtroDesc" value="${esc(cmpBorrador.otroDesc || "")}" placeholder="Describa el trabajo" /></label>
-        <label class="campo"><span>Unidad</span><select id="cmOtroUni">${[["und", "und"], ["m2", "m²"], ["m", "m (lineal)"], ["m3", "m³"], ["kg", "kg"]].map(([v, t]) => `<option value="${v}" ${(cmpBorrador.otroUni || "und") === v ? "selected" : ""}>${t}</option>`).join("")}</select></label>` : ""}
         <p class="aviso" id="cmCrit" style="margin-top:-6px"></p>
         <div class="etiq">Medidas</div>
         <div class="grid2" id="cmDims"></div>
@@ -3811,7 +3283,6 @@ function rComputos() {
         ${orig.map(([v, t]) => `<button data-org="${v}" class="${cmpBorrador.origen === v ? "on" : ""}">${t}</button>`).join("")}
       </div>
       <label class="campo"><span>Observación</span><textarea id="cmObs" rows="2" placeholder="Espesor, sección, criterio de estimación">${esc(cmpBorrador.obs || "")}</textarea></label>
-      ${cmpUltObs && !cmpBorrador.obs ? `<button class="btn btn-linea" id="cmObsPrev" style="width:auto;padding:5px 10px;font-size:12px;margin:-4px 0 8px">↩ Usar anotación anterior</button>` : ""}
       <input type="file" accept="image/*" capture="environment" id="cmCam" style="display:none" />
       <input type="file" accept="image/*" multiple id="cmGal" style="display:none" />
       <div class="grid2" style="margin-bottom:8px">
@@ -3821,15 +3292,10 @@ function rComputos() {
       <div id="cmFotos"></div>
       <button class="btn btn-linea" id="cmMedir" style="margin-top:8px">📐 Medir sobre la foto</button>
       <p class="error" id="cmErr"></p>
-      ${simple ? (cmpEditId ? `<div class="tarjeta" style="background:var(--ambar-bg);border-color:var(--ambar);padding:8px 11px;margin-bottom:8px">
-        <span class="aviso" style="color:var(--ambar-tx)">Editando una línea guardada. Los cambios reemplazan la original.</span></div>
-      <div class="grid2">
-        <button class="btn btn-negro" id="cmGuardar">Guardar cambios</button>
-        <button class="btn btn-linea" id="cmEditCancel">Cancelar</button>
-      </div>` : `<div class="grid2">
+      ${simple ? `<div class="grid2">
         <button class="btn btn-negro" id="cmGuardar">Guardar línea</button>
         <button class="btn btn-linea" id="cmRepetir" ${c.lineas.length ? "" : "disabled"}>Repetir última</button>
-      </div>`) : `<button class="btn btn-negro" id="cmGuardarComp">Guardar partidas generadas</button>`}
+      </div>` : `<button class="btn btn-negro" id="cmGuardarComp">Guardar partidas generadas</button>`}
     </div>
 
     <div class="etiq">Resumen por partida</div>
@@ -3847,16 +3313,9 @@ function rComputos() {
   cmpPintarFotos();
   cmpCargarFotos();
 
-  const _elModo = document.getElementById("cmModo");
-  if (_elModo) _elModo.querySelectorAll("[data-modo]").forEach((btn) => {
+  document.getElementById("cmModo").querySelectorAll("[data-modo]").forEach((btn) => {
     btn.onclick = () => { cmpCapturar(); cmpModo = btn.dataset.modo; rComputos(); };
   });
-  $app.querySelectorAll("[data-dictln]").forEach((btn) => (btn.onclick = () => {
-    const cod = btn.dataset.dictln;
-    cmpCapturar(); cmpModo = "simple"; cmpBorrador.partida = cod; cmpBorrador.dims = {};
-    cmpDictadoLineas = cmpDictadoLineas.filter((x) => x !== cod);
-    rComputos();
-  }));
   $app.querySelectorAll("[data-sug]").forEach((btn) => {
     btn.onclick = () => { cmpCapturar(); cmpModo = "simple"; cmpBorrador.partida = btn.dataset.sug; rComputos(); };
   });
@@ -3868,15 +3327,9 @@ function rComputos() {
   });
 
   const pt = document.getElementById("cmPart");
-  if (pt) pt.onchange = (e) => { cmpBorrador.partida = e.target.value; cmpBorrador.dims = {}; cmpBorrador.atipicoOk = false; rComputos(); };
-  const od = document.getElementById("cmOtroDesc");
-  if (od) od.oninput = (e) => { cmpBorrador.otroDesc = e.target.value; };
-  const ou = document.getElementById("cmOtroUni");
-  if (ou) ou.onchange = (e) => { cmpBorrador.otroUni = e.target.value; cmpBorrador.dims = {}; rComputos(); };
+  if (pt) pt.onchange = (e) => { cmpBorrador.partida = e.target.value; cmpBorrador.dims = {}; cmpBorrador.atipicoOk = false; cmpPintarDims(); };
   document.getElementById("cmElem").oninput = (e) => { cmpBorrador.elemento = e.target.value; };
   document.getElementById("cmObs").oninput = (e) => { cmpBorrador.obs = e.target.value; };
-  const bObsPrev = document.getElementById("cmObsPrev");
-  if (bObsPrev) bObsPrev.onclick = () => { cmpBorrador.obs = cmpUltObs; const t = document.getElementById("cmObs"); if (t) { t.value = cmpUltObs; t.focus(); } bObsPrev.style.display = "none"; };
   document.getElementById("cmFecha").onchange = (e) => { c.fecha = e.target.value; guardar(); };
   document.getElementById("cmResp").oninput = (e) => { c.responsable = e.target.value; guardar(); };
 
@@ -3900,9 +3353,7 @@ function rComputos() {
         const blob = await comprimir(file);
         const fid = uid();
         await blobSet("photo:" + fid, blob);
-        const _cf = { id: fid, ts: new Date().toISOString() };
-        cmpBorrador.fotos.push(_cf);
-        geoAdjuntar(_cf, cmpPintarFotos);
+        cmpBorrador.fotos.push({ id: fid, ts: new Date().toISOString() });
         err.textContent = "";
       } catch (ex) {
         err.textContent = "No se pudo guardar una foto: " + (ex && ex.message ? ex.message : ex);
@@ -3917,7 +3368,7 @@ function rComputos() {
 
   const bg = document.getElementById("cmGuardar");
   if (bg) bg.onclick = () => {
-    const p = cmpPartidaBorrador();
+    const p = cmpPartida(cmpBorrador.partida);
     const l = cmpLeer();
     const errs = cmpValidar(l, p);
     const box = document.getElementById("cmErr");
@@ -3928,33 +3379,22 @@ function rComputos() {
       return;
     }
     const at = cmpAtipico(l, p);
-    if (at && !cmpBorrador.atipicoOk && !cmpEditId) {
+    if (at && !cmpBorrador.atipicoOk) {
       box.style.color = "var(--ambar-tx)";
       box.innerHTML = esc(at) + "<br />Vuelva a tocar Guardar línea si la cantidad es correcta.";
       cmpBorrador.atipicoOk = true;
       box.scrollIntoView({ behavior: "smooth", block: "center" });
       return;
     }
+    l.id = uid();
     l.unidad = p.unidad;
     l.factor = p.unidad === "kg" ? (CMP_CABILLA[l.diametro] || 1) : 1;
     l.parcial = cmpParcial(l, p);
-    if (cmpEditId) {
-      const ied = c.lineas.findIndex((x) => x.id === cmpEditId);
-      l.id = cmpEditId;
-      l.ts = ied >= 0 ? c.lineas[ied].ts : new Date().toISOString();
-      l.fotos = (cmpBorrador.fotos || []).map((f) => ({ id: f.id, pie: cmpPie(l, p, f.ts || l.ts), geo: f.geo }));
-      if (ied >= 0) c.lineas[ied] = l; else c.lineas.push(l);
-      cmpEditId = null;
-    } else {
-      l.id = uid();
-      l.ts = new Date().toISOString();
-      l.fotos = cmpBorrador.fotos.map((f) => ({ id: f.id, pie: cmpPie(l, p, f.ts), geo: f.geo }));
-      c.lineas.push(l);
-    }
-    cmpUltObs = l.obs || cmpUltObs;
+    l.ts = new Date().toISOString();
+    l.fotos = cmpBorrador.fotos.map((f) => ({ id: f.id, pie: cmpPie(l, p, f.ts) }));
+    c.lineas.push(l);
     cmpBorrador.fotos = [];
     cmpBorrador.elemento = "";
-    cmpBorrador.obs = "";
     cmpBorrador.dims = {};
     cmpBorrador.fijo = null;
     cmpBorrador.medicion = null;
@@ -3988,63 +3428,19 @@ function rComputos() {
     };
   });
 
-  $app.querySelectorAll("[data-editln]").forEach((b) => (b.onclick = () => cmpEditarLinea(b.dataset.editln)));
-  $app.querySelectorAll("[data-anotarl]").forEach((b) => (b.onclick = () => abrirEditorFoto(b.dataset.anotarl, rComputos)));
-  const bEditCancel = document.getElementById("cmEditCancel");
-  if (bEditCancel) bEditCancel.onclick = () => { cmpEditId = null; cmpBorrador = { origen: "sitio", fotos: [] }; rComputos(); window.scrollTo(0, 0); };
-  $app.querySelectorAll("[data-repltoggle]").forEach((b) => (b.onclick = () => {
-    const box = document.getElementById("repl_" + b.dataset.repltoggle);
-    if (box) box.style.display = box.style.display === "none" ? "block" : "none";
-  }));
-  $app.querySelectorAll("[data-replall]").forEach((b) => (b.onclick = () => {
-    $app.querySelectorAll('[data-replniv="' + b.dataset.replall + '"]').forEach((cb) => (cb.checked = true));
-  }));
-  $app.querySelectorAll("[data-replgo]").forEach((b) => (b.onclick = () => {
-    const id = b.dataset.replgo;
-    const l = c.lineas.find((x) => x.id === id);
-    if (!l) return;
-    const ids = Array.from($app.querySelectorAll('[data-replniv="' + id + '"]')).filter((cb) => cb.checked).map((cb) => cb.value);
-    if (!ids.length) { alert("Marca al menos un nivel."); return; }
-    const nn = cmpReplicar(l, ids);
-    alert(nn + (nn === 1 ? " nivel replicado." : " niveles replicados."));
-  }));
-
   $app.querySelectorAll("[data-desp]").forEach((i) => {
     i.oninput = (e) => {
       const cod = e.target.dataset.desp;
       c.desperdicio[cod] = e.target.value;
-      const r = cmpResumen(c).find((x) => x.codigo === cod);
+      const r = cmpAgrupar(c.lineas).find((x) => x.codigo === cod);
       const b2 = $app.querySelector('[data-total="' + cod + '"]');
       if (r && b2) b2.textContent = cmpFmt(cmpRed(r.total * (1 + cmpDespDe(cod) / 100), 2)) + " " + CMP_UNI[r.unidad];
       guardar();
     };
   });
 
-  const cmAcUpd = () => {
-    const a2 = cmpAcarreo(c);
-    const out = $app.querySelector("[data-acout]"); if (out) out.textContent = cmpFmt(cmpRed(a2.suelto, 2)) + " m³";
-    const nv = $app.querySelector("[data-acnv]"); if (nv) nv.textContent = a2.viajes;
-    guardar();
-  };
-  $app.querySelectorAll("[data-acesp]").forEach((i) => {
-    i.oninput = (e) => {
-      if (!c.acarreo) c.acarreo = {};
-      const v = e.target.value.trim();
-      c.acarreo.esponjamiento = v === "" ? null : cmpNum(v) / 100;
-      cmAcUpd();
-    };
-  });
-  $app.querySelectorAll("[data-acviaje]").forEach((i) => {
-    i.oninput = (e) => {
-      if (!c.acarreo) c.acarreo = {};
-      const v = e.target.value.trim();
-      c.acarreo.viaje = v === "" ? null : cmpNum(v);
-      cmAcUpd();
-    };
-  });
-
   const bz = document.getElementById("cmZip");
-  if (bz) bz.onclick = cmpZip;
+  if (bz) bz.onclick = () => cmpZip(bz);
 
   const bx = document.getElementById("cmExport");
   if (bx) bx.onclick = () => {
@@ -4053,13 +3449,12 @@ function rComputos() {
       edificacion: b.nombre, direccion: b.direccion,
       fecha_medicion: c.fecha, responsable: c.responsable, revision: c.rev || 1,
       generado_en: new Date().toISOString(),
-      resumen: cmpResumen(c).map((r) => ({
+      resumen: cmpAgrupar(c.lineas).map((r) => ({
         codigo: r.codigo, descripcion: r.descripcion, unidad: r.unidad,
         cantidad_neta: cmpRed(r.total, 2),
         desperdicio_pct: cmpDespDe(r.codigo),
         cantidad_con_desperdicio: cmpRed(r.total * (1 + cmpDespDe(r.codigo) / 100), 2),
-        lineas: r.n, tiene_estimaciones: r.estimada,
-        ...(r.acarreo ? { viajes: r.acarreo.viajes, m3_por_viaje: r.acarreo.viaje, esponjamiento_pct: Math.round(r.acarreo.esp * 100) } : {})
+        lineas: r.n, tiene_estimaciones: r.estimada
       })),
       lineas: c.lineas
     };
@@ -4079,15 +3474,8 @@ function rAjustes() {
       <div style="flex:1">
         <div class="etiq" style="margin:0">Versión de la app</div>
         <div style="font-size:26px;font-weight:800;font-family:ui-monospace,monospace">v${VERSION}</div>
-        <p class="aviso" id="msgUpd" style="margin:4px 0 0"></p>
       </div>
       <button class="btn btn-gris" style="width:auto" id="bActualizar">Buscar actualización</button>
-    </div>
-    <div class="tarjeta">
-      <div class="etiq">Historial de versiones</div>
-      ${CHANGELOG.map((cl) => `<div style="display:flex;gap:10px;padding:7px 0;border-bottom:1px solid #eee">
-        <b class="mono" style="min-width:46px;font-size:13px">v${cl[0]}</b>
-        <span style="flex:1;font-size:13px;line-height:1.35">${esc(cl[1])}</span></div>`).join("")}
     </div>
     <div class="tarjeta">
       <div class="etiq">☁ Cuenta en la nube (sincronización)</div>
@@ -4106,10 +3494,6 @@ function rAjustes() {
     <div class="tarjeta">
       <label class="campo"><span>Clave API de Anthropic (sk-ant-…)</span>
         <input id="inKey" type="password" value="${esc(st.apiKey)}" placeholder="sk-ant-api03-…" /></label>
-      <div style="display:flex;gap:8px;margin:-4px 0 8px">
-        <button class="btn btn-linea" id="bPegarKey" style="width:auto;padding:6px 12px;font-size:13px">📋 Pegar</button>
-        <button class="btn btn-linea" id="bVerKey" style="width:auto;padding:6px 12px;font-size:13px">👁 Ver</button>
-      </div>
       <p class="aviso">La clave se guarda solo en este teléfono. Se obtiene en console.anthropic.com (cuenta con crédito prepagado, se cobra por uso). Sin clave, la app funciona 100% igual; solo se desactiva el botón "✨ Redactar con Claude".</p>
       <button class="btn btn-negro" id="bGuardarKey">Guardar</button>
       <button class="btn btn-gris" id="bProbarKey" style="margin-top:8px">Probar conexión</button>
@@ -4130,16 +3514,11 @@ function rAjustes() {
     <p class="aviso">BSP (Building Safety Program) 2026 · Ing. Eduardo Lubo · CIV N.° 115.692 · App de campo <b>v${VERSION}</b></p>`;
   const mN = (t) => (document.getElementById("msgNube").textContent = t);
   document.getElementById("bActualizar").onclick = async () => {
-    const m = document.getElementById("msgUpd");
-    if (m) m.textContent = "Buscando actualización…";
     if ("serviceWorker" in navigator) {
       const reg = await navigator.serviceWorker.getRegistration();
-      if (reg) {
-        await reg.update();
-        if (reg.waiting || reg.installing) { if (m) m.textContent = "Instalando nueva versión…"; setTimeout(() => location.reload(), 600); return; }
-      }
+      if (reg) await reg.update();
     }
-    if (m) m.textContent = "Ya tienes la última versión instalada (v" + VERSION + ").";
+    location.reload();
   };
   if (ses) {
     document.getElementById("bSync").onclick = async () => { mN("Sincronizando…"); await sincronizar(false); mN(nube.estado === "ok" ? "✓ Sincronizado." : "✗ " + nube.msg); };
@@ -4164,23 +3543,6 @@ function rAjustes() {
     await kvSet("apikey", st.apiKey);
     document.getElementById("msgKey").textContent = "✓ Guardada.";
   };
-  const bPeg = document.getElementById("bPegarKey");
-  if (bPeg) bPeg.onclick = async () => {
-    try {
-      const t = await navigator.clipboard.readText();
-      const el = document.getElementById("inKey");
-      if (el && t) el.value = t.replace(/\s+/g, "");
-      document.getElementById("msgKey").textContent = t ? "Pegada. Ahora toca Guardar." : "El portapapeles está vacío.";
-    } catch (e) {
-      document.getElementById("msgKey").textContent = "No se pudo leer el portapapeles. Pégala a mano manteniendo presionado el campo.";
-    }
-  };
-  const bVer = document.getElementById("bVerKey");
-  if (bVer) bVer.onclick = () => {
-    const el = document.getElementById("inKey");
-    el.type = el.type === "password" ? "text" : "password";
-    bVer.textContent = el.type === "password" ? "👁 Ver" : "🙈 Ocultar";
-  };
   document.getElementById("bProbarKey").onclick = async () => {
     const m = document.getElementById("msgKey");
     st.apiKey = document.getElementById("inKey").value.replace(/\s+/g, "");
@@ -4189,7 +3551,7 @@ function rAjustes() {
     try {
       const r = await llamarClaude("Responde únicamente: OK", 20);
       m.textContent = r.includes("OK") ? "✓ Conexión con Claude funcionando." : "Respuesta inesperada: " + r.slice(0, 80);
-    } catch (e) { m.textContent = /fetch/i.test(e.message) ? "✗ No se pudo conectar (failed to fetch). Revisa el internet, prueba Wi-Fi o datos, o si la red bloquea api.anthropic.com." : "✗ " + e.message; }
+    } catch (e) { m.textContent = "✗ " + e.message; }
   };
   if (navigator.storage && navigator.storage.estimate) {
     navigator.storage.estimate().then((est) => {
@@ -4227,8 +3589,7 @@ function rAjustes() {
 }
 async function llamarClaude(prompt, maxTokens) {
   if (!st.apiKey) throw new Error("Configura primero la clave API en Ajustes.");
-  let resp;
-  try { resp = await fetch("https://api.anthropic.com/v1/messages", {
+  const resp = await fetch("https://api.anthropic.com/v1/messages", {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
@@ -4241,7 +3602,7 @@ async function llamarClaude(prompt, maxTokens) {
       max_tokens: maxTokens || 800,
       messages: [{ role: "user", content: prompt }]
     })
-  }); } catch (eNet) { throw new Error("No se pudo conectar con la API (failed to fetch). Revisa el internet, prueba Wi-Fi o datos, o si la red bloquea api.anthropic.com."); }
+  });
   if (!resp.ok) {
     const t = await resp.text();
     throw new Error("API " + resp.status + ": " + t.slice(0, 120));
