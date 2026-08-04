@@ -121,7 +121,7 @@
 <script>
 "use strict";
 /* ================= Constantes ================= */
-const VERSION = "3.30";
+const VERSION = "3.31";
 const ATC = ["INSPECCIONADO", "USO RESTRINGIDO", "NO HABITABLE"];
 const ATC_CLS = { "INSPECCIONADO": "v", "USO RESTRINGIDO": "a", "NO HABITABLE": "r" };
 const ATC_CORTO = { "INSPECCIONADO": "INSPECC.", "USO RESTRINGIDO": "USO RESTR.", "NO HABITABLE": "NO HABITABLE" };
@@ -2360,7 +2360,7 @@ async function cmpZip(btn) {
         const sel = await sellarFoto(blob,
           "Partida " + l.partida + (ubic ? " · " + ubic : ""),
           cmpFmt(l.parcial) + " " + CMP_UNI[l.unidad] + " · " + base,
-          cmpMarca(l.partida), 1200, 0.7);
+          cmpMarca(l.partida), 1000, 0.62);
         const nombre = l.partida + "_" + String(n).padStart(3, "0") + ".jpg";
         fotos.push({ nombre, blob: sel });
         mapa[f.id] = nombre;
@@ -2422,7 +2422,7 @@ async function cmpZip(btn) {
 
     // 3. Repartir las fotos en tandas que no pasen del umbral, para que cada
     //    ZIP se procese cómodo. El JSON y el resumen van completos en cada parte.
-    const LIMITE = 12 * 1024 * 1024; // 12 MB de fotos por parte
+    const LIMITE = 900 * 1024; // ~0,9 MB de fotos por parte, deja margen para json y resumen dentro de 1 MB
     const tandas = [];
     let actual = [], acum = 0;
     for (const ft of fotos) {
