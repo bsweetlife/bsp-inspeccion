@@ -121,7 +121,7 @@
 <script>
 "use strict";
 /* ================= Constantes ================= */
-const VERSION = "3.29";
+const VERSION = "3.30";
 const ATC = ["INSPECCIONADO", "USO RESTRINGIDO", "NO HABITABLE"];
 const ATC_CLS = { "INSPECCIONADO": "v", "USO RESTRINGIDO": "a", "NO HABITABLE": "r" };
 const ATC_CORTO = { "INSPECCIONADO": "INSPECC.", "USO RESTRINGIDO": "USO RESTR.", "NO HABITABLE": "NO HABITABLE" };
@@ -1855,15 +1855,20 @@ function cmpMarca(codigo) {
   return null;
 }
 
-async function sellarFoto(blob, linea1, linea2, marca) {
+async function sellarFoto(blob, linea1, linea2, marca, maxLado, calidad) {
   try {
     const img = new Image();
     const url = URL.createObjectURL(blob);
     await new Promise((res, rej) => { img.onload = res; img.onerror = rej; img.src = url; });
+    let w = img.naturalWidth, h = img.naturalHeight;
+    if (maxLado && Math.max(w, h) > maxLado) {
+      const k = maxLado / Math.max(w, h);
+      w = Math.round(w * k); h = Math.round(h * k);
+    }
     const c = document.createElement("canvas");
-    c.width = img.naturalWidth; c.height = img.naturalHeight;
+    c.width = w; c.height = h;
     const ctx = c.getContext("2d");
-    ctx.drawImage(img, 0, 0);
+    ctx.drawImage(img, 0, 0, w, h);
     const fs = Math.max(16, Math.round(c.width / 55));
     const alto = fs * 2.9;
     ctx.fillStyle = "rgba(17,24,39,0.62)";
@@ -1887,7 +1892,7 @@ async function sellarFoto(blob, linea1, linea2, marca) {
       ctx.textAlign = "left"; ctx.textBaseline = "alphabetic";
     }
     URL.revokeObjectURL(url);
-    return await new Promise((res) => c.toBlob((b) => res(b || blob), "image/jpeg", 0.85));
+    return await new Promise((res) => c.toBlob((b) => res(b || blob), "image/jpeg", calidad || 0.85));
   } catch (e) { return blob; }
 }
 function textoExport() {
@@ -2339,12 +2344,15 @@ async function cmpZip(btn) {
   const base = "BSP-2026-" + (b.informe || "X");
   ponEstado("Armando ZIP…", false);
   try {
-    const zip = new JSZip();
+    // 1. Sellar todas las fotos a versión liviana para análisis (1200 px, 0,7).
+    //    La foto en alta se conserva en la app y en la nube; esta es solo para el ZIP.
+    const fotos = [];
     const mapa = {};
-    let n = 0;
+    let n = 0, total = 0;
     for (const l of c.lineas) {
       for (const f of (l.fotos || [])) {
         n++;
+        if (btn) btn.textContent = "Procesando foto " + n + "…";
         let blob = await blobGet("photo:" + f.id);
         if (!blob && supa && nube.sesion && navigator.onLine) blob = await bajarBlob("photo", f.id);
         if (!blob) continue;
@@ -2352,12 +2360,15 @@ async function cmpZip(btn) {
         const sel = await sellarFoto(blob,
           "Partida " + l.partida + (ubic ? " · " + ubic : ""),
           cmpFmt(l.parcial) + " " + CMP_UNI[l.unidad] + " · " + base,
-          cmpMarca(l.partida));
-        const nombre = "fotos/" + l.partida + "_" + String(n).padStart(3, "0") + ".jpg";
-        zip.file(nombre, sel);
+          cmpMarca(l.partida), 1200, 0.7);
+        const nombre = l.partida + "_" + String(n).padStart(3, "0") + ".jpg";
+        fotos.push({ nombre, blob: sel });
         mapa[f.id] = nombre;
+        total += sel.size;
       }
     }
+
+    // 2. Documentos de texto, idénticos en cada parte.
     const res = cmpAgrupar(c.lineas);
     const salida = {
       informe: b.informe ? base : "",
@@ -2376,7 +2387,7 @@ async function cmpZip(btn) {
         fotos: (l.fotos || []).map((f) => ({ id: f.id, pie: f.pie, archivo: mapa[f.id] || null }))
       }))
     };
-    zip.file("computos.json", JSON.stringify(salida, null, 2));
+    const jsonTxt = JSON.stringify(salida, null, 2);
 
     const T = [];
     T.push("CÓMPUTOS MÉTRICOS · " + base);
@@ -2407,22 +2418,55 @@ async function cmpZip(btn) {
         "  ·  " + ((l.fotos || []).length) + " fotografía(s)");
       if (l.obs) T.push("      Observación: " + l.obs);
     }
-    zip.file("resumen.txt", T.join("\n"));
+    const resumenTxt = T.join("\n");
 
-    const blob = await zip.generateAsync({ type: "blob" });
-    const file = new File([blob], base + "_computos.zip", { type: "application/zip" });
-    // Solo se usa la hoja de compartir en pantallas táctiles (teléfono). En la
-    // laptop se descarga directo, porque navigator.share suele fallar callado.
-    const tactil = navigator.maxTouchPoints > 0;
-    if (tactil && navigator.canShare && navigator.canShare({ files: [file] })) {
-      try { await navigator.share({ files: [file] }); ponEstado("ZIP compartido ✓", false); return; }
-      catch (e) { if (e && e.name === "AbortError") { ponEstado("Compartir cancelado", false); return; } }
+    // 3. Repartir las fotos en tandas que no pasen del umbral, para que cada
+    //    ZIP se procese cómodo. El JSON y el resumen van completos en cada parte.
+    const LIMITE = 12 * 1024 * 1024; // 12 MB de fotos por parte
+    const tandas = [];
+    let actual = [], acum = 0;
+    for (const ft of fotos) {
+      if (actual.length && acum + ft.blob.size > LIMITE) { tandas.push(actual); actual = []; acum = 0; }
+      actual.push(ft); acum += ft.blob.size;
     }
-    const a = document.createElement("a");
-    a.href = URL.createObjectURL(blob); a.download = file.name;
-    document.body.appendChild(a); a.click(); a.remove();
-    setTimeout(() => URL.revokeObjectURL(a.href), 4000);
-    ponEstado("ZIP descargado: " + n + " foto(s) ✓", false);
+    if (actual.length || !tandas.length) tandas.push(actual);
+    const partes = tandas.length;
+
+    // 4. Generar y descargar cada parte.
+    const tactil = navigator.maxTouchPoints > 0;
+    for (let i = 0; i < partes; i++) {
+      if (btn) btn.textContent = "Empaquetando " + (i + 1) + " de " + partes + "…";
+      const zip = new JSZip();
+      zip.file("computos.json", jsonTxt);
+      zip.file("resumen.txt", resumenTxt);
+      if (partes > 1) {
+        zip.file("PARTE.txt", "Parte " + (i + 1) + " de " + partes + " · " + base +
+          "\nEsta división es solo para el envío. El resumen y el JSON van completos en cada parte." +
+          "\nLas fotos están repartidas entre las partes.\n");
+      }
+      for (const ft of tandas[i]) zip.file("fotos/" + ft.nombre, ft.blob);
+
+      const blob = await zip.generateAsync({ type: "blob", compression: "STORE" });
+      const nombreZip = partes > 1
+        ? base + "_computos_parte-" + (i + 1) + "-de-" + partes + ".zip"
+        : base + "_computos.zip";
+      const file = new File([blob], nombreZip, { type: "application/zip" });
+
+      if (tactil && navigator.canShare && navigator.canShare({ files: [file] })) {
+        try { await navigator.share({ files: [file] }); continue; }
+        catch (e) { if (e && e.name === "AbortError") { ponEstado("Compartir cancelado", false); break; } }
+      }
+      const a = document.createElement("a");
+      a.href = URL.createObjectURL(blob); a.download = nombreZip;
+      document.body.appendChild(a); a.click(); a.remove();
+      setTimeout(() => URL.revokeObjectURL(a.href), 4000);
+      if (partes > 1 && i < partes - 1) await new Promise((r) => setTimeout(r, 800));
+    }
+
+    const mb = (total / 1024 / 1024).toFixed(1);
+    ponEstado(partes > 1
+      ? "Descargadas " + partes + " partes · " + n + " fotos · " + mb + " MB"
+      : "ZIP descargado: " + n + " foto(s) · " + mb + " MB ✓", false);
   } catch (e) {
     ponEstado("⚠ Falló el ZIP", true);
     alert("No se pudo armar el ZIP: " + (e && e.message ? e.message : e));
