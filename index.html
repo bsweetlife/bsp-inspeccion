@@ -121,8 +121,9 @@
 <script>
 "use strict";
 /* ================= Constantes ================= */
-const VERSION = "3.54";
+const VERSION = "3.55";
 const CHANGELOG = [
+  ["3.55", "Las partidas de pintura ya no son solo caucho: al capturarlas escoge el tipo (caucho mate, lavable, exterior, esmalte al agua o sintético, anticorrosivo, epóxica, cal, barniz) y cada tipo se totaliza aparte en el resumen. Además se anota el color de la zona a pintar: al tomar la foto la app propone el color que ve, y lo puede corregir tocando la pared en la foto, escogiendo de la lista de colores o escribiendo el nombre, para cuando la foto se ve gris y la pared es blanca. Los colores salen en el pie de foto, en el resumen y en la exportación."],
   ["3.54", "Reparación de vigas y de columnas con cabillas expuestas: la sección se mide por ancho de la zona y profundidad, en lugar del perímetro; el mortero de reparación se computa ahora por volumen (m³) con la nueva partida 03.11. Nueva compuesta: reparación de techo (losa nervada) con nervios expuestos, que mide el área de losa y suma la superficie de los nervios reparados."],
   ["3.53", "Al exportar los cómputos, las fotos salen más livianas y el ZIP se divide en partes de menos de 1 MB para poder analizarlas. El botón avisa mientras trabaja y ya no se dispara varias veces."],
   ["3.52", "El dictado con IA aplica criterios de obra: por ejemplo, al reponer cerámica de piso de baño agrega el desmontaje y montaje de poceta y lavamanos aunque no los menciones."],
@@ -468,7 +469,7 @@ const CMP_CAT = [
   ["04.02", "04 Mampostería y acabados", "Sellado de grietas en paredes de mampostería", "m", "Longitud real de la grieta."],
   ["04.03", "04 Mampostería y acabados", "Friso liso sobre elementos estructurales", "m2", "Superficie desarrollada del elemento."],
   ["04.04", "04 Mampostería y acabados", "Friso liso sobre paredes", "m2", "Largo por alto del paño frisado."],
-  ["04.05", "04 Mampostería y acabados", "Pintura de caucho sobre superficies frisadas", "m2", "Superficie pintada, dos manos."],
+  ["04.05", "04 Mampostería y acabados", "Pintura sobre superficies frisadas", "m2", "Superficie pintada, dos manos. El tipo de pintura y el color se escogen al capturar la línea."],
   ["04.06", "04 Mampostería y acabados", "Reposición de revestimiento cerámico en paredes", "m2", "Largo o perímetro desarrollado del paño por su altura."],
   ["04.07", "04 Mampostería y acabados", "Reposición de revestimiento cerámico en pisos", "m2", "Área en planta."],
   ["04.08", "04 Mampostería y acabados", "Anclaje de paredes no estructurales a la estructura", "m", "Longitud de encuentro pared-estructura tratado."],
@@ -487,7 +488,7 @@ const CMP_CAT = [
   ["05.10", "05 Impermeabilización e instalaciones", "Reemplazo de ducha", "und", "Cantidad de duchas nuevas. Incluye retiro de la existente."],
   ["06.01", "06 Fachadas", "Demolición de friso en fachada", "m2", "Cara externa. Incluye trabajo en altura con andamio o fachadero."],
   ["06.02", "06 Fachadas", "Friso liso en fachada", "m2", "Cara externa desarrollada. Rendimiento de fachada, distinto del interior."],
-  ["06.03", "06 Fachadas", "Pintura o recubrimiento de fachada", "m2", "Cara externa. Acabado de fachada, no pintura de caucho interior."],
+  ["06.03", "06 Fachadas", "Pintura o recubrimiento de fachada", "m2", "Cara externa. Acabado de fachada, distinto de la pintura interior."],
   ["99.99", "99 Otros", "Otro (describir abajo)", "und", "Partida personalizada. Indique la descripción y la unidad."]
 ].map(([codigo, grupo, descripcion, unidad, notas]) =>
   Object.assign({ codigo, grupo, descripcion, unidad, notas }, CMP_MEDIDA[codigo] || {}));
@@ -504,6 +505,61 @@ function cmpPartidaLinea(l) {
 }
 const cmpCampos = (p) => (p && p.campos) || (p && CMP_UNI_CAMPOS[p.unidad]) || [];
 const cmpEtiq = (p, c) => (p && p.etiquetas && p.etiquetas[c]) || CMP_TXT[c] || c;
+
+/* ----- Acabados de pintura -----
+   En obra no todo es caucho: el tipo cambia el rendimiento y el precio, asi que
+   cada tipo se totaliza como fila aparte en el resumen. Las lineas viejas, sin
+   tipo declarado, se cuentan con el tipo por defecto de su partida. */
+const CMP_PINTURA_TIPOS = [
+  { id: "caucho_mate", nombre: "Caucho mate (interior)" },
+  { id: "caucho_lav", nombre: "Caucho lavable o satinado" },
+  { id: "caucho_ext", nombre: "Caucho exterior (fachada)" },
+  { id: "elastomerico", nombre: "Recubrimiento elastomérico" },
+  { id: "esmalte_agua", nombre: "Esmalte al agua (acrílico)" },
+  { id: "esmalte_sint", nombre: "Esmalte sintético (al aceite)" },
+  { id: "anticorrosivo", nombre: "Anticorrosivo y esmalte (metal)" },
+  { id: "epoxica", nombre: "Pintura epóxica" },
+  { id: "cal", nombre: "Lechada de cal" },
+  { id: "barniz", nombre: "Barniz o sellador de madera" },
+  { id: "otro", nombre: "Otra (explicar en la observación)" }
+];
+const CMP_PINTURA_DEF = { "04.05": "caucho_mate", "06.03": "caucho_ext", "04.10": "esmalte_agua" };
+const cmpEsPintura = (cod) => !!CMP_PINTURA_DEF[cod];
+const cmpTipoPintura = (l) => (l && l.pintura && l.pintura.tipo) || CMP_PINTURA_DEF[l && l.partida] || "";
+const cmpNombrePintura = (id) => { const t = CMP_PINTURA_TIPOS.find((x) => x.id === id); return t ? t.nombre : ""; };
+
+/* Colores frecuentes en obra. El hex es solo para la muestra en pantalla y para
+   ponerle nombre al color que se saca de la foto; lo que va al informe es el nombre. */
+const CMP_COLORES = [
+  ["Blanco", "#f7f7f4"], ["Blanco hueso", "#efeadd"], ["Beige", "#dfd3bc"], ["Arena", "#cdb89a"],
+  ["Gris claro", "#c9ccce"], ["Gris", "#8e9497"], ["Gris oscuro", "#5b6164"],
+  ["Azul claro", "#b9cedd"], ["Azul", "#3f6d93"], ["Verde claro", "#c2d3ba"], ["Verde", "#5c8a5c"],
+  ["Amarillo", "#e9ce72"], ["Ocre", "#c08a3e"], ["Terracota", "#a6543c"], ["Marrón", "#7a5a45"],
+  ["Rojo", "#9e3b32"], ["Negro", "#333333"]
+];
+const cmpHexOk = (h) => (/^#[0-9a-fA-F]{6}$/.test(String(h || "")) ? String(h) : "");
+function cmpRgb(hex) {
+  const h = cmpHexOk(hex).slice(1);
+  return h ? [parseInt(h.slice(0, 2), 16), parseInt(h.slice(2, 4), 16), parseInt(h.slice(4, 6), 16)] : null;
+}
+const cmpHex = (r, g, b) => "#" + [r, g, b].map((v) => Math.max(0, Math.min(255, Math.round(v))).toString(16).padStart(2, "0")).join("");
+// Nombre del color de la lista mas parecido. El verde pesa mas porque el ojo lo distingue mejor.
+function cmpColorCerca(hex) {
+  const c = cmpRgb(hex);
+  if (!c) return "";
+  let mejor = "", dm = Infinity;
+  for (const [n, h] of CMP_COLORES) {
+    const o = cmpRgb(h);
+    const d = 2 * (c[0] - o[0]) * (c[0] - o[0]) + 4 * (c[1] - o[1]) * (c[1] - o[1]) + 3 * (c[2] - o[2]) * (c[2] - o[2]);
+    if (d < dm) { dm = d; mejor = n; }
+  }
+  return mejor;
+}
+const cmpPinturaTxt = (l) => {
+  if (!l || !l.pintura) return "";
+  return cmpNombrePintura(cmpTipoPintura(l)) + (l.pintura.colorNombre ? ", color " + l.pintura.colorNombre : "");
+};
+
 function cmpNum(v, d) {
   const def = d === undefined ? 0 : d;
   if (v === null || v === undefined || v === "") return def;
@@ -551,6 +607,7 @@ function cmpPie(l, p, iso) {
   const u = [l.elemento, l.zona, l.nivel].filter(Boolean).join(", ");
   if (u) t.push(u);
   if (p.unidad === "kg" && l.diametro) t.push("Cabilla " + l.diametro);
+  if (l.pintura) t.push(cmpPinturaTxt(l));
   const mag = { m: "Longitud medida", m2: "Superficie medida", m3: "Volumen medido", kg: "Peso computado" }[p.unidad] || "Cantidad";
   t.push(mag + ": " + cmpFmt(cmpParcial(l, p), p.unidad === "m3" ? 3 : 2) + " " + CMP_UNI[p.unidad]);
   if (l.origen === "planos") t.push("Cantidad tomada de planos");
@@ -569,13 +626,17 @@ function cmpAgrupar(lineas) {
     const p = cmpPartida(l.partida);
     if (!p) continue;
     const esOtro = l.partida === "99.99";
-    const desc = esOtro ? (l.otroDesc || "Otro") : p.descripcion;
+    const pint = cmpEsPintura(l.partida) ? cmpTipoPintura(l) : "";
+    let desc = esOtro ? (l.otroDesc || "Otro") : p.descripcion;
+    if (pint) desc += " · " + cmpNombrePintura(pint);
     const uni = esOtro ? (l.unidad || "und") : p.unidad;
-    const key = esOtro ? "99.99|" + desc : p.codigo;
-    if (!m.has(key)) m.set(key, { codigo: p.codigo, descripcion: desc, unidad: uni, total: 0, n: 0, estimada: false });
+    const key = esOtro ? "99.99|" + desc : (pint ? p.codigo + "|" + pint : p.codigo);
+    if (!m.has(key)) m.set(key, { key: key, codigo: p.codigo, descripcion: desc, unidad: uni, total: 0, n: 0, estimada: false, tipoPintura: pint, colores: {} });
     const a = m.get(key);
     a.total += cmpNum(l.parcial); a.n++;
     if (l.origen === "planos" || l.origen === "muestreo") a.estimada = true;
+    const cn = l.pintura && l.pintura.colorNombre;
+    if (cn) a.colores[cn] = cmpRed((a.colores[cn] || 0) + cmpNum(l.parcial), 2);
   }
   return Array.from(m.values()).sort((a, b) => a.codigo.localeCompare(b.codigo) || a.descripcion.localeCompare(b.descripcion));
 }
@@ -607,11 +668,17 @@ function cmpResumen(c) {
   if (ac.suelto > 0) {
     const p = cmpPartida("01.04");
     const idx = res.findIndex((x) => x.codigo === "01.04");
-    const fila = { codigo: "01.04", descripcion: p ? p.descripcion : "Carga, transporte y disposición de escombros", unidad: "m3", total: ac.suelto, n: 0, estimada: true, acarreo: ac };
+    const fila = { key: "01.04", codigo: "01.04", descripcion: p ? p.descripcion : "Carga, transporte y disposición de escombros", unidad: "m3", total: ac.suelto, n: 0, estimada: true, colores: {}, acarreo: ac };
     if (idx >= 0) res[idx] = fila; else res.push(fila);
     res.sort((a, b) => a.codigo.localeCompare(b.codigo));
   }
   return res;
+}
+// Reparto por color de una fila de pintura, para saber cuánto se compra de cada uno.
+function cmpColoresTxt(r) {
+  const cs = Object.keys((r && r.colores) || {});
+  if (!cs.length) return "";
+  return cs.map((n) => n + " " + cmpFmt(r.colores[n]) + " " + CMP_UNI[r.unidad]).join(" · ");
 }
 function cmpFilaAcarreo(r) {
   const ac = r.acarreo;
@@ -2768,6 +2835,8 @@ async function cmpZip(btn) {
         desperdicio_pct: cmpDespDe(r.codigo),
         cantidad_con_desperdicio: cmpRed(r.total * (1 + cmpDespDe(r.codigo) / 100), 2),
         lineas: r.n, tiene_estimaciones: r.estimada,
+        ...(r.tipoPintura ? { tipo_pintura: cmpNombrePintura(r.tipoPintura) } : {}),
+        ...(cmpColoresTxt(r) ? { colores: r.colores } : {}),
         ...(r.acarreo ? { viajes: r.acarreo.viajes, m3_por_viaje: r.acarreo.viaje, esponjamiento_pct: Math.round(r.acarreo.esp * 100) } : {})
       })),
       lineas: c.lineas.map((l) => Object.assign({}, l, {
@@ -2791,6 +2860,8 @@ async function cmpZip(btn) {
         "   ·   con " + cmpFmt(dp, 0) + " % de desperdicio: " +
         cmpFmt(cmpRed(r.total * (1 + dp / 100), 2)) + " " + CMP_UNI[r.unidad] +
         (r.estimada ? "   (incluye cantidades estimadas)" : ""));
+      const colTxt = cmpColoresTxt(r);
+      if (colTxt) T.push("      Colores: " + colTxt);
     }
     T.push("");
     T.push("DETALLE POR LÍNEA");
@@ -2803,6 +2874,7 @@ async function cmpZip(btn) {
         "  =  " + cmpFmt(l.parcial) + " " + CMP_UNI[l.unidad]);
       T.push("      Origen: " + (l.origen === "sitio" ? "medida en sitio" : l.origen === "foto" ? "medida sobre fotografia con escala" : l.origen === "planos" ? "tomada de planos" : "estimada por muestreo") +
         "  ·  " + ((l.fotos || []).length) + " fotografía(s)");
+      if (l.pintura) T.push("      Pintura: " + cmpPinturaTxt(l) + (l.pintura.colorHex ? " (" + l.pintura.colorHex.toUpperCase() + (l.pintura.colorAuto ? ", tomado de la foto" : "") + ")" : ""));
       if (l.obs) T.push("      Observación: " + l.obs);
     }
     const resumenTxt = T.join("\n");
@@ -2872,6 +2944,9 @@ function cmpDetalleLinea(l) {
   return `<div class="tarjeta" style="margin:0 0 8px;padding:12px;background:var(--fondo)">
     ${l.derivada ? `<p class="aviso" style="margin:0 0 6px"><b>⊞ ${esc(l.compuesta || "Partida compuesta")}</b><br />Cantidad derivada de: ${esc(l.baseMedida || "")}</p>`
       : `<p class="aviso" style="margin:0 0 6px">${esc(med)}</p>`}
+    ${l.pintura ? `<p class="aviso" style="margin:0 0 6px;display:flex;align-items:center;gap:6px">
+      <span style="flex:none;width:14px;height:14px;border-radius:4px;border:1px solid var(--borde);background:${cmpHexOk(l.pintura.colorHex) || "transparent"}"></span>
+      ${esc(cmpPinturaTxt(l))}</p>` : ""}
     <p class="aviso" style="margin:0 0 6px"><b>${esc(org)}</b>${l.obs ? " · " + esc(l.obs) : ""}</p>
     ${fotos.length ? fotos.map((f) => `
       <div class="foto-card" style="margin-bottom:8px">
@@ -2912,6 +2987,7 @@ function cmpReplicar(l, nivelIds) {
       const gid = uid();
       for (const g of grupo) {
         const cl = Object.assign({}, g, { id: uid(), grupo: gid, nivelId: nid, nivel: nombreDe(nid) || g.nivel, zonaId: "", fotos: [], ts: new Date().toISOString() });
+        if (g.pintura) cl.pintura = Object.assign({}, g.pintura);
         c.lineas.push(cl);
       }
       n++;
@@ -2919,6 +2995,7 @@ function cmpReplicar(l, nivelIds) {
   } else {
     for (const nid of nivelIds) {
       const cl = Object.assign({}, l, { id: uid(), nivelId: nid, nivel: nombreDe(nid) || l.nivel, zonaId: "", fotos: [], ts: new Date().toISOString() });
+      if (l.pintura) cl.pintura = Object.assign({}, l.pintura);
       c.lineas.push(cl);
       n++;
     }
@@ -3091,6 +3168,204 @@ function cmpAtipico(l, p) {
   return null;
 }
 
+/* ----- Tipo de pintura y color de la zona -----
+   Aparece en las partidas que llevan pintura. El color se sugiere solo a partir de
+   la foto (todo local, sin red) y se corrige tocando la foto o escogiendo de la lista:
+   la camara suele leer gris una pared que en realidad es blanca. */
+let cmpPintEdit = null;   // clave del bloque con el selector de color abierto
+
+function cmpPintEstado(key) {
+  if (!key) { cmpBorrador.pintura = cmpBorrador.pintura || {}; return cmpBorrador.pintura; }
+  cmpComp.pintura = cmpComp.pintura || {};
+  cmpComp.pintura[key] = cmpComp.pintura[key] || {};
+  return cmpComp.pintura[key];
+}
+/* Al guardar, el color deja de aplicar: la foto y la zona ya pasaron. El tipo de
+   pintura sí se conserva, porque suele repetirse en toda la obra. */
+function cmpOlvidarColor() {
+  cmpBorrador.colorSug = null;
+  cmpPintEdit = null;
+  const limpiar = (e) => { if (e) { e.colorHex = ""; e.colorNombre = ""; e.colorManual = false; } };
+  limpiar(cmpBorrador.pintura);
+  const m = (cmpComp && cmpComp.pintura) || {};
+  for (const k of Object.keys(m)) limpiar(m[k]);
+}
+// Color que rige: el que escogió el inspector; si no escogió, el sugerido por la foto.
+function cmpColorEfec(e) {
+  if (e && (e.colorHex || e.colorNombre))
+    return { hex: cmpHexOk(e.colorHex), nombre: e.colorNombre || cmpColorCerca(e.colorHex), auto: false };
+  const s = cmpBorrador.colorSug;
+  if (s) return { hex: cmpHexOk(s.hex), nombre: s.nombre, auto: true };
+  return null;
+}
+function cmpColorCap(col) {
+  if (!col) return '<span class="aviso">Sin color definido. Tome una foto y se sugiere solo.</span>';
+  return esc(col.nombre || "Color") + ' <span class="aviso">' + esc(col.hex.toUpperCase()) +
+    (col.auto ? " · sugerido de la foto" : "") + "</span>";
+}
+function cmpPinturaHtml(key, cod) {
+  const e = cmpPintEstado(key);
+  const tipo = e.tipo || CMP_PINTURA_DEF[cod] || "caucho_mate";
+  const col = cmpColorEfec(e);
+  const abierto = cmpPintEdit === key;
+  const fs = cmpBorrador.fotos || [];
+  const editor = `<div style="border-top:1px solid var(--borde);margin-top:9px;padding-top:9px">
+      ${fs.length ? `<p class="aviso" style="margin:0 0 6px">Toque en la foto la superficie que se va a pintar y se toma ese color.</p>
+        <div style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:8px">
+          ${fs.map((f) => `<canvas data-plupa="${esc(f.id)}" data-pkey="${esc(key)}"
+            style="width:${fs.length > 1 ? "48%" : "100%"};border-radius:8px;border:1px solid var(--borde);cursor:crosshair"></canvas>`).join("")}
+        </div>` : `<p class="aviso" style="margin:0 0 6px">Esta línea no tiene fotos todavía: escoja el color de la lista.</p>`}
+      <div class="pildoras" style="margin-bottom:4px">
+        ${CMP_COLORES.map(([n, h]) => `<button data-pcol="${esc(key)}|${h}" class="${col && col.hex.toLowerCase() === h ? "on" : ""}">
+          <span style="display:inline-block;width:11px;height:11px;border-radius:3px;border:1px solid rgba(0,0,0,.25);background:${h};margin-right:5px;vertical-align:-1px"></span>${esc(n)}</button>`).join("")}
+      </div>
+      <div class="grid2">
+        <label class="campo"><span>Tono exacto</span>
+          <input type="color" data-phex="${esc(key)}" value="${esc((col && col.hex) || "#f7f7f4")}" style="padding:3px;height:44px" /></label>
+        <label class="campo"><span>Nombre del color</span>
+          <input data-pnom="${esc(key)}" value="${esc((col && col.nombre) || "")}" placeholder="Blanco" /></label>
+      </div>
+      ${fs.length ? `<button class="btn btn-linea" style="width:auto;padding:6px 11px;font-size:12px;margin-right:6px" data-psug="${esc(key)}">🎨 Sugerir de la foto</button>` : ""}
+      <button class="btn btn-gris" style="width:auto;padding:6px 11px;font-size:12px" data-pquitar="${esc(key)}">Borrar color</button>
+    </div>`;
+  return `<div class="tarjeta" style="padding:10px;margin:0 0 8px;background:var(--fondo)">
+    <label class="campo" style="margin-bottom:8px"><span>Tipo de pintura</span>
+      <select data-ptipo="${esc(key)}">${CMP_PINTURA_TIPOS.map((t) =>
+        `<option value="${t.id}" ${t.id === tipo ? "selected" : ""}>${esc(t.nombre)}</option>`).join("")}</select></label>
+    <div class="fila" style="align-items:center;gap:9px">
+      <span data-pmuestra="${esc(key)}" style="flex:none;width:30px;height:30px;border-radius:8px;border:1px solid var(--borde);background:${(col && col.hex) || "var(--borde)"}"></span>
+      <span data-pcap="${esc(key)}" style="flex:1;font-size:13px">${cmpColorCap(col)}</span>
+      <button class="btn btn-linea" style="flex:none;width:auto;padding:6px 10px;font-size:12px" data-pabrir="${esc(key)}">${abierto ? "Listo" : "Color"}</button>
+    </div>
+    ${abierto ? editor : ""}
+  </div>`;
+}
+// Refresca la muestra sin repintar, para no perder el foco mientras se escribe.
+function cmpPintRefrescar(key) {
+  const col = cmpColorEfec(cmpPintEstado(key));
+  const q = (a) => document.querySelector("[data-" + a + '="' + key + '"]');
+  const sw = q("pmuestra"); if (sw) sw.style.background = (col && col.hex) || "var(--borde)";
+  const cap = q("pcap"); if (cap) cap.innerHTML = cmpColorCap(col);
+  const ih = q("phex"); if (ih && col && col.hex && document.activeElement !== ih) ih.value = col.hex;
+  const inm = q("pnom"); if (inm && document.activeElement !== inm) inm.value = (col && col.nombre) || "";
+}
+function cmpRepintarAcabado() { if (cmpModo === "simple") cmpPintarAcabado(); else cmpPintarCompuesta(); }
+function cmpPintarAcabado() {
+  const cont = document.getElementById("cmPint");
+  if (!cont) return;
+  const cod = cmpBorrador.partida;
+  if (!cmpEsPintura(cod)) { cont.innerHTML = ""; return; }
+  cont.innerHTML = `<div class="etiq">Acabado de pintura</div>` + cmpPinturaHtml("", cod);
+  cmpPinturaWire(cont);
+}
+function cmpPinturaWire(cont) {
+  cont.querySelectorAll("[data-ptipo]").forEach((s) => (s.onchange = (ev) => {
+    cmpPintEstado(ev.target.dataset.ptipo).tipo = ev.target.value;
+  }));
+  cont.querySelectorAll("[data-pabrir]").forEach((b) => (b.onclick = () => {
+    cmpPintEdit = cmpPintEdit === b.dataset.pabrir ? null : b.dataset.pabrir;
+    cmpRepintarAcabado();
+  }));
+  cont.querySelectorAll("[data-pcol]").forEach((b) => (b.onclick = () => {
+    const [k, h] = b.dataset.pcol.split("|");
+    const e = cmpPintEstado(k);
+    e.colorHex = h; e.colorNombre = cmpColorCerca(h); e.colorManual = false;
+    cmpRepintarAcabado();
+  }));
+  cont.querySelectorAll("[data-phex]").forEach((i) => (i.oninput = (ev) => {
+    const k = ev.target.dataset.phex, e = cmpPintEstado(k);
+    e.colorHex = cmpHexOk(ev.target.value);
+    if (!e.colorManual) e.colorNombre = cmpColorCerca(e.colorHex);
+    cmpPintRefrescar(k);
+  }));
+  cont.querySelectorAll("[data-pnom]").forEach((i) => (i.oninput = (ev) => {
+    const k = ev.target.dataset.pnom, e = cmpPintEstado(k);
+    e.colorNombre = ev.target.value;
+    e.colorManual = true;
+    if (!e.colorHex) { const s = cmpColorEfec(e); e.colorHex = (s && s.hex) || ""; }
+    cmpPintRefrescar(k);
+  }));
+  cont.querySelectorAll("[data-psug]").forEach((b) => (b.onclick = async () => {
+    const k = b.dataset.psug, e = cmpPintEstado(k);
+    b.disabled = true;
+    await cmpColorSugerir(true);
+    b.disabled = false;
+    e.colorHex = ""; e.colorNombre = ""; e.colorManual = false;
+    cmpPintRefrescar(k);
+  }));
+  cont.querySelectorAll("[data-pquitar]").forEach((b) => (b.onclick = () => {
+    const e = cmpPintEstado(b.dataset.pquitar);
+    e.colorHex = ""; e.colorNombre = ""; e.colorManual = false;
+    cmpBorrador.colorSug = null;
+    cmpRepintarAcabado();
+  }));
+  cmpPintarLupas(cont);
+}
+function cmpImgDe(url) {
+  return new Promise((res, rej) => { const i = new Image(); i.onload = () => res(i); i.onerror = rej; i.src = url; });
+}
+// Color dominante del centro de la foto: es lo que el inspector encuadró.
+async function cmpColorDeFoto(fid) {
+  const u = await urlFoto(fid);
+  if (!u) return "";
+  let img;
+  try { img = await cmpImgDe(u); } catch (e) { return ""; }
+  const n = 48;
+  const cv = document.createElement("canvas");
+  cv.width = n; cv.height = n;
+  const g = cv.getContext("2d", { willReadFrequently: true });
+  const cw = img.width * 0.7, ch = img.height * 0.7;
+  g.drawImage(img, (img.width - cw) / 2, (img.height - ch) / 2, cw, ch, 0, 0, n, n);
+  const d = g.getImageData(0, 0, n, n).data;
+  const cubos = new Map();
+  for (let i = 0; i < d.length; i += 4) {
+    const k = (d[i] >> 5) + "," + (d[i + 1] >> 5) + "," + (d[i + 2] >> 5);
+    const e = cubos.get(k) || { n: 0, r: 0, g: 0, b: 0 };
+    e.n++; e.r += d[i]; e.g += d[i + 1]; e.b += d[i + 2];
+    cubos.set(k, e);
+  }
+  let m = null;
+  for (const e of cubos.values()) if (!m || e.n > m.n) m = e;
+  return m ? cmpHex(m.r / m.n, m.g / m.n, m.b / m.n) : "";
+}
+async function cmpColorSugerir(forzar) {
+  const fs = cmpBorrador.fotos || [];
+  if (!fs.length) return;
+  if (!forzar && cmpBorrador.colorSug) return;
+  const hex = await cmpColorDeFoto(fs[0].id);
+  if (!hex) return;
+  cmpBorrador.colorSug = { fid: fs[0].id, hex: hex, nombre: cmpColorCerca(hex) };
+}
+// Dibuja las fotos del borrador para poder picar el color con el dedo.
+async function cmpPintarLupas(cont) {
+  for (const cv of cont.querySelectorAll("canvas[data-plupa]")) {
+    const u = await urlFoto(cv.dataset.plupa);
+    if (!u) continue;
+    let img;
+    try { img = await cmpImgDe(u); } catch (e) { continue; }
+    const w = 360, h = Math.max(1, Math.round(w * img.height / img.width));
+    cv.width = w; cv.height = h;
+    cv.getContext("2d", { willReadFrequently: true }).drawImage(img, 0, 0, w, h);
+    cv.onclick = (ev) => {
+      const r = cv.getBoundingClientRect();
+      const x = Math.round((ev.clientX - r.left) * cv.width / r.width);
+      const y = Math.round((ev.clientY - r.top) * cv.height / r.height);
+      const lado = 7, x0 = Math.max(0, x - 3), y0 = Math.max(0, y - 3);
+      const d = cv.getContext("2d", { willReadFrequently: true })
+        .getImageData(x0, y0, Math.min(lado, cv.width - x0), Math.min(lado, cv.height - y0)).data;
+      let sr = 0, sg = 0, sb = 0, sn = 0;
+      for (let i = 0; i < d.length; i += 4) { sr += d[i]; sg += d[i + 1]; sb += d[i + 2]; sn++; }
+      if (!sn) return;
+      const k = cv.dataset.pkey, e = cmpPintEstado(k);
+      e.colorHex = cmpHex(sr / sn, sg / sn, sb / sn);
+      if (!e.colorManual) e.colorNombre = cmpColorCerca(e.colorHex);
+      cmpPintRefrescar(k);
+      const pil = cont.querySelectorAll('[data-pcol^="' + k + '|"]');
+      pil.forEach((b) => b.classList.toggle("on", b.dataset.pcol.split("|")[1] === e.colorHex));
+    };
+  }
+}
+
 function cmpPintarDims() {
   const p = cmpPartidaBorrador();
   const cont = document.getElementById("cmDims");
@@ -3158,7 +3433,19 @@ function cmpLeer() {
   if (cmpBorrador.fijo) l.parcialFijo = cmpBorrador.fijo.valor;
   if (cmpBorrador.medicion) l.medicion = cmpBorrador.medicion;
   if (cmpBorrador.partida === "99.99") l.otroDesc = String(cmpBorrador.otroDesc || "").trim();
+  if (cmpEsPintura(l.partida)) l.pintura = cmpPinturaLinea("", l.partida);
   return l;
+}
+// Acabado que se guarda en la línea: tipo elegido y color que rige en ese momento.
+function cmpPinturaLinea(key, cod) {
+  const e = cmpPintEstado(key);
+  const col = cmpColorEfec(e);
+  return {
+    tipo: e.tipo || CMP_PINTURA_DEF[cod] || "caucho_mate",
+    colorNombre: col ? String(col.nombre || "").trim() : "",
+    colorHex: col ? cmpHexOk(col.hex) : "",
+    colorAuto: !!(col && col.auto)
+  };
 }
 
 function cmpEditarLinea(id) {
@@ -3169,6 +3456,7 @@ function cmpEditarLinea(id) {
   cmpModo = "simple";
   cmpEditId = id;
   cmpVer = null;
+  cmpPintEdit = null;
   cmpBorrador = {
     origen: l.origen || "sitio",
     partida: l.partida,
@@ -3182,6 +3470,7 @@ function cmpEditarLinea(id) {
     fotos: (l.fotos || []).map((f) => ({ id: f.id, ts: l.ts, pie: f.pie, geo: f.geo }))
   };
   if (l.partida === "99.99") { cmpBorrador.otroDesc = l.otroDesc || ""; cmpBorrador.otroUni = l.unidad || "und"; }
+  if (l.pintura) cmpBorrador.pintura = { tipo: l.pintura.tipo, colorHex: l.pintura.colorHex || "", colorNombre: l.pintura.colorNombre || "", colorManual: true };
   for (const cc of cmpCampos(p)) cmpBorrador.dims[cc] = l[cc] != null ? l[cc] : "";
   if (l.parcialFijo != null) cmpBorrador.fijo = { valor: l.parcialFijo, unidad: l.unidad };
   if (l.medicion) cmpBorrador.medicion = l.medicion;
@@ -3332,6 +3621,7 @@ function cmpPintarCompuesta() {
         <b class="mono" style="font-size:14px" data-qcomp="${comp.partida}">${inc ? cmpFmt(q, p.unidad === "m3" ? 3 : 2) + " " + CMP_UNI[p.unidad] : "—"}</b>
       </div>
       ${cmpAlcanceHtml(comp, p, e, inc)}
+      ${inc && cmpEsPintura(comp.partida) ? cmpPinturaHtml(comp.partida, comp.partida) : ""}
     </div>`;
   }).join("");
 
@@ -3475,6 +3765,7 @@ function cmpPintarCompuesta() {
       cmpActualizarComp();
     };
   });
+  cmpPinturaWire(cont);
 }
 
 function cmpActualizarComp() {
@@ -3548,6 +3839,7 @@ function cmpGuardarCompuesta() {
         ((e.alcance || x.alcanceDef) === "parcial" ? "  ·  alcance parcial declarado" : ""),
       ts: new Date().toISOString(), fotos: []
     };
+    if (cmpEsPintura(x.partida)) l.pintura = cmpPinturaLinea(x.partida, x.partida);
     if (primera) { l.fotos = cmpBorrador.fotos.map((f) => ({ id: f.id, pie: cmpPie(l, p, f.ts), geo: f.geo })); primera = false; }
     c.lineas.push(l);
   }
@@ -3556,6 +3848,7 @@ function cmpGuardarCompuesta() {
   cmpBorrador.fotos = [];
   cmpBorrador.elemento = "";
   cmpBorrador.obs = "";
+  cmpOlvidarColor();
   cmpComp = { id: cmpComp.id, base: {}, comps: {}, carasFrisar: 0, carasPintar: 0 };
   guardar();
   rComputos();
@@ -3852,12 +4145,14 @@ function rComputos() {
   const resHtml = res.length ? res.map((r) => {
     if (r.acarreo) return cmpFilaAcarreo(r);
     const d = cmpDespDe(r.codigo);
+    const cols = cmpColoresTxt(r);
     return `<div class="lista-foto">
       <span style="flex:1"><b>${r.codigo}</b> ${esc(r.descripcion)}${r.estimada ? ' <span class="chip a">estimada</span>' : ""}
         <br /><span class="aviso">Neta ${cmpFmt(r.total)} ${CMP_UNI[r.unidad]} · desperdicio
-        <input data-desp="${r.codigo}" inputmode="decimal" value="${esc(String(d))}"
-          style="width:54px;display:inline-block;padding:2px 6px;min-height:0;text-align:right;font-size:12px" /> %</span></span>
-      <b class="mono" style="font-size:14px" data-total="${r.codigo}">${cmpFmt(cmpRed(r.total * (1 + d / 100), 2))} ${CMP_UNI[r.unidad]}</b>
+        <input data-desp="${esc(r.key)}" data-cod="${r.codigo}" inputmode="decimal" value="${esc(String(d))}"
+          style="width:54px;display:inline-block;padding:2px 6px;min-height:0;text-align:right;font-size:12px" /> %</span>
+        ${cols ? `<br /><span class="aviso">Colores: ${esc(cols)}</span>` : ""}</span>
+      <b class="mono" style="font-size:14px" data-total="${esc(r.key)}">${cmpFmt(cmpRed(r.total * (1 + d / 100), 2))} ${CMP_UNI[r.unidad]}</b>
     </div>`;
   }).join("") : `<p class="aviso">Aún no hay cantidades computadas.</p>`;
 
@@ -3910,6 +4205,7 @@ function rComputos() {
         <div id="cmCinta" style="background:var(--ink);color:#fff;border-radius:10px;padding:11px 13px;
           display:flex;align-items:baseline;justify-content:space-between;gap:12px;margin-bottom:12px;
           font-variant-numeric:tabular-nums"></div>
+        <div id="cmPint"></div>
       </div>
       <div id="cmComp" ${simple ? 'style="display:none"' : ""}></div>
 
@@ -3950,7 +4246,7 @@ function rComputos() {
     </div>` : ""}`;
 
   cmpPintarUbic();
-  if (simple) cmpPintarDims(); else cmpPintarCompuesta();
+  if (simple) { cmpPintarDims(); cmpPintarAcabado(); } else cmpPintarCompuesta();
   cmpPintarFotos();
   cmpCargarFotos();
 
@@ -4017,6 +4313,9 @@ function rComputos() {
       }
     }
     cmpPintarFotos();
+    // Con la primera foto ya se puede proponer el color de la zona a pintar.
+    await cmpColorSugerir(false);
+    cmpRepintarAcabado();
   };
   cam.onchange = onFotos; gal.onchange = onFotos;
 
@@ -4066,6 +4365,7 @@ function rComputos() {
     cmpBorrador.fijo = null;
     cmpBorrador.medicion = null;
     cmpBorrador.atipicoOk = false;
+    cmpOlvidarColor();
     guardar();
     rComputos();
   };
@@ -4079,7 +4379,8 @@ function rComputos() {
     if (!u) return;
     cmpBorrador = { partida: u.partida, origen: u.origen, zona: u.zona, zonaId: cmpBorrador.zonaId,
       nivel: u.nivel, nivelId: u.nivelId || "", zonaSel: "", elemento: "", obs: u.obs || "", fotos: [],
-      dims: cmpCampos(cmpPartida(u.partida)).reduce((o, k) => { o[k] = u[k]; return o; }, {}) };
+      dims: cmpCampos(cmpPartida(u.partida)).reduce((o, k) => { o[k] = u[k]; return o; }, {}),
+      pintura: u.pintura ? { tipo: u.pintura.tipo, colorHex: u.pintura.colorHex || "", colorNombre: u.pintura.colorNombre || "", colorManual: true } : {} };
     rComputos();
   };
 
@@ -4098,7 +4399,7 @@ function rComputos() {
   $app.querySelectorAll("[data-editln]").forEach((b) => (b.onclick = () => cmpEditarLinea(b.dataset.editln)));
   $app.querySelectorAll("[data-anotarl]").forEach((b) => (b.onclick = () => abrirEditorFoto(b.dataset.anotarl, rComputos)));
   const bEditCancel = document.getElementById("cmEditCancel");
-  if (bEditCancel) bEditCancel.onclick = () => { cmpEditId = null; cmpBorrador = { origen: "sitio", fotos: [] }; rComputos(); window.scrollTo(0, 0); };
+  if (bEditCancel) bEditCancel.onclick = () => { cmpEditId = null; cmpPintEdit = null; cmpBorrador = { origen: "sitio", fotos: [] }; rComputos(); window.scrollTo(0, 0); };
   $app.querySelectorAll("[data-repltoggle]").forEach((b) => (b.onclick = () => {
     const box = document.getElementById("repl_" + b.dataset.repltoggle);
     if (box) box.style.display = box.style.display === "none" ? "block" : "none";
@@ -4118,11 +4419,18 @@ function rComputos() {
 
   $app.querySelectorAll("[data-desp]").forEach((i) => {
     i.oninput = (e) => {
-      const cod = e.target.dataset.desp;
+      // El desperdicio es de la partida: si está repartida en varias filas (tipos de
+      // pintura, partidas "Otro"), todas se mueven juntas.
+      const cod = e.target.dataset.cod;
       c.desperdicio[cod] = e.target.value;
-      const r = cmpResumen(c).find((x) => x.codigo === cod);
-      const b2 = $app.querySelector('[data-total="' + cod + '"]');
-      if (r && b2) b2.textContent = cmpFmt(cmpRed(r.total * (1 + cmpDespDe(cod) / 100), 2)) + " " + CMP_UNI[r.unidad];
+      for (const r of cmpResumen(c)) {
+        if (r.codigo !== cod) continue;
+        const rk = CSS.escape(r.key);
+        const b2 = $app.querySelector('[data-total="' + rk + '"]');
+        if (b2) b2.textContent = cmpFmt(cmpRed(r.total * (1 + cmpDespDe(cod) / 100), 2)) + " " + CMP_UNI[r.unidad];
+        const o2 = $app.querySelector('[data-desp="' + rk + '"]');
+        if (o2 && o2 !== e.target) o2.value = e.target.value;
+      }
       guardar();
     };
   });
@@ -4166,6 +4474,8 @@ function rComputos() {
         desperdicio_pct: cmpDespDe(r.codigo),
         cantidad_con_desperdicio: cmpRed(r.total * (1 + cmpDespDe(r.codigo) / 100), 2),
         lineas: r.n, tiene_estimaciones: r.estimada,
+        ...(r.tipoPintura ? { tipo_pintura: cmpNombrePintura(r.tipoPintura) } : {}),
+        ...(cmpColoresTxt(r) ? { colores: r.colores } : {}),
         ...(r.acarreo ? { viajes: r.acarreo.viajes, m3_por_viaje: r.acarreo.viaje, esponjamiento_pct: Math.round(r.acarreo.esp * 100) } : {})
       })),
       lineas: c.lineas
