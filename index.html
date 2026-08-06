@@ -121,8 +121,9 @@
 <script>
 "use strict";
 /* ================= Constantes ================= */
-const VERSION = "3.55";
+const VERSION = "3.56";
 const CHANGELOG = [
+  ["3.56", "Nuevo tipo de inspección \"Casa\": al crear la inspección puedes elegir Casa en lugar de Edificio, y se arma un solo nivel con los ambientes típicos (sala, comedor, cocina, habitaciones, baños, patio…), sin las zonas de edificio que no aplican (cuarto de máquinas, ascensor, tanque elevado del edificio, etc.). Puedes agregar, quitar o renombrar cuartos, y sumar elementos opcionales (tanque elevado propio, cisterna, garaje, cuarto de servicio…) solo si la casa los tiene."],
   ["3.55", "Las partidas de pintura ya no son solo caucho: al capturarlas escoge el tipo (caucho mate, lavable, exterior, esmalte al agua o sintético, anticorrosivo, epóxica, cal, barniz) y cada tipo se totaliza aparte en el resumen. Además se anota el color de la zona a pintar: al tomar la foto la app propone el color que ve, y lo puede corregir tocando la pared en la foto, escogiendo de la lista de colores o escribiendo el nombre, para cuando la foto se ve gris y la pared es blanca. Los colores salen en el pie de foto, en el resumen y en la exportación."],
   ["3.54", "Reparación de vigas y de columnas con cabillas expuestas: la sección se mide por ancho de la zona y profundidad, en lugar del perímetro; el mortero de reparación se computa ahora por volumen (m³) con la nueva partida 03.11. Nueva compuesta: reparación de techo (losa nervada) con nervios expuestos, que mide el área de losa y suma la superficie de los nervios reparados."],
   ["3.53", "Al exportar los cómputos, las fotos salen más livianas y el ZIP se divide en partes de menos de 1 MB para poder analizarlas. El botón avisa mientras trabaja y ya no se dispara varias veces."],
@@ -197,6 +198,9 @@ const ZONAS = ["Fachada principal","Fachada posterior","Fachada lateral izquierd
 const ZONAS_OPCIONALES = ["Escalera de emergencia", "Escalera secundaria", "Rampa vehicular", "Cuarto de bombas",
   "Planta eléctrica", "Piscina", "Cancha / área deportiva", "Parque infantil", "Muro de contención",
   "Tanque subterráneo", "Pozo / cisterna", "Depósito"];
+const ZONAS_CASA = ["Fachada", "Sala", "Comedor", "Cocina", "Habitación 1", "Habitación 2", "Baño 1", "Baño 2", "Patio"];
+const ZONAS_CASA_OPCIONALES = ["Tanque elevado", "Cisterna / pozo", "Cuarto de servicio", "Garaje / porche techado",
+  "Área de lavado", "Depósito", "Terraza", "Balcón", "Escalera interior", "Estudio / oficina"];
 const uid = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
 
 /* ================= Nube (Supabase) ================= */
@@ -1379,7 +1383,7 @@ function rLista() {
 }
 
 /* ================= Pantalla: setup ================= */
-const setupTmp = { pisos: "", apts: "", pb: true, sotano: false, mez: false, formato: "letra", prefijo: "Apto " };
+const setupTmp = { casa: false, pisos: "", apts: "", pb: true, sotano: false, mez: false, formato: "letra", prefijo: "Apto " };
 function rSetup() {
   const b = st.insp.edificio;
   const campo = (lbl, k, tipo, ph) => `
@@ -1439,7 +1443,14 @@ function rSetup() {
       <textarea rows="2" data-b="notas">${esc(b.notas)}</textarea></label>
     ${st.insp.listo ? `<button class="btn btn-negro" id="bVolverCasa">Guardar y volver a la inspección</button>` : `
     <div class="tarjeta" style="border:2px solid var(--ink)">
-      <h2 style="font-size:16px">Estructura del edificio</h2>
+      <h2 style="font-size:16px">Tipo de edificación</h2>
+      <div class="selector" id="selTipo" style="margin-bottom:10px">
+        <button data-tipo="edificio" class="${setupTmp.casa ? "" : "on"}">Edificio (varios pisos)</button>
+        <button data-tipo="casa" class="${setupTmp.casa ? "on" : ""}">Casa</button>
+      </div>
+      ${setupTmp.casa ? `
+      <p class="aviso">Se crea un solo nivel "Casa" con los ambientes típicos: ${ZONAS_CASA.join(", ")}. Después podrás agregar, quitar o renombrar cuartos, y sumar elementos opcionales (tanque elevado, cisterna, garaje…) solo si la casa los tiene.</p>
+      ` : `
       <div class="grid2" style="margin:10px 0">
         <label class="campo"><span>N.° de pisos</span><input type="number" id="inPisos" value="${setupTmp.pisos}" /></label>
         <label class="campo"><span>Aptos por piso</span><input type="number" id="inApts" value="${setupTmp.apts}" /></label>
@@ -1460,6 +1471,7 @@ function rSetup() {
         <button data-p="mez" class="${setupTmp.mez ? "on" : ""}">${setupTmp.mez ? "✓ " : "+ "}Mezanina</button>
       </div>
       <p class="aviso">Después podrás agregar, quitar o renombrar unidades por piso. Las 16 zonas comunes del formulario se agregan solas.</p>
+      `}
       <p class="error" id="msgSetup"></p>
       <button class="btn btn-negro" id="bCrear">Crear inspección</button>
     </div>`}`;
@@ -1504,6 +1516,17 @@ function rSetup() {
   };
   sOtro.oninput = () => { b.sistema = sOtro.value; guardar(); };
   if (st.insp.listo) { document.getElementById("bVolverCasa").onclick = () => nav({ n: "casa" }); return; }
+  document.getElementById("selTipo").querySelectorAll("button").forEach((bt) => (bt.onclick = () => { setupTmp.casa = bt.dataset.tipo === "casa"; rSetup(); }));
+  if (setupTmp.casa) {
+    document.getElementById("bCrear").onclick = () => {
+      if (!b.nombre) { document.getElementById("msgSetup").textContent = "Indica al menos el nombre o la dirección de la vivienda."; return; }
+      const nivel = mkNivel("Casa", ZONAS_CASA.slice());
+      nivel.opcionalesCat = "casa";
+      st.insp.niveles = [nivel]; st.insp.listo = true;
+      guardar(); nav({ n: "casa" });
+    };
+    return;
+  }
   document.getElementById("inPisos").oninput = (e) => (setupTmp.pisos = e.target.value);
   document.getElementById("inApts").oninput = (e) => (setupTmp.apts = e.target.value);
   document.getElementById("inPrefijo").oninput = (e) => (setupTmp.prefijo = e.target.value);
@@ -1758,6 +1781,7 @@ function wireGrabadora(idBase, getVoz) {
 function rNivel() {
   const nv = st.insp.niveles.find((x) => x.id === st.pantalla.nivelId);
   if (!nv) return nav({ n: "casa" });
+  const catOpc = nv.comun ? ZONAS_OPCIONALES : nv.opcionalesCat === "casa" ? ZONAS_CASA_OPCIONALES : null;
   const items = nv.apts.map((a) => {
     const u = st.insp.unidades[a.id];
     const atc = u && u.atc;
@@ -1779,14 +1803,14 @@ function rNivel() {
     ${nv.comun ? "" : `<button class="btn-gris" id="bRenumerar" style="margin-bottom:10px">Renumerar unidades de este nivel</button>`}
     ${items}
     <div class="fila" style="margin:10px 0">
-      <input id="inNueva" placeholder="${nv.comun ? "Nombre de la zona…" : "Ej: Apto 2-C, Conserjería…"}" />
+      <input id="inNueva" placeholder="${nv.comun ? "Nombre de la zona…" : nv.opcionalesCat === "casa" ? "Ej: Habitación 3, Depósito…" : "Ej: Apto 2-C, Conserjería…"}" />
       <button class="btn btn-negro" style="flex:0 0 auto;width:auto;padding:10px 16px" id="bAgregar">+ Agregar</button>
     </div>
-    ${nv.comun ? `
+    ${catOpc ? `
     <div class="tarjeta" style="padding:12px;margin-bottom:10px">
-      <div class="etiq">Zonas opcionales (agrégalas solo si el edificio las tiene)</div>
+      <div class="etiq">${nv.comun ? "Zonas opcionales (agrégalas solo si el edificio las tiene)" : "Elementos opcionales (agrégalos solo si la casa los tiene)"}</div>
       <div class="pildoras" style="margin:8px 0 0" id="pilOpcionales">
-        ${ZONAS_OPCIONALES.filter((z) => !nv.apts.some((a) => a.nombre === z)).map((z) => `<button data-zop="${esc(z)}" style="font-size:12px;padding:6px 10px">+ ${esc(z)}</button>`).join("") || '<span class="aviso">Ya agregaste todas las zonas opcionales.</span>'}
+        ${catOpc.filter((z) => !nv.apts.some((a) => a.nombre === z)).map((z) => `<button data-zop="${esc(z)}" style="font-size:12px;padding:6px 10px">+ ${esc(z)}</button>`).join("") || '<span class="aviso">Ya agregaste todos los elementos opcionales.</span>'}
       </div>
     </div>` : ""}
     ${htmlGrabadora("gNivel", "Resumen de voz · " + esc(nv.nombre), nv.voz)}
@@ -2052,7 +2076,7 @@ function rUnidad() {
     ${fotos}
     ${htmlGrabadora("gUnidad", "Resumen de voz · " + esc(apt.nombre), u.voz)}
     ${st.apiKey ? '<button class="btn btn-ambar" id="bIA" style="margin-bottom:10px">✨ Redactar resumen técnico con Claude</button>' : ""}
-    <button class="btn btn-rojo-linea" id="bDelUnidad">Eliminar esta ${nv.comun ? "zona" : "unidad"}</button>`;
+    <button class="btn btn-rojo-linea" id="bDelUnidad">Eliminar est${nv.comun ? "a zona" : nv.opcionalesCat === "casa" ? "e cuarto" : "a unidad"}</button>`;
   // cargar imágenes
   (u.fotos || []).forEach(async (f) => {
     const url = await urlFoto(f.id);
