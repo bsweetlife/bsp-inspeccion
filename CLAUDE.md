@@ -50,6 +50,8 @@ Los tres números tienen que ser coherentes entre sí: la versión del último c
 
 Esto pasó de verdad: los commits `fa09bd6`, `534124f` y `d173da2` (titulados «v3.29/3.30/3.31») se hicieron sobre una base de la época de la 3.28 cuando `main` ya iba por la 3.52. El diff añadió 107 líneas y borró 746: se perdió todo lo hecho entre la 3.29 y la 3.52, incluida la partida `02.09` y los criterios de obra del dictado. Peor aún, `CACHE` retrocedió de `bsp-v66` a `bsp-v43`, así que los teléfonos que ya tenían la v66 no reconocían la v43 como versión nueva y se quedaban sin actualizar. Se arregló en `1a7f7a9` (v3.53) reaplicando el trabajo sobre la 3.52 real, con `CACHE` en `bsp-v67` para volver a quedar por delante.
 
+Para que esto no vuelva a pasar, hay un hook `pre-push` (`scripts/pre-push-check.sh`) que al hacer `git push` a `main` bloquea el push si la rama no incluye todo `origin/main`, o si `index.html`/`sw.js` cambiaron pero `VERSION`, el `CHANGELOG` o `CACHE` no subieron en conjunto. No viaja solo con `git clone`: tras un clon nuevo, instalarlo con `cp scripts/pre-push-check.sh .git/hooks/pre-push && chmod +x .git/hooks/pre-push`.
+
 Por eso `git log` no está en orden de versión: esos tres commits siguen en `main` con títulos que chocan con las versiones 3.29–3.31 reales del `CHANGELOG` (partida 02.08, acarreo de escombros, replicar líneas). **Al leer el historial, la fuente de verdad de qué trae cada versión es el `CHANGELOG` del código, no los títulos de los commits.**
 
 `.respaldo/`, `bsp-index-v3.*.html` y `sw-v3.*.js` están en `.gitignore`: son copias locales de versiones anteriores. Los archivos `bsp-index-v3.52.html` y `sw-v3.52.js` que están en la raíz son restos de ese esquema, no se usan.
