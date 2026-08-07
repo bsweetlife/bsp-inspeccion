@@ -121,8 +121,9 @@
 <script>
 "use strict";
 /* ================= Constantes ================= */
-const VERSION = "3.57";
+const VERSION = "3.58";
 const CHANGELOG = [
+  ["3.58", "La IA ahora puede sugerir el tipo de daño y la clasificación ATC-20 de una foto: el botón \"Analizar con IA\" en cada foto propone una sugerencia que hay que confirmar (nunca se aplica sola). Si la foto tiene mucho alrededor que puede confundir el análisis, \"Delimitar y analizar\" deja trazar a mano el contorno de lo que interesa antes de mandarlo a analizar."],
   ["3.57", "La app ahora avisa cuando el teléfono se está quedando sin espacio para fotos y grabaciones, para exportar y borrar inspecciones terminadas a tiempo en vez de quedarse sin poder guardar a mitad de un edificio."],
   ["3.56", "Nuevo tipo de inspección \"Casa\": al crear la inspección puedes elegir Casa en lugar de Edificio, y se arma un solo nivel con los ambientes típicos (sala, comedor, cocina, habitaciones, baños, patio…), sin las zonas de edificio que no aplican (cuarto de máquinas, ascensor, tanque elevado del edificio, etc.). Puedes agregar, quitar o renombrar cuartos, y sumar elementos opcionales (tanque elevado propio, cisterna, garaje, cuarto de servicio…) solo si la casa los tiene."],
   ["3.55", "Las partidas de pintura ya no son solo caucho: al capturarlas escoge el tipo (caucho mate, lavable, exterior, esmalte al agua o sintético, anticorrosivo, epóxica, cal, barniz) y cada tipo se totaliza aparte en el resumen. Además se anota el color de la zona a pintar: al tomar la foto la app propone el color que ve, y lo puede corregir tocando la pared en la foto, escogiendo de la lista de colores o escribiendo el nombre, para cuando la foto se ve gris y la pared es blanca. Los colores salen en el pie de foto, en el resumen y en la exportación."],
@@ -2075,6 +2076,18 @@ function rUnidad() {
           ${DANOS.map((dm) => `<option ${f.dano === dm ? "selected" : ""}>${dm}</option>`).join("")}
         </select>
         <div class="atc">${ATC.map((a) => `<button class="${ATC_CLS[a]} ${f.atc === a ? "on" : ""}" data-fatc="${f.id}|${a}">${ATC_CORTO[a]}</button>`).join("")}</div>
+        ${st.apiKey ? `<div class="fila" style="gap:8px;margin-top:8px">
+          <button class="btn-linea" style="font-size:12px;padding:8px" data-triage="${f.id}">🔎 Analizar con IA</button>
+          <button class="btn-linea" style="font-size:12px;padding:8px" data-triagearea="${f.id}">✂️ Delimitar y analizar</button>
+        </div>` : ""}
+        ${sugFoto[f.id] ? `<div class="tarjeta" style="padding:10px;margin-top:8px;background:var(--ambar-bg);border-color:var(--ambar)">
+          <div class="etiq" style="color:var(--ambar-tx);margin-top:0">Sugerencia de la IA</div>
+          <p style="margin:4px 0 8px;font-size:13px">${esc([sugFoto[f.id].dano, sugFoto[f.id].atc ? ATC_CORTO[sugFoto[f.id].atc] : "", sugFoto[f.id].desc].filter(Boolean).join(" · "))}</p>
+          <div class="fila" style="gap:8px">
+            <button class="btn btn-negro" style="font-size:13px;padding:8px" data-sugap="${f.id}">Aplicar</button>
+            <button class="btn-gris" style="font-size:13px;padding:8px" data-sugdesc="${f.id}">Descartar</button>
+          </div>
+        </div>` : ""}
       </div>
     </div>`).join("");
   $app.innerHTML = `
@@ -2173,6 +2186,23 @@ function rUnidad() {
     if (f) { f.star = !f.star; guardar(); rUnidad(); }
   }));
   $app.querySelectorAll("[data-anotar]").forEach((bt) => (bt.onclick = () => abrirEditorFoto(bt.dataset.anotar)));
+  $app.querySelectorAll("[data-triage]").forEach((bt) => (bt.onclick = () => triageFoto(bt.dataset.triage, null, bt)));
+  $app.querySelectorAll("[data-triagearea]").forEach((bt) => (bt.onclick = async () => {
+    const fid = bt.dataset.triagearea;
+    const recorte = await abrirSelectorArea(fid);
+    if (recorte) triageFoto(fid, recorte, bt);
+  }));
+  $app.querySelectorAll("[data-sugap]").forEach((bt) => (bt.onclick = () => {
+    const fid = bt.dataset.sugap, sug = sugFoto[fid], f = u.fotos.find((x) => x.id === fid);
+    if (f && sug) {
+      if (sug.dano) f.dano = sug.dano;
+      if (sug.atc) f.atc = sug.atc;
+      if (sug.desc && !f.desc) f.desc = sug.desc;
+    }
+    delete sugFoto[fid];
+    guardar(); rUnidad();
+  }));
+  $app.querySelectorAll("[data-sugdesc]").forEach((bt) => (bt.onclick = () => { delete sugFoto[bt.dataset.sugdesc]; rUnidad(); }));
   activarZoom($app);
   $app.querySelectorAll("[data-delfoto]").forEach((bt) => (bt.onclick = async () => {
     if (!confirm("¿Eliminar esta foto?")) return;
@@ -2180,6 +2210,7 @@ function rUnidad() {
     await blobDel("photo:" + fid);
     if (st.urls[fid]) { URL.revokeObjectURL(st.urls[fid]); delete st.urls[fid]; }
     u.fotos = u.fotos.filter((x) => x.id !== fid);
+    delete sugFoto[fid];
     guardar(); rUnidad();
   }));
   document.getElementById("bRenombrar").onclick = () => {
@@ -2347,6 +2378,145 @@ async function abrirEditorFoto(fid, despues) {
       cerrar(); (despues || render)();
     }, "image/jpeg", 0.85);
   };
+}
+
+/* ================= Triage de fotos con IA =================
+   Analiza una foto (completa o con área delimitada a mano) y sugiere tipo de
+   daño y clasificación ATC-20. La sugerencia se muestra para confirmar, nunca
+   se aplica sola (la IA sigue siendo siempre opcional). */
+let sugFoto = {}; // fotoId -> {dano, atc, desc} — solo en memoria, no persiste
+
+// Deja un contorno cerrado a mano sobre la foto y devuelve un recorte con todo
+// lo de afuera del contorno cubierto de gris (o null si se cancela). El
+// recorte es transitorio: no se guarda ni se sincroniza, solo se usa para
+// mandarlo a analizar cuando la foto tiene mucho alrededor que confunde a la IA.
+function abrirSelectorArea(fid) {
+  return new Promise(async (resolve) => {
+    const blob = await blobGet("photo:" + fid);
+    if (!blob) { resolve(null); return; }
+    const img = new Image();
+    const url = URL.createObjectURL(blob);
+    await new Promise((res) => { img.onload = res; img.src = url; });
+    const ov = document.createElement("div");
+    ov.style.cssText = "position:fixed;inset:0;z-index:100;background:rgba(10,12,16,.96);display:flex;flex-direction:column;padding:env(safe-area-inset-top) 0 env(safe-area-inset-bottom)";
+    ov.innerHTML = `
+      <div style="display:flex;gap:8px;align-items:center;padding:10px 14px">
+        <span style="color:#fff;font-weight:700;flex:1">Delimitar área a analizar</span>
+        <button id="saDeshacer" style="background:#374151;color:#fff;border:none;border-radius:8px;padding:8px 12px;font-weight:600">↩ Deshacer</button>
+        <button id="saCerrar" style="background:#374151;color:#fff;border:none;border-radius:8px;padding:8px 12px;font-weight:600">Cancelar</button>
+      </div>
+      <p style="color:#d1d5db;font-size:13px;padding:0 14px 8px;margin:0">Traza con el dedo un contorno alrededor de lo que quieres analizar. Se cubre de gris lo de afuera antes de mandarlo a la IA.</p>
+      <div style="flex:1;display:flex;align-items:center;justify-content:center;overflow:hidden;padding:0 8px">
+        <canvas id="saCanvas" style="max-width:100%;max-height:100%;touch-action:none;border-radius:8px"></canvas>
+      </div>
+      <div style="display:flex;gap:10px;align-items:center;padding:12px 14px">
+        <button id="saUsar" disabled style="flex:1;background:#fff;color:#111827;border:none;border-radius:10px;padding:12px;font-weight:800;font-size:15px;opacity:.5">Usar esta área</button>
+      </div>`;
+    document.body.appendChild(ov);
+    const canvas = ov.querySelector("#saCanvas");
+    canvas.width = img.naturalWidth; canvas.height = img.naturalHeight;
+    const ctx = canvas.getContext("2d");
+    const grosor = Math.max(3, Math.round(canvas.width / 300));
+    let pts = [];
+    function redibujar() {
+      ctx.drawImage(img, 0, 0);
+      if (pts.length > 1) {
+        ctx.strokeStyle = "#facc15"; ctx.lineWidth = grosor; ctx.lineCap = "round"; ctx.lineJoin = "round";
+        ctx.beginPath();
+        pts.forEach((p, i) => (i ? ctx.lineTo(p[0], p[1]) : ctx.moveTo(p[0], p[1])));
+        if (pts.length > 2) ctx.closePath();
+        ctx.stroke();
+        ctx.fillStyle = "rgba(250,204,21,.15)";
+        ctx.fill();
+      }
+    }
+    redibujar();
+    const pos = (e) => {
+      const r = canvas.getBoundingClientRect();
+      return [((e.clientX - r.left) / r.width) * canvas.width, ((e.clientY - r.top) / r.height) * canvas.height];
+    };
+    const btnUsar = ov.querySelector("#saUsar");
+    const marcarUsar = (ok) => { btnUsar.disabled = !ok; btnUsar.style.opacity = ok ? "1" : ".5"; };
+    canvas.onpointerdown = (e) => {
+      e.preventDefault(); canvas.setPointerCapture(e.pointerId);
+      pts = [pos(e)];
+      marcarUsar(false); redibujar();
+    };
+    canvas.onpointermove = (e) => {
+      if (!pts.length) return; e.preventDefault();
+      pts.push(pos(e));
+      redibujar();
+    };
+    canvas.onpointerup = () => {
+      marcarUsar(pts.length > 2);
+      redibujar();
+    };
+    const cerrar = (v) => { URL.revokeObjectURL(url); ov.remove(); resolve(v); };
+    ov.querySelector("#saCerrar").onclick = () => cerrar(null);
+    ov.querySelector("#saDeshacer").onclick = () => { pts = []; marcarUsar(false); redibujar(); };
+    btnUsar.onclick = () => {
+      if (pts.length < 3) return;
+      const xs = pts.map((p) => p[0]), ys = pts.map((p) => p[1]);
+      let minX = Math.min(...xs), maxX = Math.max(...xs), minY = Math.min(...ys), maxY = Math.max(...ys);
+      const mx = (maxX - minX) * 0.1 || 20, my = (maxY - minY) * 0.1 || 20;
+      minX = Math.max(0, minX - mx); minY = Math.max(0, minY - my);
+      maxX = Math.min(canvas.width, maxX + mx); maxY = Math.min(canvas.height, maxY + my);
+      const w = Math.round(maxX - minX), h = Math.round(maxY - minY);
+      const mascara = document.createElement("canvas");
+      mascara.width = canvas.width; mascara.height = canvas.height;
+      const mctx = mascara.getContext("2d");
+      mctx.fillStyle = "#888"; mctx.fillRect(0, 0, mascara.width, mascara.height);
+      mctx.save();
+      mctx.beginPath();
+      pts.forEach((p, i) => (i ? mctx.lineTo(p[0], p[1]) : mctx.moveTo(p[0], p[1])));
+      mctx.closePath();
+      mctx.clip();
+      mctx.drawImage(img, 0, 0);
+      mctx.restore();
+      const recorte = document.createElement("canvas");
+      recorte.width = w; recorte.height = h;
+      recorte.getContext("2d").drawImage(mascara, minX, minY, w, h, 0, 0, w, h);
+      recorte.toBlob((b) => cerrar(b), "image/jpeg", 0.85);
+    };
+  });
+}
+function blobABase64(blob) {
+  return new Promise((res, rej) => {
+    const r = new FileReader();
+    r.onload = () => res(String(r.result).split(",")[1] || "");
+    r.onerror = rej;
+    r.readAsDataURL(blob);
+  });
+}
+async function triageFoto(fid, blobOverride, btn) {
+  const txtOrig = btn ? btn.textContent : "";
+  if (btn) { btn.disabled = true; btn.textContent = "Analizando…"; }
+  try {
+    const original = blobOverride || await blobGet("photo:" + fid);
+    if (!original) throw new Error("No se encontró la foto.");
+    const chico = await comprimir(original, 1024, 0.7);
+    const b64 = await blobABase64(chico);
+    const prompt = `Eres asistente de un ingeniero estructural en inspección post-sísmica ATC-20 en Venezuela (doblete sísmico 24/06/2026, Yaracuy). Observa la foto (si ves un área cubierta de gris uniforme, ignórala: fue delimitada a mano para descartar el fondo) y sugiere:
+1) el tipo de daño visible, ELEGIDO EXACTAMENTE de esta lista: ${DANOS.map((d) => `"${d}"`).join(", ")}
+2) la clasificación ATC-20 de esa zona, ELEGIDA EXACTAMENTE de esta lista: ${ATC.map((a) => `"${a}"`).join(", ")}
+3) una descripción breve (máximo 20 palabras, español técnico) de lo observado.
+Responde ÚNICAMENTE con JSON, sin markdown ni texto extra: {"dano":"...","atc":"...","desc":"..."}`;
+    let r = await llamarClaude(prompt, 300, b64);
+    r = r.replace(/```json|```/g, "").trim();
+    const ini = r.indexOf("{"), fin = r.lastIndexOf("}");
+    if (ini >= 0 && fin > ini) r = r.slice(ini, fin + 1);
+    const data = JSON.parse(r);
+    const sug = {};
+    if (DANOS.includes(data.dano)) sug.dano = data.dano;
+    if (ATC.includes(data.atc)) sug.atc = data.atc;
+    if (typeof data.desc === "string" && data.desc.trim()) sug.desc = data.desc.trim();
+    if (!sug.dano && !sug.atc && !sug.desc) throw new Error("La IA no devolvió una sugerencia utilizable.");
+    sugFoto[fid] = sug;
+    rUnidad();
+  } catch (e) {
+    alert("No se pudo analizar la foto: " + e.message);
+    if (btn) { btn.disabled = false; btn.textContent = txtOrig; }
+  }
 }
 
 /* ================= Sello de fotos exportadas ================= */
@@ -4693,8 +4863,11 @@ function rAjustes() {
     }
   };
 }
-async function llamarClaude(prompt, maxTokens) {
+async function llamarClaude(prompt, maxTokens, imagenBase64) {
   if (!st.apiKey) throw new Error("Configura primero la clave API en Ajustes.");
+  const content = imagenBase64
+    ? [{ type: "image", source: { type: "base64", media_type: "image/jpeg", data: imagenBase64 } }, { type: "text", text: prompt }]
+    : prompt;
   let resp;
   try { resp = await fetch("https://api.anthropic.com/v1/messages", {
     method: "POST",
@@ -4707,7 +4880,7 @@ async function llamarClaude(prompt, maxTokens) {
     body: JSON.stringify({
       model: "claude-sonnet-4-6",
       max_tokens: maxTokens || 800,
-      messages: [{ role: "user", content: prompt }]
+      messages: [{ role: "user", content }]
     })
   }); } catch (eNet) { throw new Error("No se pudo conectar con la API (failed to fetch). Revisa el internet, prueba Wi-Fi o datos, o si la red bloquea api.anthropic.com."); }
   if (!resp.ok) {
