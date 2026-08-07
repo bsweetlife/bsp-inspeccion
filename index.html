@@ -121,8 +121,9 @@
 <script>
 "use strict";
 /* ================= Constantes ================= */
-const VERSION = "3.56";
+const VERSION = "3.57";
 const CHANGELOG = [
+  ["3.57", "La app ahora avisa cuando el teléfono se está quedando sin espacio para fotos y grabaciones, para exportar y borrar inspecciones terminadas a tiempo en vez de quedarse sin poder guardar a mitad de un edificio."],
   ["3.56", "Nuevo tipo de inspección \"Casa\": al crear la inspección puedes elegir Casa en lugar de Edificio, y se arma un solo nivel con los ambientes típicos (sala, comedor, cocina, habitaciones, baños, patio…), sin las zonas de edificio que no aplican (cuarto de máquinas, ascensor, tanque elevado del edificio, etc.). Puedes agregar, quitar o renombrar cuartos, y sumar elementos opcionales (tanque elevado propio, cisterna, garaje, cuarto de servicio…) solo si la casa los tiene."],
   ["3.55", "Las partidas de pintura ya no son solo caucho: al capturarlas escoge el tipo (caucho mate, lavable, exterior, esmalte al agua o sintético, anticorrosivo, epóxica, cal, barniz) y cada tipo se totaliza aparte en el resumen. Además se anota el color de la zona a pintar: al tomar la foto la app propone el color que ve, y lo puede corregir tocando la pared en la foto, escogiendo de la lista de colores o escribiendo el nombre, para cuando la foto se ve gris y la pared es blanca. Los colores salen en el pie de foto, en el resumen y en la exportación."],
   ["3.54", "Reparación de vigas y de columnas con cabillas expuestas: la sección se mide por ancho de la zona y profundidad, en lugar del perímetro; el mortero de reparación se computa ahora por volumen (m³) con la nueva partida 03.11. Nueva compuesta: reparación de techo (losa nervada) con nervios expuestos, que mide el área de losa y suma la superficie de los nervios reparados."],
@@ -1189,6 +1190,29 @@ function ponEstado(t, mal) {
 }
 
 /* ================= Imagen ================= */
+// Aviso de poco espacio: se revisa tras cada foto guardada, no en cada guardar()
+// (el guardado de texto es cada 500 ms y estimate() no hace falta tan seguido).
+let almacenBajo = null;
+let ultimoChequeoAlmacen = 0;
+async function chequearAlmacen() {
+  if (!navigator.storage || !navigator.storage.estimate) return;
+  const ahora = Date.now();
+  if (ahora - ultimoChequeoAlmacen < 60000) return;
+  ultimoChequeoAlmacen = ahora;
+  const antes = almacenBajo;
+  try {
+    const est = await navigator.storage.estimate();
+    const pct = est.quota ? (est.usage / est.quota) * 100 : 0;
+    almacenBajo = pct >= 80 ? { pct, usoMB: est.usage / 1048576, cuotaMB: est.quota / 1048576 } : null;
+  } catch (e) { almacenBajo = null; }
+  if (!!antes !== !!almacenBajo) render();
+}
+function avisoAlmacenHtml() {
+  if (!almacenBajo) return "";
+  const grave = almacenBajo.pct >= 90;
+  return `<p class="aviso" style="background:${grave ? "var(--rojo-bg)" : "var(--ambar-bg)"};color:${grave ? "var(--rojo-tx)" : "var(--ambar-tx)"};padding:10px 12px;border-radius:10px;margin-bottom:10px">
+    ⚠ Poco espacio en el teléfono para fotos y grabaciones (usados ${almacenBajo.usoMB.toFixed(0)} MB de ~${almacenBajo.cuotaMB.toFixed(0)} MB disponibles). Exporta y borra las inspecciones ya terminadas para liberar espacio.</p>`;
+}
 function comprimir(file, maxDim = 1800, calidad = 0.8) {
   return new Promise((res, rej) => {
     const url = URL.createObjectURL(file);
@@ -1583,6 +1607,7 @@ function rCasa() {
     </button>`;
   }).join("");
   $app.innerHTML = `
+    ${avisoAlmacenHtml()}
     <div class="fila" style="margin-bottom:10px">
       <h2 style="flex:1">Niveles</h2>
       <button class="btn-gris" style="width:auto;border-radius:10px" id="bEditar">Editar datos</button>
@@ -2053,6 +2078,7 @@ function rUnidad() {
       </div>
     </div>`).join("");
   $app.innerHTML = `
+    ${avisoAlmacenHtml()}
     <div class="fila" style="margin-bottom:2px">
       <h2 style="flex:1" id="tituloApt">${esc(apt.nombre)}</h2>
       <button class="btn-gris" style="width:auto;border-radius:10px" id="bMover">Mover</button>
@@ -2117,6 +2143,7 @@ function rUnidad() {
       }
     }
     guardar();
+    chequearAlmacen();
     // Forzar repintado inmediato (Android/Chrome a veces no refresca solo)
     requestAnimationFrame(() => requestAnimationFrame(() => rUnidad()));
   };
@@ -4722,6 +4749,7 @@ Responde solo con el párrafo del resumen, sin preámbulos.`;
   }
   await iniciarNube();
   render();
+  chequearAlmacen();
   document.getElementById("hdrNube").onclick = () => nav({ n: "ajustes" });
   if ("serviceWorker" in navigator) {
     navigator.serviceWorker.register("sw.js").then((reg) => reg.update()).catch(() => {});
