@@ -121,8 +121,9 @@
 <script>
 "use strict";
 /* ================= Constantes ================= */
-const VERSION = "3.58";
+const VERSION = "3.59";
 const CHANGELOG = [
+  ["3.59", "La app ahora guarda, dentro de cada inspección, si aceptaste o descartaste cada sugerencia de la IA sobre daño y ATC-20 — para más adelante poder revisar qué tan seguido acierta."],
   ["3.58", "La IA ahora puede sugerir el tipo de daño y la clasificación ATC-20 de una foto: el botón \"Analizar con IA\" en cada foto propone una sugerencia que hay que confirmar (nunca se aplica sola). Si la foto tiene mucho alrededor que puede confundir el análisis, \"Delimitar y analizar\" deja trazar a mano el contorno de lo que interesa antes de mandarlo a analizar."],
   ["3.57", "La app ahora avisa cuando el teléfono se está quedando sin espacio para fotos y grabaciones, para exportar y borrar inspecciones terminadas a tiempo en vez de quedarse sin poder guardar a mitad de un edificio."],
   ["3.56", "Nuevo tipo de inspección \"Casa\": al crear la inspección puedes elegir Casa en lugar de Edificio, y se arma un solo nivel con los ambientes típicos (sala, comedor, cocina, habitaciones, baños, patio…), sin las zonas de edificio que no aplican (cuarto de máquinas, ascensor, tanque elevado del edificio, etc.). Puedes agregar, quitar o renombrar cuartos, y sumar elementos opcionales (tanque elevado propio, cisterna, garaje, cuarto de servicio…) solo si la casa los tiene."],
@@ -2195,6 +2196,7 @@ function rUnidad() {
   $app.querySelectorAll("[data-sugap]").forEach((bt) => (bt.onclick = () => {
     const fid = bt.dataset.sugap, sug = sugFoto[fid], f = u.fotos.find((x) => x.id === fid);
     if (f && sug) {
+      registrarDecisionIA(fid, sug, "aplicada", f);
       if (sug.dano) f.dano = sug.dano;
       if (sug.atc) f.atc = sug.atc;
       if (sug.desc && !f.desc) f.desc = sug.desc;
@@ -2202,7 +2204,12 @@ function rUnidad() {
     delete sugFoto[fid];
     guardar(); rUnidad();
   }));
-  $app.querySelectorAll("[data-sugdesc]").forEach((bt) => (bt.onclick = () => { delete sugFoto[bt.dataset.sugdesc]; rUnidad(); }));
+  $app.querySelectorAll("[data-sugdesc]").forEach((bt) => (bt.onclick = () => {
+    const fid = bt.dataset.sugdesc, sug = sugFoto[fid], f = u.fotos.find((x) => x.id === fid);
+    if (f && sug) registrarDecisionIA(fid, sug, "descartada", f);
+    delete sugFoto[fid];
+    guardar(); rUnidad();
+  }));
   activarZoom($app);
   $app.querySelectorAll("[data-delfoto]").forEach((bt) => (bt.onclick = async () => {
     if (!confirm("¿Eliminar esta foto?")) return;
@@ -2517,6 +2524,20 @@ Responde ÚNICAMENTE con JSON, sin markdown ni texto extra: {"dano":"...","atc":
     alert("No se pudo analizar la foto: " + e.message);
     if (btn) { btn.disabled = false; btn.textContent = txtOrig; }
   }
+}
+// Registro de si el inspector aceptó o no cada sugerencia, para más adelante
+// poder ver qué tan seguido acierta la IA. Vive en la inspección (se guarda y
+// sincroniza igual que cualquier otro dato) porque es la unidad natural para
+// revisarlo — un log global aparte necesitaría su propio manejo de sync.
+function registrarDecisionIA(fotoId, sug, decision, f) {
+  st.insp.iaLog = st.insp.iaLog || [];
+  st.insp.iaLog.push({
+    ts: new Date().toISOString(),
+    fotoId,
+    decision, // "aplicada" | "descartada"
+    sugerido: { dano: sug.dano || "", atc: sug.atc || "", desc: sug.desc || "" },
+    previo: { dano: f.dano || "", atc: f.atc || "" }
+  });
 }
 
 /* ================= Sello de fotos exportadas ================= */
