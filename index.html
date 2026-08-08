@@ -121,8 +121,9 @@
 <script>
 "use strict";
 /* ================= Constantes ================= */
-const VERSION = "3.59";
+const VERSION = "3.60";
 const CHANGELOG = [
+  ["3.60", "En Cómputos métricos, cada foto que tomes para una línea ahora se puede analizar con IA igual que en la inspección: el botón \"Analizar con IA\" sugiere la partida, el elemento y una observación breve, y \"Delimitar y analizar\" deja acotar a mano la zona de interés antes de mandarla a analizar. La sugerencia siempre se muestra para confirmar, nunca se aplica sola — útil para cuando vas a medir un edificio que no has inspeccionado."],
   ["3.59", "La app ahora guarda, dentro de cada inspección, si aceptaste o descartaste cada sugerencia de la IA sobre daño y ATC-20 — para más adelante poder revisar qué tan seguido acierta."],
   ["3.58", "La IA ahora puede sugerir el tipo de daño y la clasificación ATC-20 de una foto: el botón \"Analizar con IA\" en cada foto propone una sugerencia que hay que confirmar (nunca se aplica sola). Si la foto tiene mucho alrededor que puede confundir el análisis, \"Delimitar y analizar\" deja trazar a mano el contorno de lo que interesa antes de mandarlo a analizar."],
   ["3.57", "La app ahora avisa cuando el teléfono se está quedando sin espacio para fotos y grabaciones, para exportar y borrar inspecciones terminadas a tiempo en vez de quedarse sin poder guardar a mitad de un edificio."],
@@ -2196,7 +2197,7 @@ function rUnidad() {
   $app.querySelectorAll("[data-sugap]").forEach((bt) => (bt.onclick = () => {
     const fid = bt.dataset.sugap, sug = sugFoto[fid], f = u.fotos.find((x) => x.id === fid);
     if (f && sug) {
-      registrarDecisionIA(fid, sug, "aplicada", f);
+      registrarDecisionIA(fid, { dano: sug.dano || "", atc: sug.atc || "", desc: sug.desc || "" }, "aplicada", { dano: f.dano || "", atc: f.atc || "" });
       if (sug.dano) f.dano = sug.dano;
       if (sug.atc) f.atc = sug.atc;
       if (sug.desc && !f.desc) f.desc = sug.desc;
@@ -2206,7 +2207,7 @@ function rUnidad() {
   }));
   $app.querySelectorAll("[data-sugdesc]").forEach((bt) => (bt.onclick = () => {
     const fid = bt.dataset.sugdesc, sug = sugFoto[fid], f = u.fotos.find((x) => x.id === fid);
-    if (f && sug) registrarDecisionIA(fid, sug, "descartada", f);
+    if (f && sug) registrarDecisionIA(fid, { dano: sug.dano || "", atc: sug.atc || "", desc: sug.desc || "" }, "descartada", { dano: f.dano || "", atc: f.atc || "" });
     delete sugFoto[fid];
     guardar(); rUnidad();
   }));
@@ -2529,15 +2530,60 @@ Responde ÚNICAMENTE con JSON, sin markdown ni texto extra: {"dano":"...","atc":
 // poder ver qué tan seguido acierta la IA. Vive en la inspección (se guarda y
 // sincroniza igual que cualquier otro dato) porque es la unidad natural para
 // revisarlo — un log global aparte necesitaría su propio manejo de sync.
-function registrarDecisionIA(fotoId, sug, decision, f) {
+// sugerido/previo son objetos libres: dano/atc/desc para fotos de inspección,
+// partida/elemento/obs para fotos de líneas de cómputo.
+function registrarDecisionIA(fotoId, sugerido, decision, previo) {
   st.insp.iaLog = st.insp.iaLog || [];
   st.insp.iaLog.push({
     ts: new Date().toISOString(),
     fotoId,
     decision, // "aplicada" | "descartada"
-    sugerido: { dano: sug.dano || "", atc: sug.atc || "", desc: sug.desc || "" },
-    previo: { dano: f.dano || "", atc: f.atc || "" }
+    sugerido,
+    previo
   });
+}
+
+/* ================= Triage de fotos con IA (Cómputos) =================
+   Mismo patrón que triageFoto() arriba, pero para las fotos que se adjuntan
+   a una línea de cómputo métrico: en vez de daño/ATC, sugiere la partida del
+   catálogo, una etiqueta de elemento y una observación breve. Existe aparte
+   porque el modelo de datos de una línea de cómputo no tiene daño/ATC, y
+   porque los cómputos se hacen a veces en edificios sin inspección ATC-20
+   asociada. Reutiliza abrirSelectorArea() y blobABase64() de arriba.
+   La sugerencia se muestra para confirmar, nunca se aplica sola. */
+let sugCmpFoto = {}; // fotoId -> {partida, elemento, obs} — solo en memoria, no persiste
+
+async function triageFotoCmp(fid, blobOverride, btn) {
+  const txtOrig = btn ? btn.textContent : "";
+  if (btn) { btn.disabled = true; btn.textContent = "Analizando…"; }
+  try {
+    const original = blobOverride || await blobGet("photo:" + fid);
+    if (!original) throw new Error("No se encontró la foto.");
+    const chico = await comprimir(original, 1024, 0.7);
+    const b64 = await blobABase64(chico);
+    const cat = CMP_CAT.filter((p) => p.codigo !== "99.99").map((p) => p.codigo + " | " + p.descripcion + " | " + p.unidad).join("\n");
+    const prompt = `Eres asistente de un ingeniero estructural armando el computo metrico de reparacion tras un sismo en Venezuela. Observa la foto (si ves un area cubierta de gris uniforme, ignorala: fue delimitada a mano para descartar el fondo) y sugiere:
+1) la partida de reparacion que mejor corresponde a lo que se ve, ELEGIDA EXACTAMENTE de este catalogo (codigo | descripcion | unidad):
+${cat}
+2) una etiqueta breve del elemento (ejemplo: "Columna C-4", "Pared bano principal"), maximo 6 palabras.
+3) una observacion breve (maximo 20 palabras, espanol tecnico) de lo observado y el criterio de medicion si aplica.
+Responde UNICAMENTE con JSON, sin markdown ni texto extra: {"partida":"NN.NN","elemento":"...","obs":"..."}`;
+    let r = await llamarClaude(prompt, 300, b64);
+    r = r.replace(/```json|```/g, "").trim();
+    const ini = r.indexOf("{"), fin = r.lastIndexOf("}");
+    if (ini >= 0 && fin > ini) r = r.slice(ini, fin + 1);
+    const data = JSON.parse(r);
+    const sug = {};
+    if (cmpPartida(data.partida)) sug.partida = data.partida;
+    if (typeof data.elemento === "string" && data.elemento.trim()) sug.elemento = data.elemento.trim();
+    if (typeof data.obs === "string" && data.obs.trim()) sug.obs = data.obs.trim();
+    if (!sug.partida && !sug.elemento && !sug.obs) throw new Error("La IA no devolvió una sugerencia utilizable.");
+    sugCmpFoto[fid] = sug;
+    cmpPintarFotos();
+  } catch (e) {
+    alert("No se pudo analizar la foto: " + e.message);
+    if (btn) { btn.disabled = false; btn.textContent = txtOrig; }
+  }
 }
 
 /* ================= Sello de fotos exportadas ================= */
@@ -3754,23 +3800,61 @@ async function cmpPintarFotos() {
   for (let i = 0; i < cmpBorrador.fotos.length; i++) {
     const f = cmpBorrador.fotos[i];
     const u = await urlFoto(f.id);
+    const sug = sugCmpFoto[f.id];
     const d = document.createElement("div");
-    d.className = "lista-foto";
-    d.innerHTML = `<img class="mini" src="${u || ""}" alt="" data-anotarb="${f.id}" style="cursor:pointer" />
-      <span style="flex:1">Foto ${i + 1}${f.geo ? `<br /><span class="aviso">📍 ${geoTxt(f.geo)}</span>` : ""}</span>
-      <button class="btn btn-linea" style="width:auto;padding:6px 11px;margin-right:6px" data-anotarb="${f.id}">✏️ Anotar</button>
-      <button class="btn btn-rojo-linea" style="width:auto;padding:6px 12px" data-quitar="${i}">Quitar</button>`;
+    d.innerHTML = `<div class="lista-foto">
+        <img class="mini" src="${u || ""}" alt="" data-anotarb="${f.id}" style="cursor:pointer" />
+        <span style="flex:1">Foto ${i + 1}${f.geo ? `<br /><span class="aviso">📍 ${geoTxt(f.geo)}</span>` : ""}</span>
+        <button class="btn btn-linea" style="width:auto;padding:6px 11px;margin-right:6px" data-anotarb="${f.id}">✏️ Anotar</button>
+        <button class="btn btn-rojo-linea" style="width:auto;padding:6px 12px" data-quitar="${i}">Quitar</button>
+      </div>
+      ${st.apiKey ? `<div class="fila" style="gap:8px;margin:4px 0 8px">
+        <button class="btn-linea" style="font-size:12px;padding:8px" data-cmptriage="${f.id}">🔎 Analizar con IA</button>
+        <button class="btn-linea" style="font-size:12px;padding:8px" data-cmptriagearea="${f.id}">✂️ Delimitar y analizar</button>
+      </div>` : ""}
+      ${sug ? `<div class="tarjeta" style="padding:10px;margin:0 0 10px;background:var(--ambar-bg);border-color:var(--ambar)">
+        <div class="etiq" style="color:var(--ambar-tx);margin-top:0">Sugerencia de la IA</div>
+        <p style="margin:4px 0 8px;font-size:13px">${esc([sug.partida ? sug.partida + " " + ((cmpPartida(sug.partida) || {}).descripcion || "") : "", sug.elemento, sug.obs].filter(Boolean).join(" · "))}</p>
+        <div class="fila" style="gap:8px">
+          <button class="btn btn-negro" style="font-size:13px;padding:8px" data-cmpsugap="${f.id}">Aplicar</button>
+          <button class="btn-gris" style="font-size:13px;padding:8px" data-cmpsugdesc="${f.id}">Descartar</button>
+        </div>
+      </div>` : ""}`;
     cont.appendChild(d);
   }
   cont.querySelectorAll("[data-quitar]").forEach((b) => {
     b.onclick = async () => {
       const i = Number(b.dataset.quitar);
       await blobDel("photo:" + cmpBorrador.fotos[i].id);
+      delete sugCmpFoto[cmpBorrador.fotos[i].id];
       cmpBorrador.fotos.splice(i, 1);
       cmpPintarFotos();
     };
   });
   cont.querySelectorAll("[data-anotarb]").forEach((b) => (b.onclick = () => abrirEditorFoto(b.dataset.anotarb, cmpPintarFotos)));
+  cont.querySelectorAll("[data-cmptriage]").forEach((b) => (b.onclick = () => triageFotoCmp(b.dataset.cmptriage, null, b)));
+  cont.querySelectorAll("[data-cmptriagearea]").forEach((b) => (b.onclick = async () => {
+    const fid = b.dataset.cmptriagearea;
+    const recorte = await abrirSelectorArea(fid);
+    if (recorte) triageFotoCmp(fid, recorte, b);
+  }));
+  cont.querySelectorAll("[data-cmpsugap]").forEach((b) => (b.onclick = () => {
+    const fid = b.dataset.cmpsugap, sug = sugCmpFoto[fid];
+    if (sug) {
+      registrarDecisionIA(fid, { partida: sug.partida || "", elemento: sug.elemento || "", obs: sug.obs || "" }, "aplicada", { partida: cmpBorrador.partida || "" });
+      if (sug.partida) { cmpModo = "simple"; cmpBorrador.partida = sug.partida; cmpBorrador.dims = {}; cmpBorrador.atipicoOk = false; }
+      if (sug.elemento && !cmpBorrador.elemento) cmpBorrador.elemento = sug.elemento;
+      if (sug.obs && !cmpBorrador.obs) cmpBorrador.obs = sug.obs;
+    }
+    delete sugCmpFoto[fid];
+    guardar(); rComputos();
+  }));
+  cont.querySelectorAll("[data-cmpsugdesc]").forEach((b) => (b.onclick = () => {
+    const fid = b.dataset.cmpsugdesc, sug = sugCmpFoto[fid];
+    if (sug) registrarDecisionIA(fid, { partida: sug.partida || "", elemento: sug.elemento || "", obs: sug.obs || "" }, "descartada", { partida: cmpBorrador.partida || "" });
+    delete sugCmpFoto[fid];
+    guardar(); cmpPintarFotos();
+  }));
 }
 
 function cmpCapturar() {
