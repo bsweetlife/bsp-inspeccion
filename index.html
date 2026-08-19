@@ -121,8 +121,9 @@
 <script>
 "use strict";
 /* ================= Constantes ================= */
-const VERSION = "3.73";
+const VERSION = "3.74";
 const CHANGELOG = [
+  ["3.74", "\"Crear con IA\" ahora también está disponible desde Ajustes → Catálogo personal, no solo dentro de Cómputos métricos — útil para armar el catálogo con calma en vez de sobre la marcha. Ahí no hay línea que aplicarlo, así que simplemente crea la partida o compuesta y queda lista para usarse."],
   ["3.73", "Nueva partida 03.14 (vaciado de concreto en elementos menores nuevos: brocales, poyos, repisas, dinteles, umbrales, por volumen). Antes, al pedirle a \"Crear con IA\" algo como \"construcción de brocal\", no había ningún código en m³ que combinar y la compuesta salía midiendo solo el largo, sin ancho ni alto. Si ya creaste una así, bórrala en Ajustes → Catálogo personal y descríbela de nuevo — ahora la IA encuentra la 03.14 y arma la compuesta completa."],
   ["3.72", "Botón \"Copiar\" en Mis inspecciones: crea una inspección nueva con los mismos niveles y unidades (nombres) y los datos del edificio (nombre, dirección, sistema constructivo, etc.), sin copiar fotos, ATC-20, cómputos ni el número de informe — útil para un edificio vecino o del mismo nombre, sin escribir todo de nuevo."],
   ["3.71", "Las líneas capturadas en Cómputos métricos muestran ahora una miniatura de su primera foto — tóquela para ampliarla o anotarla, igual que en \"ver detalle\"."],
@@ -1173,16 +1174,20 @@ function cmpDictadoHtml() {
    ya existe como compuesta, o hace falta crear una de las dos — la propuesta
    siempre se muestra para confirmar antes de guardarla, nunca se aplica sola. */
 const CAT_UNIDADES = [["und", "und"], ["m2", "m²"], ["m", "m (lineal)"], ["m3", "m³"], ["kg", "kg"]];
-function catCrearHtml() {
-  if (!catCrear.abierto) return `<button class="btn btn-linea" id="catCrearAbrir" style="margin-bottom:10px">➕ No la encuentro: crear con IA</button>`;
+function catCrearHtml(contexto) {
+  if (!catCrear.abierto) {
+    const texto = contexto === "catalogo" ? "➕ Crear partida con IA" : "➕ No la encuentro: crear con IA";
+    return `<button class="btn btn-linea" id="catCrearAbrir" data-catcontexto="${contexto}" style="margin-bottom:10px">${texto}</button>`;
+  }
   const r = catCrear.resultado;
+  const enComputos = catCrear.contexto !== "catalogo";
   if (r && r.tipo === "existe_simple") {
     const p = cmpPartida(r.codigo);
     return `<div class="tarjeta" style="background:var(--ambar-bg);border-color:var(--ambar);margin-bottom:10px">
       <div class="etiq" style="color:var(--ambar-tx)">Ya existe en el catálogo</div>
       <p class="aviso" style="margin-top:0"><b>${esc(r.codigo)}</b> ${esc(p ? p.descripcion : "")}</p>
-      <div class="grid2"><button class="btn btn-negro" data-catusesimple="${esc(r.codigo)}">Usar esta partida</button>
-      <button class="btn btn-linea" id="catCrearCerrar">Cerrar</button></div>
+      ${enComputos ? `<div class="grid2"><button class="btn btn-negro" data-catusesimple="${esc(r.codigo)}">Usar esta partida</button>
+      <button class="btn btn-linea" id="catCrearCerrar">Cerrar</button></div>` : `<button class="btn btn-linea" id="catCrearCerrar">Cerrar</button>`}
     </div>`;
   }
   if (r && r.tipo === "existe_compuesta") {
@@ -1190,8 +1195,8 @@ function catCrearHtml() {
     return `<div class="tarjeta" style="background:var(--ambar-bg);border-color:var(--ambar);margin-bottom:10px">
       <div class="etiq" style="color:var(--ambar-tx)">Ya existe en el catálogo</div>
       <p class="aviso" style="margin-top:0">Compuesta: <b>${esc(a ? a.nombre : r.id)}</b></p>
-      <div class="grid2"><button class="btn btn-negro" data-catusecomp="${esc(r.id)}">Usar esta compuesta</button>
-      <button class="btn btn-linea" id="catCrearCerrar">Cerrar</button></div>
+      ${enComputos ? `<div class="grid2"><button class="btn btn-negro" data-catusecomp="${esc(r.id)}">Usar esta compuesta</button>
+      <button class="btn btn-linea" id="catCrearCerrar">Cerrar</button></div>` : `<button class="btn btn-linea" id="catCrearCerrar">Cerrar</button>`}
     </div>`;
   }
   if (r && r.tipo === "nueva_simple") {
@@ -1201,7 +1206,7 @@ function catCrearHtml() {
       <label class="campo"><span>Descripción</span><input id="catNDesc" value="${esc(r.descripcion)}" /></label>
       <label class="campo"><span>Unidad</span><select id="catNUni">${CAT_UNIDADES.map(([v, t]) => `<option value="${v}" ${r.unidad === v ? "selected" : ""}>${t}</option>`).join("")}</select></label>
       <label class="campo"><span>Notas / criterio de medición</span><input id="catNNotas" value="${esc(r.notas || "")}" /></label>
-      <div class="grid2"><button class="btn btn-negro" id="catCrearConfirmar">Crear y usar</button>
+      <div class="grid2"><button class="btn btn-negro" id="catCrearConfirmar">${enComputos ? "Crear y usar" : "Crear"}</button>
       <button class="btn btn-linea" id="catCrearCerrar">Descartar</button></div>
     </div>`;
   }
@@ -1212,7 +1217,7 @@ function catCrearHtml() {
       <p class="aviso" style="margin-top:0">No está en el catálogo. Combina partidas que ya existen, medida por ${r.base === "largo" ? "longitud" : "área (largo × alto)"}. Queda guardada para siempre.</p>
       <label class="campo"><span>Nombre</span><input id="catNNombre" value="${esc(r.nombre)}" /></label>
       <p class="aviso" style="margin-bottom:0"><b>Incluye:</b> ${esc(detalle)}</p>
-      <div class="grid2" style="margin-top:8px"><button class="btn btn-negro" id="catCrearConfirmar">Crear y usar</button>
+      <div class="grid2" style="margin-top:8px"><button class="btn btn-negro" id="catCrearConfirmar">${enComputos ? "Crear y usar" : "Crear"}</button>
       <button class="btn btn-linea" id="catCrearCerrar">Descartar</button></div>
     </div>`;
   }
@@ -1278,11 +1283,17 @@ Responde UNICAMENTE con JSON, sin markdown ni texto extra, con UNA de estas 4 fo
     } else {
       throw new Error("La IA no devolvió una propuesta utilizable.");
     }
-    rComputos();
+    catCrearRepintar();
   } catch (e) {
     alert("No se pudo interpretar: " + e.message);
     if (btn) { btn.disabled = false; btn.textContent = "Buscar / crear con IA"; }
   }
+}
+// "Crear con IA" vive tanto en Cómputos métricos (para aplicar lo creado a la
+// línea que se está armando) como en Ajustes → Catálogo personal (para crear
+// sin tener una línea abierta). catCrear.contexto distingue los dos casos.
+function catCrearRepintar() {
+  if (catCrear.contexto === "catalogo") rCatalogo(); else rComputos();
 }
 function catUsarSimple(codigo) {
   cmpModo = "simple"; cmpBorrador.partida = codigo; cmpBorrador.dims = {};
@@ -1303,7 +1314,8 @@ function catCrearNuevaSimple() {
   catPersonal.proxP++;
   catPersonal.partidas.push({ codigo, grupo: "Personalizadas", descripcion: desc, unidad: uni, notas: notas || "Partida personalizada creada con IA." });
   catPersonalGuardarYSync();
-  catUsarSimple(codigo);
+  if (catCrear.contexto === "catalogo") { catCrear = { abierto: false, texto: "", cargando: false, resultado: null }; rCatalogo(); }
+  else catUsarSimple(codigo);
 }
 function catCrearNuevaCompuesta() {
   const nombre = String(document.getElementById("catNNombre").value || "").trim();
@@ -1315,13 +1327,14 @@ function catCrearNuevaCompuesta() {
   catPersonal.proxC++;
   catPersonal.compuestas.push(obj);
   catPersonalGuardarYSync();
-  catUsarCompuesta(id);
+  if (catCrear.contexto === "catalogo") { catCrear = { abierto: false, texto: "", cargando: false, resultado: null }; rCatalogo(); }
+  else catUsarCompuesta(id);
 }
-function catCrearWire() {
+function catCrearWire(contexto) {
   const abrir = document.getElementById("catCrearAbrir");
-  if (abrir) abrir.onclick = () => { catCrear = { abierto: true, texto: "", cargando: false, resultado: null }; rComputos(); };
+  if (abrir) abrir.onclick = () => { catCrear = { abierto: true, texto: "", cargando: false, resultado: null, contexto }; catCrearRepintar(); };
   const cerrar = document.getElementById("catCrearCerrar");
-  if (cerrar) cerrar.onclick = () => { catCrear = { abierto: false, texto: "", cargando: false, resultado: null }; rComputos(); };
+  if (cerrar) cerrar.onclick = () => { catCrear = { abierto: false, texto: "", cargando: false, resultado: null, contexto }; catCrearRepintar(); };
   const txt = document.getElementById("catCrearTxt");
   if (txt) txt.oninput = (e) => { catCrear.texto = e.target.value; };
   const ir = document.getElementById("catCrearIr");
@@ -1385,12 +1398,14 @@ function catFilaCompuesta(a) {
 }
 function rCatalogo() {
   $app.innerHTML = `
-    <p class="sub">Partidas y compuestas creadas con "Crear con IA" en Cómputos métricos. Eliminar o editar aquí no cambia las líneas que ya guardaste en tus inspecciones — solo lo que uses de ahora en adelante.</p>
+    <p class="sub">Partidas y compuestas creadas con "Crear con IA". Eliminar o editar aquí no cambia las líneas que ya guardaste en tus inspecciones — solo lo que uses de ahora en adelante.</p>
+    ${catCrearHtml("catalogo")}
     <div class="etiq">Partidas simples (${catPersonal.partidas.length})</div>
     ${catPersonal.partidas.length ? catPersonal.partidas.map(catFilaPartida).join("") : `<p class="aviso">Todavía no has creado ninguna.</p>`}
     <div class="etiq" style="margin-top:14px">Compuestas (${catPersonal.compuestas.length})</div>
     ${catPersonal.compuestas.length ? catPersonal.compuestas.map(catFilaCompuesta).join("") : `<p class="aviso">Todavía no has creado ninguna.</p>`}`;
 
+  catCrearWire("catalogo");
   $app.querySelectorAll("[data-cateditarpartida]").forEach((b) => (b.onclick = () => { catEditando = { tipo: "partida", codigo: b.dataset.cateditarpartida }; rCatalogo(); }));
   $app.querySelectorAll("[data-cateditarcompuesta]").forEach((b) => (b.onclick = () => { catEditando = { tipo: "compuesta", id: b.dataset.cateditarcompuesta }; rCatalogo(); }));
   const cancelar = document.getElementById("catCancelarEdit");
@@ -5208,7 +5223,7 @@ function rComputos() {
       ${cmpDictLineasHtml()}
       ${sugHtml}
       <label class="campo"><span>Elemento</span><input id="cmElem" value="${esc(cmpBorrador.elemento || "")}" placeholder="Columna C-4" /></label>
-      ${catCrearHtml()}
+      ${catCrearHtml("computos")}
 
       <div id="cmSimple" ${simple ? "" : 'style="display:none"'}>
         <label class="campo"><span>Partida</span><select id="cmPart">${opts}</select></label>
@@ -5277,7 +5292,7 @@ function rComputos() {
   cmpPintarFotos();
   cmpPintarUsarFoto();
   cmpCargarFotos();
-  catCrearWire();
+  catCrearWire("computos");
 
   const _elModo = document.getElementById("cmModo");
   if (_elModo) _elModo.querySelectorAll("[data-modo]").forEach((btn) => {
@@ -5578,7 +5593,7 @@ function rAjustes() {
     </div>
     <div class="tarjeta">
       <div class="etiq">📋 Catálogo personal</div>
-      <p class="aviso" style="margin-top:0">Partidas y compuestas que creaste con "Crear con IA" en Cómputos métricos. Se sincronizan con tu cuenta.</p>
+      <p class="aviso" style="margin-top:0">Partidas y compuestas creadas con "Crear con IA" — desde aquí o desde Cómputos métricos. Se sincronizan con tu cuenta.</p>
       <button class="btn btn-linea" id="bCatalogo">Ver catálogo personal (${catPersonal.partidas.length + catPersonal.compuestas.length})</button>
     </div>
     <p class="sub">Conexión opcional con Claude vía API para asistencia de redacción en campo.</p>
