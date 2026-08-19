@@ -121,8 +121,9 @@
 <script>
 "use strict";
 /* ================= Constantes ================= */
-const VERSION = "3.64";
+const VERSION = "3.65";
 const CHANGELOG = [
+  ["3.65", "Las compuestas nuevas que arma la IA (\"Crear con IA\" y \"Dictar tareas\") ahora sí pueden incluir mortero de reparación por volumen (03.11) cuando hace falta, con su campo de Profundidad — antes esa partida se quedaba afuera con una nota de \"agregarla aparte\", aunque fuera la más importante del trabajo (el caso típico: reparación de dintel con cabillas expuestas)."],
   ["3.64", "Arreglado: \"Crear con IA\" (y las demás respuestas de la IA — dictado, análisis de foto) a veces fallaba con \"No se pudo interpretar\" si la IA agregaba una nota después del JSON, aunque se le pidiera responder solo JSON. Ahora se toma el primer bloque JSON completo y se ignora lo que venga después, en vez de cortar hasta la última llave del texto."],
   ["3.63", "Catálogo personal: en Cómputos métricos, el botón \"No la encuentro: crear con IA\" (junto a Línea simple y Partida compuesta) deja describir una partida que no está en el catálogo. La IA revisa todo lo que ya existe (incluidas tus propias partidas anteriores) y, si no hay nada parecido, propone crear una nueva simple o compuesta — siempre para confirmar antes de guardarla. Una vez creada queda disponible para siempre, en todas tus inspecciones y sincronizada entre tus dispositivos, sin tener que describirla de nuevo cada vez."],
   ["3.62", "Cuatro compuestas nuevas en Cómputos métricos: reparación de techo (losa maciza) y de muro o pantalla estructural con cabillas expuestas (igual que columna/viga), repello de piso de concreto sin cabillas, y remoción y fabricación de paño de piso. Cada unidad tiene ahora un botón \"Agregar cómputo aquí\" que va directo a Cómputos métricos con el nivel y la zona ya puestos, y el botón de volver regresa a esa misma unidad. En Medición sobre fotografía: tocar cerca de un punto ya puesto ahora lo arrastra para ajustarlo en vez de crear una línea nueva (para sumar un punto se usa el botón \"+ Agregar punto\"), y escribir la longitud de referencia o de control ya no le quita el foco al recuadro en cada tecla."],
@@ -1006,23 +1007,35 @@ const cmpCompuesta = (id) => (id === "__medida" && cmpMedidaDef) ? cmpMedidaDef 
 // alto) o por longitud. Es la base tanto del dictado de una sola vez
 // (cmpArmarMedida, id "__medida") como de las compuestas nuevas que se crean
 // con IA para quedar guardadas en el catálogo personal (catCrearNuevaCompuesta).
+//
+// Un código en m3 (como 03.11, mortero de reparación por volumen) solo puede
+// combinarse cuando la compuesta es por área: ahí se agrega "Profundidad" como
+// campo aparte (igual que en columna/viga/muro) y el volumen sale de largo ×
+// ancho × profundidad. Por eso el campo interno se llama "ancho" aunque se
+// muestre como "Alto (m)": cmpBaseDe() calcula el volumen buscando ese nombre
+// de campo exacto. En una compuesta por longitud no hay "ancho" que multiplicar,
+// así que un código en m3 ahí queda "aparte" en vez de calcular mal.
 function catArmarCompuestaObjeto(id, nombre, base, codes) {
   const esArea = base !== "largo";
   const comps = [], aparte = [];
+  let usaVolumen = false;
   for (const cod of codes) {
     const p = cmpPartida(cod);
     if (!p) continue;
-    if (p.unidad === "m") comps.push({ partida: cod, factor: 1, base: "largo", nota: p.descripcion });
+    if (esArea && p.unidad === "m3") { comps.push({ partida: cod, factor: 1, base: "volumen", unidad: "m3", nota: p.descripcion }); usaVolumen = true; }
+    else if (p.unidad === "m") comps.push({ partida: cod, factor: 1, base: "largo", nota: p.descripcion });
     else if (p.unidad === "m2") comps.push({ partida: cod, factor: 1, base: "area", nota: p.descripcion });
     else aparte.push(p.codigo + " " + p.descripcion + " (" + CMP_UNI[p.unidad] + ")");
   }
+  const campos = esArea ? ["cantidad", "largo", "ancho"] : ["cantidad", "largo"];
+  const etiquetas = esArea ? { cantidad: "N.° de elementos", largo: "Largo (m)", ancho: "Alto (m)" } : { cantidad: "N.° de elementos", largo: "Longitud (m)" };
+  if (usaVolumen) { campos.push("profundidad"); etiquetas.profundidad = "Profundidad (m)"; }
   return {
-    id, nombre,
-    campos: esArea ? ["cantidad", "largo", "alto"] : ["cantidad", "largo"],
-    etiquetas: esArea ? { cantidad: "N.° de elementos", largo: "Largo (m)", alto: "Alto (m)" } : { cantidad: "N.° de elementos", largo: "Longitud (m)" },
+    id, nombre, campos, etiquetas,
     magnitud: esArea ? "Área" : "Longitud",
     unidad: esArea ? "m2" : "m",
     baseCampo: esArea ? undefined : "largo",
+    camposInfo: usaVolumen ? ["profundidad"] : undefined,
     nota: aparte.length ? "Aparte, agrégalas como líneas simples: " + aparte.join("; ") + "." : "",
     componentes: comps
   };
