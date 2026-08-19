@@ -121,8 +121,9 @@
 <script>
 "use strict";
 /* ================= Constantes ================= */
-const VERSION = "3.75";
+const VERSION = "3.76";
 const CHANGELOG = [
+  ["3.76", "\"+ Guardar y agregar otra partida (misma zona)\" ahora también está en Partida compuesta, no solo en Línea simple: sirve para encadenar, por ejemplo, una compuesta con una partida simple suelta, o dos compuestas seguidas en el mismo elemento. La foto se conserva igual que en modo simple."],
   ["3.75", "Arreglado: al tocar \"+ Guardar y agregar otra partida (misma zona)\", la foto que ya habías tomado desaparecía en vez de quedar disponible para la siguiente partida. Ahora se conserva (con una copia independiente, para que no se pierda la de la partida ya guardada si luego quitas la del borrador)."],
   ["3.74", "\"Crear con IA\" ahora también está disponible desde Ajustes → Catálogo personal, no solo dentro de Cómputos métricos — útil para armar el catálogo con calma en vez de sobre la marcha. Ahí no hay línea que aplicarlo, así que simplemente crea la partida o compuesta y queda lista para usarse."],
   ["3.73", "Nueva partida 03.14 (vaciado de concreto en elementos menores nuevos: brocales, poyos, repisas, dinteles, umbrales, por volumen). Antes, al pedirle a \"Crear con IA\" algo como \"construcción de brocal\", no había ningún código en m³ que combinar y la compuesta salía midiendo solo el largo, sin ancho ni alto. Si ya creaste una así, bórrala en Ajustes → Catálogo personal y descríbela de nuevo — ahora la IA encuentra la 03.14 y arma la compuesta completa."],
@@ -4763,7 +4764,7 @@ function cmpActualizarComp() {
   }
 }
 
-function cmpGuardarCompuesta() {
+async function cmpGuardarCompuesta(mantenerZona) {
   const c = cmpDe(st.insp);
   const a = cmpCompuesta(cmpComp.id);
   cmpCapturar();
@@ -4833,11 +4834,29 @@ function cmpGuardarCompuesta() {
   }
 
   cmpUltObs = String(cmpBorrador.obs || "").trim() || cmpUltObs;
-  cmpBorrador.fotos = [];
-  cmpBorrador.elemento = "";
+  if (mantenerZona) {
+    // Igual que en "+ Otra partida" de modo simple: la foto se copia a un id
+    // nuevo en vez de conservar el mismo, para que "Quitar" sobre el borrador
+    // que sigue no borre también la foto de las partidas recién guardadas
+    // (mismo blob si compartieran id).
+    const fotosNuevas = [];
+    for (const f of cmpBorrador.fotos) {
+      const blob = await blobGet("photo:" + f.id);
+      if (!blob) continue;
+      const nuevoId = uid();
+      await blobSet("photo:" + nuevoId, blob);
+      const _cf = { id: nuevoId, ts: new Date().toISOString() };
+      if (f.geo) _cf.geo = f.geo;
+      fotosNuevas.push(_cf);
+    }
+    cmpBorrador.fotos = fotosNuevas;
+  } else {
+    cmpBorrador.fotos = [];
+    cmpBorrador.elemento = "";
+  }
   cmpBorrador.obs = "";
   cmpOlvidarColor();
-  cmpComp = { id: cmpComp.id, base: {}, comps: {}, carasFrisar: 0, carasPintar: 0 };
+  cmpComp = mantenerZona ? { id: "", base: {}, comps: {}, carasFrisar: 0, carasPintar: 0 } : { id: cmpComp.id, base: {}, comps: {}, carasFrisar: 0, carasPintar: 0 };
   guardar();
   rComputos();
 }
@@ -5270,7 +5289,9 @@ function rComputos() {
       </div>
       <button class="btn btn-linea" id="cmGuardarOtra" style="margin-top:8px">+ Guardar y agregar otra partida (misma zona)</button>
       <p class="aviso" style="margin-bottom:0">Para reparaciones que llevan varias partidas sueltas (p. ej. delaminado + inyección epóxica), o para sumar algo aparte como andamio.</p>
-      `) : `<button class="btn ${sinGuardar ? "btn-ambar" : "btn-negro"}" id="cmGuardarComp">Guardar partidas generadas${sinGuardar ? " ⚠" : ""}</button>`}
+      `) : `<button class="btn ${sinGuardar ? "btn-ambar" : "btn-negro"}" id="cmGuardarComp">Guardar partidas generadas${sinGuardar ? " ⚠" : ""}</button>
+      <button class="btn btn-linea" id="cmGuardarCompOtra" style="margin-top:8px">+ Guardar y agregar otra partida (misma zona)</button>
+      <p class="aviso" style="margin-bottom:0">Para reparaciones que llevan varias partidas sueltas (p. ej. delaminado + inyección epóxica), o para sumar algo aparte como andamio. La siguiente puede ser simple o compuesta.</p>`}
     </div>
 
     <div class="etiq">Resumen por partida</div>
@@ -5448,7 +5469,10 @@ function rComputos() {
   if (bgo) bgo.onclick = async () => { if (await cmpGuardarLinea(true)) rComputos(); };
 
   const bgc = document.getElementById("cmGuardarComp");
-  if (bgc) bgc.onclick = cmpGuardarCompuesta;
+  if (bgc) bgc.onclick = () => cmpGuardarCompuesta(false);
+
+  const bgco = document.getElementById("cmGuardarCompOtra");
+  if (bgco) bgco.onclick = () => cmpGuardarCompuesta(true);
 
   const br = document.getElementById("cmRepetir");
   if (br) br.onclick = () => {
