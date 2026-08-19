@@ -121,8 +121,9 @@
 <script>
 "use strict";
 /* ================= Constantes ================= */
-const VERSION = "3.70";
+const VERSION = "3.71";
 const CHANGELOG = [
+  ["3.71", "Las líneas capturadas en Cómputos métricos muestran ahora una miniatura de su primera foto — tóquela para ampliarla o anotarla, igual que en \"ver detalle\"."],
   ["3.70", "Columna, viga y muro ahora miden largo, ancho y profundidad en centímetros (más rápido de teclear en obra) en vez de metros — el área y el volumen del mortero se siguen mostrando en m² y m³ como el resto del catálogo, la app hace la conversión sola. Aplica también al modo de varias zonas. Techo (losa maciza) y las demás compuestas no cambiaron: siguen en metros."],
   ["3.69", "En Cómputos métricos, cuando la zona es una unidad ya inspeccionada, aparece el botón \"Usar foto de la inspección\" para elegir una de las fotos que ya tomaste en el ATC-20 en vez de repetirla. Queda una copia independiente: si luego la quitas de la línea de cómputo, la foto original de la inspección no se toca."],
   ["3.68", "Columna, viga, muro y techo (losa maciza) ahora aceptan varias zonas dañadas en el mismo elemento: el botón \"Σ sumar varias zonas\" deja cargar cada parche con su propio largo × ancho y suma el área total, con la Profundidad como un solo valor compartido para el mortero. \"N.° de elementos\" sigue funcionando en este modo (por ejemplo, 2 vigas idénticas con el mismo patrón de daño)."],
@@ -5127,6 +5128,8 @@ function rComputos() {
     const buscar = esc([l.partida, p2.descripcion, l.elemento, l.zona, l.nivel, l.obs].filter(Boolean).join(" ").toLowerCase());
     return `<div data-linea="${l.id}" data-buscar="${buscar}" data-marcada="${l.marcada ? "1" : "0"}">
       <div class="lista-foto">
+        ${nf ? `<img data-foto="${l.fotos[0].id}" data-anotarl="${l.fotos[0].id}" alt="" title="Toque para ampliar"
+          style="width:44px;height:44px;border-radius:8px;object-fit:cover;cursor:zoom-in;flex:none;background:var(--borde)" />` : ""}
         <button style="flex:1;background:none;border:none;text-align:left;font-family:inherit;font-size:13px;padding:0"
           data-ver="${l.id}"><b>${l.partida}</b> ${esc(p2.descripcion)}${l.derivada ? ' <span class="chip">⊞</span>' : ""}${l.marcada ? ' <span class="chip a">🚩 volver después</span>' : ""}
           <br /><span class="aviso">${esc(meta)} · ${nf ? nf + (nf === 1 ? " foto" : " fotos") : "sin foto"} · ${abierta ? "ocultar" : "ver detalle"}</span></button>
