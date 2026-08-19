@@ -133,8 +133,9 @@
 <script>
 "use strict";
 /* ================= Constantes ================= */
-const VERSION = "3.78";
+const VERSION = "3.79";
 const CHANGELOG = [
+  ["3.79", "El botón ⚑ para marcar \"volver después\" ahora también está disponible ANTES de guardar, junto a Origen de la medida (tanto en Línea simple como en Partida compuesta): si lo activa antes de guardar, la línea (o todas las que salgan de una compuesta) queda marcada de una vez, sin tener que ir a buscarla después en Líneas capturadas para marcarla."],
   ["3.78", "En \"Líneas capturadas\" (Cómputos métricos), las partidas que salen de la misma reparación compuesta ahora se ven agrupadas: un punto de color junto a cada una (mismo color = misma reparación) y el nombre de la compuesta arriba del grupo, así queda claro por qué solo la primera trae foto. Además, esas partidas derivadas ahora sí se pueden corregir: se puede editar el elemento y la observación, y agregar, anotar o quitar fotos directo en cada línea (antes solo las partidas simples tenían esa opción; la cantidad se sigue corrigiendo desde el Dashboard)."],
   ["3.77", "Nuevo \"Dashboard de cómputos\" (botón en la pantalla de niveles): una tabla ancha, pensada para el computador, con todas las líneas de una vez — foto, partida, elemento, zona, nivel, observación y cantidad final editables directo ahí, sin pasar por el formulario de medidas, más un buscador y el botón ⚑/🚩 y ✕ de siempre. Incluye \"Exportar a Excel\", con una hoja de líneas (foto en miniatura incluida) y otra de resumen por partida con el desperdicio aplicado."],
   ["3.76", "\"+ Guardar y agregar otra partida (misma zona)\" ahora también está en Partida compuesta, no solo en Línea simple: sirve para encadenar, por ejemplo, una compuesta con una partida simple suelta, o dos compuestas seguidas en el mismo elemento. La foto se conserva igual que en modo simple."],
@@ -4288,7 +4289,7 @@ function cmpPintarDims() {
 // No es un contador de "cambios" exacto, sino una señal de si vale la pena
 // avisar: si el borrador está vacío, no hay nada que perder.
 function cmpHayCambiosSinGuardar(simple) {
-  if (cmpBorrador.elemento || cmpBorrador.obs || (cmpBorrador.fotos && cmpBorrador.fotos.length)) return true;
+  if (cmpBorrador.elemento || cmpBorrador.obs || cmpBorrador.marcada || (cmpBorrador.fotos && cmpBorrador.fotos.length)) return true;
   if (simple) {
     const D = cmpBorrador.dims || {};
     return Object.keys(D).some((k) => String(D[k] || "").trim() !== "");
@@ -4308,7 +4309,8 @@ function cmpLeer() {
     nivelId: cmpBorrador.nivelId && cmpBorrador.nivelId !== "__otro" ? cmpBorrador.nivelId : "",
     elemento: String(cmpBorrador.elemento || "").trim(),
     obs: String(cmpBorrador.obs || "").trim(),
-    origen: cmpBorrador.origen
+    origen: cmpBorrador.origen,
+    marcada: !!cmpBorrador.marcada
   };
   for (const c of cmpCampos(p)) l[c] = D[c] === undefined ? (c === "cantidad" ? "1" : "") : D[c];
   if (cmpBorrador.fijo) l.parcialFijo = cmpBorrador.fijo.valor;
@@ -4347,6 +4349,7 @@ function cmpEditarLinea(id) {
     zonaSel: "__otro",
     elemento: l.elemento || "",
     obs: l.obs || "",
+    marcada: !!l.marcada,
     dims: {},
     fotos: (l.fotos || []).map((f) => ({ id: f.id, ts: l.ts, pie: f.pie, geo: f.geo }))
   };
@@ -4853,6 +4856,7 @@ async function cmpGuardarCompuesta(mantenerZona) {
       obs: String(cmpBorrador.obs || "").trim(),
       origen: cmpBorrador.origen,
       unidad: x.unidad || p.unidad, parcialFijo: q, parcial: q,
+      marcada: !!cmpBorrador.marcada,
       derivada: true, grupo: gid, compuesta: a.nombre,
       baseMedida: (x.base === "volumen"
         ? (cmpFmt(cmpBaseCompuesta()) + " m² × " + cmpFmt(cmpNum(cmpComp.base.profundidad)) + (a.medidaCm ? " cm (prof.)" : " m (prof.)") + " = " + cmpFmt(cmpBaseDe(x), 3) + " m³")
@@ -4888,6 +4892,7 @@ async function cmpGuardarCompuesta(mantenerZona) {
     cmpBorrador.elemento = "";
   }
   cmpBorrador.obs = "";
+  cmpBorrador.marcada = false;
   cmpOlvidarColor();
   cmpComp = mantenerZona ? { id: "", base: {}, comps: {}, carasFrisar: 0, carasPintar: 0 } : { id: cmpComp.id, base: {}, comps: {}, carasFrisar: 0, carasPintar: 0 };
   guardar();
@@ -5316,6 +5321,7 @@ function rComputos() {
       <div class="pildoras" id="cmOrigen">
         ${orig.map(([v, t]) => `<button data-org="${v}" class="${cmpBorrador.origen === v ? "on" : ""}">${t}</button>`).join("")}
       </div>
+      <button class="btn ${cmpBorrador.marcada ? "btn-ambar" : "btn-linea"}" id="cmMarcarBorrador" style="margin-bottom:12px">${cmpBorrador.marcada ? "🚩 Se guardará marcada: volver después" : "⚑ Marcar: volver después"}</button>
       <label class="campo"><span>Observación</span><textarea id="cmObs" rows="2" placeholder="Espesor, sección, criterio de estimación">${esc(cmpBorrador.obs || "")}</textarea></label>
       ${cmpUltObs && !cmpBorrador.obs ? `<button class="btn btn-linea" id="cmObsPrev" style="width:auto;padding:5px 10px;font-size:12px;margin:-4px 0 8px">↩ Usar anotación anterior</button>` : ""}
       <input type="file" accept="image/*" capture="environment" id="cmCam" style="display:none" />
@@ -5407,6 +5413,13 @@ function rComputos() {
       document.getElementById("cmOrigen").querySelectorAll("[data-org]").forEach((x) => x.classList.toggle("on", x === btn));
     };
   });
+
+  document.getElementById("cmMarcarBorrador").onclick = (e) => {
+    cmpBorrador.marcada = !cmpBorrador.marcada;
+    const btn = e.target;
+    btn.className = "btn " + (cmpBorrador.marcada ? "btn-ambar" : "btn-linea");
+    btn.textContent = cmpBorrador.marcada ? "🚩 Se guardará marcada: volver después" : "⚑ Marcar: volver después";
+  };
 
   const cam = document.getElementById("cmCam"), gal = document.getElementById("cmGal");
   document.getElementById("cmBCam").onclick = () => cam.click();
@@ -5508,6 +5521,7 @@ function rComputos() {
     cmpBorrador.fijo = null;
     cmpBorrador.medicion = null;
     cmpBorrador.atipicoOk = false;
+    cmpBorrador.marcada = false;
     if (mantenerZona) cmpBorrador.partida = "";
     cmpOlvidarColor();
     guardar();
