@@ -121,8 +121,9 @@
 <script>
 "use strict";
 /* ================= Constantes ================= */
-const VERSION = "3.61";
+const VERSION = "3.62";
 const CHANGELOG = [
+  ["3.62", "Cuatro compuestas nuevas en Cómputos métricos: reparación de techo (losa maciza) y de muro o pantalla estructural con cabillas expuestas (igual que columna/viga), repello de piso de concreto sin cabillas, y remoción y fabricación de paño de piso. Cada unidad tiene ahora un botón \"Agregar cómputo aquí\" que va directo a Cómputos métricos con el nivel y la zona ya puestos, y el botón de volver regresa a esa misma unidad. En Medición sobre fotografía: tocar cerca de un punto ya puesto ahora lo arrastra para ajustarlo en vez de crear una línea nueva (para sumar un punto se usa el botón \"+ Agregar punto\"), y escribir la longitud de referencia o de control ya no le quita el foco al recuadro en cada tecla."],
   ["3.61", "Arreglado: en la reparación de viga o columna, el mortero a veces no quedaba incluido al guardar aunque se hubiera puesto la profundidad. Ahora la Profundidad se exige igual que las demás medidas cuando hace falta para el mortero, y se vuelve a leer lo tecleado justo antes de guardar para no perder el último número si el guardado se hizo muy rápido."],
   ["3.60", "En Cómputos métricos, cada foto que tomes para una línea ahora se puede analizar con IA igual que en la inspección: el botón \"Analizar con IA\" sugiere la partida, el elemento y una observación breve, y \"Delimitar y analizar\" deja acotar a mano la zona de interés antes de mandarla a analizar. La sugerencia siempre se muestra para confirmar, nunca se aplica sola — útil para cuando vas a medir un edificio que no has inspeccionado."],
   ["3.59", "La app ahora guarda, dentro de cada inspección, si aceptaste o descartaste cada sugerencia de la IA sobre daño y ATC-20 — para más adelante poder revisar qué tan seguido acierta."],
@@ -447,7 +448,9 @@ const CMP_MEDIDA = {
   "04.01": CMP_PARED, "04.03": CMP_DESAR, "04.04": CMP_PARED, "04.05": CMP_PARED,
   "04.06": { campos: ["cantidad", "largo", "alto"], etiquetas: { largo: "Largo o perímetro del paño (m)" } },
   "04.07": { etiquetas: { largo: "Largo en planta (m)", ancho: "Ancho en planta (m)" } },
-  "05.01": { etiquetas: { largo: "Largo en planta (m)", ancho: "Ancho en planta (m)" } }
+  "05.01": { etiquetas: { largo: "Largo en planta (m)", ancho: "Ancho en planta (m)" } },
+  "02.10": { etiquetas: { largo: "Largo en planta (m)", ancho: "Ancho en planta (m)" } },
+  "03.12": { etiquetas: { largo: "Largo en planta (m)", ancho: "Ancho en planta (m)" } }
 };
 const CMP_CAT = [
   ["01.01", "01 Obras preliminares", "Apuntalamiento provisional de elementos estructurales", "und", "Se mide por elemento apuntalado, no por puntal."],
@@ -463,6 +466,7 @@ const CMP_CAT = [
   ["02.07", "02 Demoliciones", "Demolición de cielo raso suspendido, láminas y perfilería", "m2", "Área en planta del cielo raso retirado."],
   ["02.08", "02 Demoliciones", "Demolición de revestimiento cerámico en pisos", "m2", "Área en planta del cerámico demolido."],
   ["02.09", "02 Demoliciones", "Demolición de revestimiento cerámico en paredes", "m2", "Área de pared (largo por alto) del cerámico demolido."],
+  ["02.10", "02 Demoliciones", "Demolición de losa de piso de concreto (paño completo)", "m2", "Área en planta del paño demolido, hasta la estructura de apoyo."],
   ["03.01", "03 Reparación estructural", "Limpieza y tratamiento anticorrosivo de cabillas expuestas", "m2", "Superficie desarrollada de la cabilla tratada."],
   ["03.02", "03 Reparación estructural", "Suministro y colocación de cabillas de refuerzo", "kg", "Barras por longitud por peso teórico según diámetro."],
   ["03.03", "03 Reparación estructural", "Inyección de grietas con resina epóxica", "m", "Longitud real de la grieta inyectada."],
@@ -474,6 +478,7 @@ const CMP_CAT = [
   ["03.09", "03 Reparación estructural", "Anclajes químicos en concreto existente", "und", "Cantidad de anclajes. Diámetro y profundidad en la observación."],
   ["03.10", "03 Reparación estructural", "Confinamiento de nodo viga-columna", "und", "Cantidad de nodos intervenidos."],
   ["03.11", "03 Reparación estructural", "Mortero de reparación estructural tixotrópico (por volumen)", "m3", "Volumen reparado: superficie del parche por la profundidad."],
+  ["03.12", "03 Reparación estructural", "Vaciado de losa de piso de concreto nueva (paño completo)", "m2", "Área en planta del paño vaciado. El espesor va en la observación; el acero de refuerzo se computa aparte con la 03.02."],
   ["04.01", "04 Mampostería y acabados", "Construcción de paredes de bloque de arcilla", "m2", "Largo por alto del paño construido."],
   ["04.02", "04 Mampostería y acabados", "Sellado de grietas en paredes de mampostería", "m", "Longitud real de la grieta."],
   ["04.03", "04 Mampostería y acabados", "Friso liso sobre elementos estructurales", "m2", "Superficie desarrollada del elemento."],
@@ -654,7 +659,7 @@ function cmpAgrupar(lineas) {
    Volumen en banco = suma(area de cada demolicion x espesor propio de la partida),
    volumen suelto = banco x (1 + esponjamiento). Esponjamiento tipico de escombro
    de construccion mixto entre 30% y 50% (por defecto 40%). */
-const ESPESOR_ESCOMBRO = { "02.01": 0.025, "02.02": 0.025, "02.03": 0.15, "02.04": 0.04, "02.05": 0.02, "02.06": 0.05, "02.07": 0.01, "02.08": 0.03 };
+const ESPESOR_ESCOMBRO = { "02.01": 0.025, "02.02": 0.025, "02.03": 0.15, "02.04": 0.04, "02.05": 0.02, "02.06": 0.05, "02.07": 0.01, "02.08": 0.03, "02.10": 0.20 };
 const ACARREO_DEF = { esponjamiento: 0.40, viaje: 6 };
 function cmpAcarreo(c) {
   const ac = c.acarreo || {};
@@ -716,7 +721,7 @@ let cmpUltObs = "";
 const CMP_SUGER = {
   "Mampostería menor": { partidas: ["04.02", "04.04", "04.05"], compuestas: ["friso"] },
   "Mampostería mayor": { partidas: ["02.02", "02.03", "04.01", "04.04", "04.05"], compuestas: ["pared", "friso", "grieta", "perimetral_demo", "perimetral_friso"] },
-  "Daño estructural": { partidas: ["02.01", "02.04", "03.01", "03.02", "03.03", "03.05", "04.03", "04.05"], compuestas: ["columna", "viga", "encamisado", "techo_nervado"] },
+  "Daño estructural": { partidas: ["02.01", "02.04", "03.01", "03.02", "03.03", "03.05", "04.03", "04.05"], compuestas: ["columna", "viga", "muro", "encamisado", "techo_nervado", "techo_maciza", "piso_repello", "pano_piso"] },
   "Preexistente no sísmico": { partidas: ["04.04", "04.05", "05.01", "05.02"], compuestas: [] }
 };
 
@@ -827,6 +832,24 @@ const CMP_COMPUESTAS = [
     ]
   },
   {
+    id: "muro",
+    nombre: "Reparación de muro o pantalla estructural con cabillas expuestas",
+    campos: ["cantidad", "largo", "ancho", "profundidad"],
+    etiquetas: { cantidad: "N.° de muros/pantallas", largo: "Longitud a reparar (m)", ancho: "Alto de la zona (m)", profundidad: "Profundidad (m)" },
+    camposInfo: ["profundidad"],
+    magnitud: "Superficie a reparar",
+    unidad: "m2",
+    nota: "Las cabillas nuevas se computan aparte, en kg, con la partida 03.02.",
+    componentes: [
+      { partida: "02.01", factor: 1, nota: "Demolición del friso en el tramo a reparar" },
+      { partida: "02.04", factor: 1, nota: "Picado hasta concreto sano" },
+      { partida: "03.01", factor: 1, nota: "Limpieza y anticorrosivo en las cabillas" },
+      { partida: "03.11", factor: 1, base: "volumen", unidad: "m3", nota: "Mortero de reparación (volumen = largo × alto × profundidad)" },
+      { partida: "04.03", factor: 1, nota: "Friso nuevo sobre el elemento" },
+      { partida: "04.05", factor: 1, alcance: true, nota: "Pintura" }
+    ]
+  },
+  {
     id: "encamisado",
     nombre: "Encamisado de columna en concreto armado",
     campos: ["cantidad", "largo", "ancho"],
@@ -874,6 +897,24 @@ const CMP_COMPUESTAS = [
     ]
   },
   {
+    id: "techo_maciza",
+    nombre: "Reparación de techo (losa maciza) con cabillas expuestas",
+    campos: ["cantidad", "largo", "ancho", "profundidad"],
+    etiquetas: { cantidad: "N.° de zonas", largo: "Largo de la zona (m)", ancho: "Ancho de la zona (m)", profundidad: "Profundidad (m)" },
+    camposInfo: ["profundidad"],
+    magnitud: "Superficie a reparar",
+    unidad: "m2",
+    nota: "Para techo sin nervios (losa maciza). Las cabillas nuevas se computan aparte, en kg, con la partida 03.02. Si el techo tiene nervios expuestos, use la compuesta \"Reparación de techo (losa nervada)\".",
+    componentes: [
+      { partida: "02.01", factor: 1, nota: "Demolición del friso en el tramo a reparar" },
+      { partida: "02.04", factor: 1, nota: "Picado hasta concreto sano" },
+      { partida: "03.01", factor: 1, nota: "Limpieza y anticorrosivo en las cabillas" },
+      { partida: "03.11", factor: 1, base: "volumen", unidad: "m3", nota: "Mortero de reparación (volumen = largo × ancho × profundidad)" },
+      { partida: "04.03", factor: 1, nota: "Friso nuevo sobre el elemento" },
+      { partida: "04.05", factor: 1, alcance: true, nota: "Pintura" }
+    ]
+  },
+  {
     id: "grieta",
     nombre: "Tratamiento de grieta en pared",
     campos: ["cantidad", "largo", "ancho"],
@@ -887,6 +928,33 @@ const CMP_COMPUESTAS = [
       { partida: "04.02", factor: 1, base: "largo", nota: "Sellado de la grieta, por su longitud" },
       { partida: "04.04", factor: 1, base: "area", nota: "Friso de la banda: longitud por ancho" },
       { partida: "04.05", factor: 1, base: "area", alcance: true, alcanceDef: "parcial", labTotal: "Solo la banda", labParcial: "Todo el paño", labCampo: "Superficie del paño", nota: "Pintura, por lo general de todo el paño" }
+    ]
+  },
+  {
+    id: "piso_repello",
+    nombre: "Reparación de piso de concreto (repello superficial, sin cabillas)",
+    campos: ["cantidad", "largo", "ancho"],
+    etiquetas: { cantidad: "N.° de zonas", largo: "Largo de la zona (m)", ancho: "Ancho de la zona (m)" },
+    magnitud: "Superficie a reparar",
+    unidad: "m2",
+    nota: "Repello sin exposición de cabillas. Si aparecen cabillas expuestas, trátelo como daño estructural (picado, anticorrosivo y mortero por volumen) en vez de esta compuesta.",
+    componentes: [
+      { partida: "02.05", factor: 1, nota: "Remoción del concreto suelto o inestable" },
+      { partida: "03.05", factor: 1, nota: "Mortero de reparación de superficie" }
+    ]
+  },
+  {
+    id: "pano_piso",
+    nombre: "Remoción y fabricación de paño de piso de concreto",
+    campos: ["cantidad", "largo", "ancho"],
+    etiquetas: { cantidad: "N.° de paños", largo: "Largo del paño (m)", ancho: "Ancho del paño (m)" },
+    magnitud: "Superficie del paño",
+    unidad: "m2",
+    nota: "El acero de refuerzo de la losa nueva se computa aparte, en kg, con la partida 03.02.",
+    componentes: [
+      { partida: "02.10", factor: 1, nota: "Demolición del paño de piso existente" },
+      { partida: "03.12", factor: 1, nota: "Vaciado del paño de piso nuevo" },
+      { partida: "04.07", factor: 1, defOff: true, nota: "Reposición de revestimiento cerámico (opcional, si se repone de una vez)" }
     ]
   }
 ];
@@ -1261,8 +1329,8 @@ document.getElementById("btnVolver").onclick = () => {
   const p = st.pantalla;
   if (p.n === "unidad") nav({ n: "nivel", nivelId: p.nivelId });
   else if (p.n === "nivel" || p.n === "export") nav({ n: "casa" });
-  else if (p.n === "computos") { if (cmpDescartar()) nav({ n: "casa" }); }
-  else if (p.n === "medir") nav({ n: "computos" });
+  else if (p.n === "computos") { if (cmpDescartar()) nav(p.volverA || { n: "casa" }); }
+  else if (p.n === "medir") nav({ n: "computos", volverA: p.volverA });
   else if (p.n === "mover") { const nv = st.insp.niveles.find((x) => x.apts.some((a) => a.id === p.moverApt)); nav(nv ? { n: "unidad", nivelId: nv.id, unidadId: p.moverApt } : { n: "casa" }); }
   else if (p.n === "renumerar") nav({ n: "nivel", nivelId: st.pantalla.nivelId });
   else if (p.n === "casa") nav({ n: "lista" });
@@ -2108,6 +2176,7 @@ function rUnidad() {
       <button class="btn ${u.estado === "no-accedida" ? "btn-negro" : "btn-gris"}" id="bNoAccedida" style="font-size:13px;padding:9px">🚫 No accedida / fuera de alcance</button>
     </div>
     <button class="btn ${u.estado === "no-existe" ? "btn-negro" : "btn-gris"}" id="bNoExiste" style="font-size:13px;padding:9px;margin-bottom:14px">⊘ No existe en esta edificación</button>
+    <button class="btn btn-linea" id="bComputoAqui" style="margin-bottom:14px">🧮 Agregar cómputo aquí</button>
     <input type="file" accept="image/*" capture="environment" id="fCam" style="display:none" />
     <input type="file" accept="image/*" multiple id="fGal" style="display:none" />
     <div class="grid2" style="margin-bottom:12px">
@@ -2136,6 +2205,15 @@ function rUnidad() {
   };
   document.getElementById("bNoExiste").onclick = () => {
     u.estado = u.estado === "no-existe" ? "" : "no-existe"; guardar(); rUnidad();
+  };
+  document.getElementById("bComputoAqui").onclick = () => {
+    if (!cmpDescartar()) return;
+    cmpBorrador.nivelId = nv.id;
+    cmpBorrador.nivel = nv.nombre;
+    cmpBorrador.zonaSel = apt.id;
+    cmpBorrador.zonaId = apt.id;
+    cmpBorrador.zona = apt.nombre;
+    nav({ n: "computos", volverA: { n: "unidad", nivelId: nv.id, unidadId: apt.id } });
   };
   const fCam = document.getElementById("fCam"), fGal = document.getElementById("fGal");
   document.getElementById("bCam").onclick = () => fCam.click();
@@ -4202,7 +4280,7 @@ let cmpMed = null;
 
 function medNuevo(fid) {
   return { fid: fid, img: null, paso: "escala", ref: [], refLen: "",
-           tipo: "linea", pts: [], verif: [], verifLen: "", escala: 0, arrastre: -1, cual: "ref" };
+           tipo: "linea", pts: [], verif: [], verifLen: "", escala: 0, arrastre: -1, cual: "ref", agregando: false };
 }
 
 function medDist(a, b) { return Math.sqrt((a.x - b.x) * (a.x - b.x) + (a.y - b.y) * (a.y - b.y)); }
@@ -4302,6 +4380,25 @@ function medTope() {
   return cmpMed.cual === "ref" ? 2 : cmpMed.cual === "verif" ? 2 : 999;
 }
 
+// Refresca solo lo que cambia al escribir la longitud de referencia/control,
+// sin rehacer todo $app.innerHTML (eso le quita el foco al input en cada tecla).
+function medActualizarTextos() {
+  const res = medResultado();
+  const dv = medDesvio();
+  const unid = cmpMed.tipo === "area" ? "m²" : "m";
+  const et = document.getElementById("medEscalaTxt");
+  if (et) et.textContent = cmpMed.escala ? "Escala fijada: " + cmpFmt(cmpMed.escala, 0) + " px por metro." : "Falta marcar los dos puntos y escribir la longitud.";
+  const rv = document.getElementById("medResVal");
+  if (rv) rv.innerHTML = cmpFmt(res) + ' <span style="font-size:13px;opacity:.75">' + unid + "</span>";
+  const db = document.getElementById("medDesvioBox");
+  if (db) db.innerHTML = dv ? `<p class="aviso" style="margin-bottom:0;color:${dv.pct > 5 ? "var(--rojo)" : "var(--verde)"}">
+        La foto arroja ${cmpFmt(dv.obtenido, 3)} m contra ${cmpFmt(dv.esperado, 3)} m reales: desviación ${cmpFmt(dv.pct, 1)} %.
+        ${dv.pct > 5 ? "Conviene repetir la fotografía." : "Dentro de lo aceptable."}</p>` : "";
+  const bu = document.getElementById("medUsar");
+  if (bu) { bu.disabled = !(res > 0); bu.textContent = "Usar " + cmpFmt(res) + " " + unid + " en la línea"; }
+  medDibujar();
+}
+
 async function rMedir() {
   const fotos = cmpBorrador.fotos || [];
   if (!fotos.length) {
@@ -4309,7 +4406,7 @@ async function rMedir() {
       <p class="aviso">Primero tome la fotografía con la cinta o la referencia visible dentro del encuadre.
       Vuelva a cómputos, tome la foto y regrese aquí.</p>
       <button class="btn btn-negro" id="medVolver">Volver a cómputos</button>`;
-    document.getElementById("medVolver").onclick = () => nav({ n: "computos" });
+    document.getElementById("medVolver").onclick = () => nav({ n: "computos", volverA: st.pantalla.volverA });
     return;
   }
   if (!cmpMed || !fotos.some((f) => f.id === cmpMed.fid)) cmpMed = medNuevo(fotos[fotos.length - 1].id);
@@ -4333,13 +4430,13 @@ async function rMedir() {
 
     <div class="tarjeta">
       <div class="etiq">1 · Escala</div>
-      <p class="aviso" style="margin-top:0">Toque los dos extremos de la cinta o regla. Mantenga el dedo y arrastre para afinar con la lupa.</p>
+      <p class="aviso" style="margin-top:0">Toque los dos extremos de la cinta o regla; mientras mantenga el dedo, arrastre para afinar con la lupa. Para reajustar un punto después, tóquelo cerca y arrastre; no hace falta acertar exacto.</p>
       <div class="grid2">
         <button class="btn ${cmpMed.cual === "ref" ? "btn-negro" : "btn-linea"}" data-cual="ref">Marcar referencia (${cmpMed.ref.length}/2)</button>
         <label class="campo" style="margin:0"><span>Longitud real (m)</span>
           <input id="medRefLen" inputmode="decimal" style="text-align:right" value="${esc(cmpMed.refLen)}" placeholder="1,00" /></label>
       </div>
-      <p class="aviso" style="margin-bottom:0">${cmpMed.escala ? "Escala fijada: " + cmpFmt(cmpMed.escala, 0) + " px por metro." : "Falta marcar los dos puntos y escribir la longitud."}</p>
+      <p class="aviso" style="margin-bottom:0" id="medEscalaTxt">${cmpMed.escala ? "Escala fijada: " + cmpFmt(cmpMed.escala, 0) + " px por metro." : "Falta marcar los dos puntos y escribir la longitud."}</p>
     </div>
 
     <div class="tarjeta">
@@ -4350,15 +4447,18 @@ async function rMedir() {
       </div>
       <p class="aviso" style="margin-top:0">${cmpMed.tipo === "area"
         ? "Marque el contorno de la zona. Se cierra sola."
-        : "Marque un punto en cada quiebre de la grieta, no solo en las puntas."}</p>
+        : "Marque un punto en cada quiebre de la grieta, no solo en las puntas."}
+        Tocar cerca de un punto lo arrastra para ajustarlo; para sumar un punto nuevo use el botón «+ Agregar punto».</p>
       <div class="grid2">
         <button class="btn ${cmpMed.cual === "pts" ? "btn-negro" : "btn-linea"}" data-cual="pts">Trazar (${cmpMed.pts.length} puntos)</button>
         <button class="btn btn-gris" id="medDeshacer">Deshacer punto</button>
       </div>
+      ${cmpMed.cual === "pts" ? `<button class="btn ${cmpMed.agregando ? "btn-ambar" : "btn-linea"}" id="medAgregarPunto" style="margin-top:8px">
+        ${cmpMed.agregando ? "Toque la foto para poner el punto nuevo…" : "+ Agregar punto"}</button>` : ""}
       <div style="background:var(--ink);color:#fff;border-radius:10px;padding:11px 13px;display:flex;
         align-items:baseline;justify-content:space-between;gap:12px;margin-top:12px;font-variant-numeric:tabular-nums">
         <span style="opacity:.65">${cmpMed.tipo === "area" ? "Área" : "Longitud desarrollada"}</span>
-        <b style="font-size:20px">${cmpFmt(res)} <span style="font-size:13px;opacity:.75">${unid}</span></b>
+        <b style="font-size:20px" id="medResVal">${cmpFmt(res)} <span style="font-size:13px;opacity:.75">${unid}</span></b>
       </div>
     </div>
 
@@ -4370,9 +4470,9 @@ async function rMedir() {
         <label class="campo" style="margin:0"><span>Medida conocida (m)</span>
           <input id="medVerLen" inputmode="decimal" style="text-align:right" value="${esc(cmpMed.verifLen)}" placeholder="0,20" /></label>
       </div>
-      ${dv ? `<p class="aviso" style="margin-bottom:0;color:${dv.pct > 5 ? "var(--rojo)" : "var(--verde)"}">
+      <div id="medDesvioBox">${dv ? `<p class="aviso" style="margin-bottom:0;color:${dv.pct > 5 ? "var(--rojo)" : "var(--verde)"}">
         La foto arroja ${cmpFmt(dv.obtenido, 3)} m contra ${cmpFmt(dv.esperado, 3)} m reales: desviación ${cmpFmt(dv.pct, 1)} %.
-        ${dv.pct > 5 ? "Conviene repetir la fotografía." : "Dentro de lo aceptable."}</p>` : ""}
+        ${dv.pct > 5 ? "Conviene repetir la fotografía." : "Dentro de lo aceptable."}</p>` : ""}</div>
     </div>
 
     <button class="btn btn-negro" id="medUsar" ${res > 0 ? "" : "disabled"} style="margin-bottom:10px">Usar ${cmpFmt(res)} ${unid} en la línea</button>
@@ -4395,11 +4495,22 @@ async function rMedir() {
     cv.setPointerCapture(e.pointerId);
     const p = medCoords(e, cv);
     const lista = medLista();
-    let i = -1, mejor = cv.width / 40;
-    for (let k = 0; k < lista.length; k++) { const d = medDist(lista[k], p); if (d < mejor) { mejor = d; i = k; } }
+    // Por defecto, tocar la foto ajusta el punto ya puesto más cercano (sin
+    // exigir precisión) en vez de crear uno nuevo — de lo contrario, cada
+    // intento de afinar un punto terminaba agregando un punto o un tramo de
+    // más. Solo se crea un punto nuevo para completar la referencia/control
+    // (que necesitan exactamente 2), para el primer punto del trazado, o
+    // cuando se pidió explícitamente con «+ Agregar punto».
+    const debeAgregar = lista.length === 0 ||
+      (cmpMed.cual === "pts" ? cmpMed.agregando : lista.length < medTope());
+    let i = -1;
+    if (!debeAgregar) {
+      let mejor = Infinity;
+      for (let k = 0; k < lista.length; k++) { const d = medDist(lista[k], p); if (d < mejor) { mejor = d; i = k; } }
+    }
     if (i < 0) {
-      if (lista.length >= medTope()) lista.shift();
       lista.push(p); i = lista.length - 1;
+      if (cmpMed.cual === "pts") cmpMed.agregando = false;
     }
     cmpMed.arrastre = i; activo = true;
     lista[i] = p; medDibujar(); medLupa(p);
@@ -4421,16 +4532,21 @@ async function rMedir() {
   $app.querySelectorAll("[data-cual]").forEach((b) => { b.onclick = () => { cmpMed.cual = b.dataset.cual; rMedir(); }; });
   $app.querySelectorAll("[data-tipo]").forEach((b) => { b.onclick = () => { cmpMed.tipo = b.dataset.tipo; rMedir(); }; });
   $app.querySelectorAll("[data-foto]").forEach((b) => { b.onclick = () => { cmpMed = medNuevo(b.dataset.foto); rMedir(); }; });
+  const bAgregar = document.getElementById("medAgregarPunto");
+  if (bAgregar) bAgregar.onclick = () => { cmpMed.agregando = !cmpMed.agregando; rMedir(); };
 
   const fijar = () => {
     if (cmpMed.ref.length === 2 && cmpNum(cmpMed.refLen) > 0)
       cmpMed.escala = medDist(cmpMed.ref[0], cmpMed.ref[1]) / cmpNum(cmpMed.refLen);
     else cmpMed.escala = 0;
   };
-  document.getElementById("medRefLen").oninput = (e) => { cmpMed.refLen = e.target.value; fijar(); rMedir(); };
-  document.getElementById("medVerLen").oninput = (e) => { cmpMed.verifLen = e.target.value; rMedir(); };
+  // Actualización liviana: reescribir $app.innerHTML en cada tecla (como hacía
+  // antes vía rMedir()) destruye y recrea el <input>, y el navegador le quita
+  // el foco después de cada dígito. Aquí solo se tocan los nodos que cambian.
+  document.getElementById("medRefLen").oninput = (e) => { cmpMed.refLen = e.target.value; fijar(); medActualizarTextos(); };
+  document.getElementById("medVerLen").oninput = (e) => { cmpMed.verifLen = e.target.value; medActualizarTextos(); };
   document.getElementById("medDeshacer").onclick = () => { cmpMed.pts.pop(); rMedir(); };
-  document.getElementById("medCancelar").onclick = () => nav({ n: "computos" });
+  document.getElementById("medCancelar").onclick = () => nav({ n: "computos", volverA: st.pantalla.volverA });
 
   document.getElementById("medUsar").onclick = async () => {
     const valor = medResultado();
@@ -4456,7 +4572,7 @@ async function rMedir() {
       cmpBorrador.dims.largo = cmpFmt(valor);
     }
     cmpMed = null;
-    nav({ n: "computos" });
+    nav({ n: "computos", volverA: st.pantalla.volverA });
   };
 }
 
@@ -4662,7 +4778,7 @@ function rComputos() {
   };
   cam.onchange = onFotos; gal.onchange = onFotos;
 
-  document.getElementById("cmMedir").onclick = () => { cmpCapturar(); nav({ n: "medir" }); };
+  document.getElementById("cmMedir").onclick = () => { cmpCapturar(); nav({ n: "medir", volverA: st.pantalla.volverA }); };
 
   const bg = document.getElementById("cmGuardar");
   if (bg) bg.onclick = () => {
