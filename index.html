@@ -101,6 +101,17 @@
     border: 1px solid var(--borde); border-radius: 10px; padding: 8px 10px; margin-bottom: 6px; font-size: 13px; }
   .lista-foto .mini { width: 44px; height: 44px; object-fit: cover; border-radius: 8px; flex-shrink: 0; }
   .sep { border: none; border-top: 1px solid var(--borde); margin: 16px 0; }
+  main.ancho { max-width: 1300px; }
+  .dash-wrap { overflow-x: auto; }
+  .tabla-dash { width: 100%; border-collapse: collapse; font-size: 13px; min-width: 1000px; }
+  .tabla-dash th { text-align: left; font-size: 10px; text-transform: uppercase; letter-spacing: 0.4px;
+    color: var(--gris); padding: 6px 7px; border-bottom: 2px solid var(--borde); white-space: nowrap; }
+  .tabla-dash td { padding: 5px 7px; border-bottom: 1px solid var(--borde); vertical-align: middle; }
+  .tabla-dash tr.marc td { background: var(--ambar-bg); }
+  .tabla-dash input, .tabla-dash select { padding: 5px 6px; font-size: 13px; min-height: 0; }
+  .tabla-dash td.num input { text-align: right; }
+  .dash-foto { width: 48px; height: 48px; object-fit: cover; border-radius: 6px; cursor: zoom-in;
+    background: var(--borde); display: block; }
 </style>
 </head>
 <body>
@@ -118,11 +129,13 @@
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/exceljs/4.4.0/exceljs.min.js"></script>
 <script>
 "use strict";
 /* ================= Constantes ================= */
-const VERSION = "3.76";
+const VERSION = "3.77";
 const CHANGELOG = [
+  ["3.77", "Nuevo \"Dashboard de cómputos\" (botón en la pantalla de niveles): una tabla ancha, pensada para el computador, con todas las líneas de una vez — foto, partida, elemento, zona, nivel, observación y cantidad final editables directo ahí, sin pasar por el formulario de medidas, más un buscador y el botón ⚑/🚩 y ✕ de siempre. Incluye \"Exportar a Excel\", con una hoja de líneas (foto en miniatura incluida) y otra de resumen por partida con el desperdicio aplicado."],
   ["3.76", "\"+ Guardar y agregar otra partida (misma zona)\" ahora también está en Partida compuesta, no solo en Línea simple: sirve para encadenar, por ejemplo, una compuesta con una partida simple suelta, o dos compuestas seguidas en el mismo elemento. La foto se conserva igual que en modo simple."],
   ["3.75", "Arreglado: al tocar \"+ Guardar y agregar otra partida (misma zona)\", la foto que ya habías tomado desaparecía en vez de quedar disponible para la siguiente partida. Ahora se conserva (con una copia independiente, para que no se pierda la de la partida ya guardada si luego quitas la del borrador)."],
   ["3.74", "\"Crear con IA\" ahora también está disponible desde Ajustes → Catálogo personal, no solo dentro de Cómputos métricos — útil para armar el catálogo con calma en vez de sobre la marcha. Ahí no hay línea que aplicarlo, así que simplemente crea la partida o compuesta y queda lista para usarse."],
@@ -1612,6 +1625,7 @@ function cmpCantidadComponente(comp) {
 }
 let cmpVer = null;
 let cmpFiltro = { texto: "", soloMarcadas: false };
+let dashFiltro = { texto: "", soloMarcadas: false };
 let cmpEditId = null;
 let cmpModo = "simple";
 let cmpComp = { id: "", base: {}, comps: {} };
@@ -1763,6 +1777,7 @@ document.getElementById("btnVolver").onclick = () => {
   if (p.n === "unidad") nav({ n: "nivel", nivelId: p.nivelId });
   else if (p.n === "nivel" || p.n === "export") nav({ n: "casa" });
   else if (p.n === "computos") { if (cmpDescartar()) nav(p.volverA || { n: "casa" }); }
+  else if (p.n === "dashboard") nav({ n: "casa" });
   else if (p.n === "medir") nav({ n: "computos", volverA: p.volverA });
   else if (p.n === "mover") { const nv = st.insp.niveles.find((x) => x.apts.some((a) => a.id === p.moverApt)); nav(nv ? { n: "unidad", nivelId: nv.id, unidadId: p.moverApt } : { n: "casa" }); }
   else if (p.n === "renumerar") nav({ n: "nivel", nivelId: st.pantalla.nivelId });
@@ -1780,6 +1795,7 @@ function render() {
     return rLogin();
   }
   document.getElementById("btnVolver").style.display = p.n === "lista" ? "none" : "block";
+  $app.classList.toggle("ancho", p.n === "dashboard");
   const t = document.getElementById("hdrTitulo");
   if (p.n === "lista") t.textContent = "Mis inspecciones";
   else if (p.n === "ajustes") t.textContent = "Ajustes";
@@ -1792,6 +1808,7 @@ function render() {
   else if (p.n === "nivel") rNivel();
   else if (p.n === "unidad") rUnidad();
   else if (p.n === "computos") rComputos();
+  else if (p.n === "dashboard") rDashboard();
   else if (p.n === "medir") rMedir();
   else if (p.n === "mover") rMover();
   else if (p.n === "renumerar") rRenumerar();
@@ -2147,10 +2164,12 @@ function rCasa() {
       <p class="aviso" style="margin:0">Los sótanos y el PH se crean sin unidades; agrégalas dentro con "+ Agregar". Para eliminar o renombrar un nivel, entra en él.</p>
     </div>
     <button class="btn btn-linea" id="bComputos" style="margin-top:10px">Cómputos métricos (${((st.insp.computos && st.insp.computos.lineas) || []).length} líneas)</button>
+    <button class="btn btn-linea" id="bDashboard" style="margin-top:8px">📊 Dashboard de cómputos (editar y exportar a Excel)</button>
     <button class="btn btn-negro" id="bExport" style="margin-top:10px">Exportar inspección (${totalFotos} fotos)</button>
     <button class="btn btn-rojo-linea" id="bBorrarInsp" style="margin-top:8px">Eliminar esta inspección (al terminar)</button>`;
   document.getElementById("bEditar").onclick = () => nav({ n: "setup" });
   document.getElementById("bComputos").onclick = () => nav({ n: "computos" });
+  document.getElementById("bDashboard").onclick = () => nav({ n: "dashboard" });
   document.getElementById("bExport").onclick = () => nav({ n: "export" });
   const agregarNivel = (prefijo, insertarAlInicio) => {
     const n = d.niveles.filter((x) => x.nombre.startsWith(prefijo)).length;
@@ -5602,6 +5621,248 @@ function rComputos() {
     a.click();
     URL.revokeObjectURL(a.href);
   };
+}
+
+/* ================= Dashboard de cómputos ================= */
+/* Pantalla ancha (pensada para computador) donde se revisan todas las líneas
+   de una vez: foto, partida, datos y cantidad final editables en la misma
+   tabla, sin pasar por el formulario de medidas de Cómputos métricos.
+   La cantidad se edita directo sobre l.parcial (el valor ya calculado que
+   usan el resumen, el acarreo y las exportaciones) — así funciona igual para
+   una línea simple que para una derivada de una compuesta, que no tiene
+   dimensiones propias que recalcular. */
+function dashPartidaOpts(sel) {
+  let grupo = "", out = "";
+  for (const p of catTodasPartidas()) {
+    if (p.grupo !== grupo) { if (grupo) out += "</optgroup>"; grupo = p.grupo; out += `<optgroup label="${esc(grupo)}">`; }
+    out += `<option value="${p.codigo}" ${p.codigo === sel ? "selected" : ""}>${p.codigo} ${esc(p.descripcion)}</option>`;
+  }
+  if (grupo) out += "</optgroup>";
+  return out;
+}
+const DASH_ORIGEN_TXT = { sitio: "En sitio", foto: "Sobre foto", planos: "De planos", muestreo: "Por muestreo" };
+function dashAplicarFiltro() {
+  const filtroTxt = (dashFiltro.texto || "").trim().toLowerCase();
+  const filas = $app.querySelectorAll("[data-linea]");
+  let visibles = 0;
+  filas.forEach((el) => {
+    const coincideTxt = !filtroTxt || (el.dataset.buscar || "").includes(filtroTxt);
+    const coincideMarc = !dashFiltro.soloMarcadas || el.dataset.marcada === "1";
+    const visible = coincideTxt && coincideMarc;
+    el.style.display = visible ? "" : "none";
+    if (visible) visibles++;
+  });
+  const contador = document.getElementById("dashContador");
+  if (contador) contador.textContent = visibles === filas.length ? String(filas.length) : visibles + " de " + filas.length;
+  const vacio = document.getElementById("dashVacio");
+  if (vacio) vacio.style.display = (visibles === 0 && filas.length > 0) ? "" : "none";
+}
+
+function rDashboard() {
+  const c = cmpDe(st.insp);
+  const b = st.insp.edificio;
+
+  const filaHtml = (l) => {
+    const p2 = cmpPartidaLinea(l) || { descripcion: "", unidad: l.unidad };
+    const nf = (l.fotos || []).length;
+    const buscar = esc([l.partida, p2.descripcion, l.elemento, l.zona, l.nivel, l.obs].filter(Boolean).join(" ").toLowerCase());
+    return `<tr data-linea="${l.id}" data-buscar="${buscar}" data-marcada="${l.marcada ? "1" : "0"}" class="${l.marcada ? "marc" : ""}">
+      <td>${nf ? `<img class="dash-foto" data-foto="${esc(l.fotos[0].id)}" data-anotarl="${esc(l.fotos[0].id)}" alt="" title="Toque para ampliar / anotar" />` : `<span class="aviso">sin foto</span>`}</td>
+      <td>
+        <select data-dpart="${l.id}" style="min-width:230px">${dashPartidaOpts(l.partida)}</select>
+        ${l.derivada ? `<div class="aviso" style="margin:2px 0 0">⊞ ${esc(l.compuesta || "partida compuesta")}</div>` : ""}
+      </td>
+      <td><input data-delem="${l.id}" value="${esc(l.elemento || "")}" style="min-width:120px" /></td>
+      <td><input data-dzona="${l.id}" value="${esc(l.zona || "")}" style="min-width:100px" /></td>
+      <td><input data-dnivel="${l.id}" value="${esc(l.nivel || "")}" style="min-width:90px" /></td>
+      <td><input data-dobs="${l.id}" value="${esc(l.obs || "")}" style="min-width:170px" /></td>
+      <td class="mono" style="white-space:nowrap">${esc(DASH_ORIGEN_TXT[l.origen] || l.origen || "")}</td>
+      <td class="num"><input data-dcant="${l.id}" inputmode="decimal" value="${esc(cmpFmt(l.parcial))}" style="width:82px" /></td>
+      <td class="mono">${esc(CMP_UNI[l.unidad] || l.unidad || "")}</td>
+      <td><button class="btn-gris" style="width:auto;padding:5px 9px;${l.marcada ? "background:var(--ambar-bg);border-color:var(--ambar)" : ""}" data-marcar="${l.id}" title="Marcar para volver después">${l.marcada ? "🚩" : "⚑"}</button></td>
+      <td><button class="btn btn-rojo-linea" style="width:auto;padding:5px 9px" data-borrar="${l.id}">✕</button></td>
+    </tr>`;
+  };
+
+  const linHtml = c.lineas.length ? c.lineas.slice().reverse().map(filaHtml).join("") : "";
+
+  $app.innerHTML = `
+    <h2>Dashboard de cómputos métricos</h2>
+    <p class="sub">${esc(b.nombre || "Sin edificación")}${b.informe ? " · BSP-2026-" + esc(b.informe) : ""} · Vista de escritorio: edite lo que haga falta antes de exportar</p>
+    ${c.lineas.length ? `
+    <div class="fila" style="margin-bottom:10px;gap:8px">
+      <input id="dashFiltroTxt" value="${esc(dashFiltro.texto)}" placeholder="Buscar por partida, elemento, zona, piso, observación…" style="flex:2" />
+      <button class="btn ${dashFiltro.soloMarcadas ? "btn-negro" : "btn-linea"}" id="dashFiltroMarc" style="flex:none;width:auto;padding:10px 14px">🚩 Solo marcadas (${c.lineas.filter((x) => x.marcada).length})</button>
+    </div>
+    <div class="etiq">Líneas (<span id="dashContador">${c.lineas.length}</span>)</div>
+    <div class="dash-wrap tarjeta" style="padding:0">
+      <table class="tabla-dash">
+        <thead><tr>
+          <th>Foto</th><th>Partida</th><th>Elemento</th><th>Zona</th><th>Nivel</th>
+          <th>Observación</th><th>Origen</th><th>Cantidad</th><th>Un.</th><th></th><th></th>
+        </tr></thead>
+        <tbody>${linHtml}</tbody>
+      </table>
+    </div>
+    <p class="aviso" id="dashVacio" style="display:none">Ninguna línea coincide con la búsqueda.</p>
+    <div class="grid2" style="margin-top:14px">
+      <button class="btn btn-negro" id="dashExcel">📊 Exportar a Excel</button>
+      <button class="btn btn-linea" id="dashVolverComp">Ir a Cómputos métricos</button>
+    </div>
+    <p class="aviso" id="dashExcelMsg" style="margin-top:6px"></p>
+    ` : `<p class="aviso">Aún no hay líneas capturadas. Agréguelas desde "Cómputos métricos".</p>
+    <button class="btn btn-linea" id="dashVolverComp" style="margin-top:8px">Ir a Cómputos métricos</button>`}`;
+
+  cmpCargarFotos();
+  $app.querySelectorAll("[data-anotarl]").forEach((b2) => (b2.onclick = () => abrirEditorFoto(b2.dataset.anotarl, rDashboard)));
+
+  $app.querySelectorAll("[data-dpart]").forEach((sel) => {
+    sel.onchange = () => {
+      const l = c.lineas.find((x) => x.id === sel.dataset.dpart);
+      const np = cmpPartida(sel.value);
+      if (!l || !np) return;
+      l.partida = sel.value;
+      l.unidad = np.unidad;
+      guardar();
+      rDashboard();
+    };
+  });
+  $app.querySelectorAll("[data-delem]").forEach((i) => { i.oninput = (e) => { const l = c.lineas.find((x) => x.id === i.dataset.delem); if (l) { l.elemento = e.target.value; guardar(); } }; });
+  $app.querySelectorAll("[data-dzona]").forEach((i) => { i.oninput = (e) => { const l = c.lineas.find((x) => x.id === i.dataset.dzona); if (l) { l.zona = e.target.value; guardar(); } }; });
+  $app.querySelectorAll("[data-dnivel]").forEach((i) => { i.oninput = (e) => { const l = c.lineas.find((x) => x.id === i.dataset.dnivel); if (l) { l.nivel = e.target.value; guardar(); } }; });
+  $app.querySelectorAll("[data-dobs]").forEach((i) => { i.oninput = (e) => { const l = c.lineas.find((x) => x.id === i.dataset.dobs); if (l) { l.obs = e.target.value; guardar(); } }; });
+  $app.querySelectorAll("[data-dcant]").forEach((i) => {
+    i.onchange = (e) => {
+      const l = c.lineas.find((x) => x.id === i.dataset.dcant);
+      if (!l) return;
+      l.parcial = cmpNum(e.target.value, l.parcial);
+      e.target.value = cmpFmt(l.parcial);
+      guardar();
+    };
+  });
+  $app.querySelectorAll("[data-marcar]").forEach((btn) => {
+    btn.onclick = () => { const l = c.lineas.find((x) => x.id === btn.dataset.marcar); if (l) { l.marcada = !l.marcada; guardar(); rDashboard(); } };
+  });
+  $app.querySelectorAll("[data-borrar]").forEach((btn) => {
+    btn.onclick = async () => {
+      if (!confirm("¿Eliminar esta línea de cómputo?")) return;
+      const i = c.lineas.findIndex((x) => x.id === btn.dataset.borrar);
+      if (i < 0) return;
+      for (const f of (c.lineas[i].fotos || [])) await blobDel("photo:" + f.id);
+      c.lineas.splice(i, 1);
+      guardar();
+      rDashboard();
+    };
+  });
+
+  const fTxt = document.getElementById("dashFiltroTxt");
+  if (fTxt) fTxt.oninput = (e) => { dashFiltro.texto = e.target.value; dashAplicarFiltro(); };
+  const fMarc = document.getElementById("dashFiltroMarc");
+  if (fMarc) fMarc.onclick = () => { dashFiltro.soloMarcadas = !dashFiltro.soloMarcadas; rDashboard(); };
+  dashAplicarFiltro();
+
+  const bVolver = document.getElementById("dashVolverComp");
+  if (bVolver) bVolver.onclick = () => nav({ n: "computos" });
+  const bExcel = document.getElementById("dashExcel");
+  if (bExcel) bExcel.onclick = () => dashExportarExcel(c, b);
+}
+
+function blobABase64(blob) {
+  return new Promise((resolve, reject) => {
+    const fr = new FileReader();
+    fr.onload = () => resolve(fr.result);
+    fr.onerror = () => reject(fr.error);
+    fr.readAsDataURL(blob);
+  });
+}
+
+async function dashExportarExcel(c, b) {
+  const msg = document.getElementById("dashExcelMsg");
+  const setMsg = (t) => { if (msg) msg.textContent = t; };
+  if (typeof ExcelJS === "undefined") { setMsg("✗ No se pudo cargar el generador de Excel. Verifique la conexión e intente de nuevo."); return; }
+  setMsg("Generando Excel…");
+  try {
+    const wb = new ExcelJS.Workbook();
+    wb.creator = "BSP Inspección de Campo";
+    wb.created = new Date();
+
+    const ws = wb.addWorksheet("Líneas", { views: [{ state: "frozen", ySplit: 1 }] });
+    ws.columns = [
+      { header: "Foto", key: "foto", width: 10 },
+      { header: "Código", key: "codigo", width: 9 },
+      { header: "Partida", key: "partida", width: 36 },
+      { header: "Elemento", key: "elemento", width: 20 },
+      { header: "Zona", key: "zona", width: 16 },
+      { header: "Nivel", key: "nivel", width: 14 },
+      { header: "Observación", key: "obs", width: 36 },
+      { header: "Origen", key: "origen", width: 14 },
+      { header: "Cantidad", key: "cantidad", width: 12 },
+      { header: "Unidad", key: "unidad", width: 9 },
+      { header: "Marcada", key: "marcada", width: 10 }
+    ];
+    ws.getRow(1).font = { bold: true };
+
+    for (const l of c.lineas) {
+      const p = cmpPartidaLinea(l) || {};
+      const row = ws.addRow({
+        codigo: l.partida, partida: p.descripcion || "",
+        elemento: l.elemento || "", zona: l.zona || "", nivel: l.nivel || "",
+        obs: l.obs || "", origen: DASH_ORIGEN_TXT[l.origen] || l.origen || "",
+        cantidad: cmpNum(l.parcial), unidad: CMP_UNI[l.unidad] || l.unidad || "",
+        marcada: l.marcada ? "Sí" : ""
+      });
+      row.height = 42;
+      const nf = (l.fotos || []).length;
+      if (nf) {
+        try {
+          const blob = await blobGet("photo:" + l.fotos[0].id);
+          if (blob) {
+            const b64 = await blobABase64(blob);
+            const ext = blob.type && blob.type.includes("png") ? "png" : "jpeg";
+            const imgId = wb.addImage({ base64: b64, extension: ext });
+            ws.addImage(imgId, { tl: { col: 0, row: row.number - 1 }, ext: { width: 52, height: 52 }, editAs: "oneCell" });
+          }
+        } catch (e) {}
+      }
+    }
+
+    const ws2 = wb.addWorksheet("Resumen por partida");
+    ws2.columns = [
+      { header: "Código", key: "codigo", width: 9 },
+      { header: "Descripción", key: "descripcion", width: 42 },
+      { header: "Cantidad neta", key: "total", width: 14 },
+      { header: "Desperdicio %", key: "desp", width: 13 },
+      { header: "Cantidad con desperdicio", key: "conDesp", width: 22 },
+      { header: "Unidad", key: "unidad", width: 9 },
+      { header: "N.° de líneas", key: "n", width: 12 },
+      { header: "Con estimaciones", key: "est", width: 16 }
+    ];
+    ws2.getRow(1).font = { bold: true };
+    for (const r of cmpResumen(c)) {
+      const d = cmpDespDe(r.codigo);
+      ws2.addRow({
+        codigo: r.codigo, descripcion: r.descripcion,
+        total: cmpRed(r.total, 2), desp: d,
+        conDesp: cmpRed(r.total * (1 + d / 100), 2),
+        unidad: CMP_UNI[r.unidad] || r.unidad, n: r.n,
+        est: r.estimada ? "Sí" : ""
+      });
+    }
+
+    const buf = await wb.xlsx.writeBuffer();
+    const blob = new Blob([buf], { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" });
+    const nombre = (b.informe ? "BSP-2026-" + b.informe : "BSP-2026") + "-computos.xlsx";
+    const file = new File([blob], nombre, { type: blob.type });
+    if (navigator.canShare && navigator.canShare({ files: [file] })) {
+      try { await navigator.share({ files: [file] }); setMsg("Excel compartido."); return; } catch (e) {}
+    }
+    const a = document.createElement("a");
+    a.href = URL.createObjectURL(blob); a.download = nombre; a.click();
+    URL.revokeObjectURL(a.href);
+    setMsg("✓ Excel descargado (" + c.lineas.length + " líneas).");
+  } catch (e) {
+    setMsg("✗ No se pudo generar el Excel: " + e.message);
+  }
 }
 
 function rAjustes() {
