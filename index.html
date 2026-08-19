@@ -121,8 +121,9 @@
 <script>
 "use strict";
 /* ================= Constantes ================= */
-const VERSION = "3.63";
+const VERSION = "3.64";
 const CHANGELOG = [
+  ["3.64", "Arreglado: \"Crear con IA\" (y las demás respuestas de la IA — dictado, análisis de foto) a veces fallaba con \"No se pudo interpretar\" si la IA agregaba una nota después del JSON, aunque se le pidiera responder solo JSON. Ahora se toma el primer bloque JSON completo y se ignora lo que venga después, en vez de cortar hasta la última llave del texto."],
   ["3.63", "Catálogo personal: en Cómputos métricos, el botón \"No la encuentro: crear con IA\" (junto a Línea simple y Partida compuesta) deja describir una partida que no está en el catálogo. La IA revisa todo lo que ya existe (incluidas tus propias partidas anteriores) y, si no hay nada parecido, propone crear una nueva simple o compuesta — siempre para confirmar antes de guardarla. Una vez creada queda disponible para siempre, en todas tus inspecciones y sincronizada entre tus dispositivos, sin tener que describirla de nuevo cada vez."],
   ["3.62", "Cuatro compuestas nuevas en Cómputos métricos: reparación de techo (losa maciza) y de muro o pantalla estructural con cabillas expuestas (igual que columna/viga), repello de piso de concreto sin cabillas, y remoción y fabricación de paño de piso. Cada unidad tiene ahora un botón \"Agregar cómputo aquí\" que va directo a Cómputos métricos con el nivel y la zona ya puestos, y el botón de volver regresa a esa misma unidad. En Medición sobre fotografía: tocar cerca de un punto ya puesto ahora lo arrastra para ajustarlo en vez de crear una línea nueva (para sumar un punto se usa el botón \"+ Agregar punto\"), y escribir la longitud de referencia o de control ya no le quita el foco al recuadro en cada tecla."],
   ["3.61", "Arreglado: en la reparación de viga o columna, el mortero a veces no quedaba incluido al guardar aunque se hubiera puesto la profundidad. Ahora la Profundidad se exige igual que las demás medidas cuando hace falta para el mortero, y se vuelve a leer lo tecleado justo antes de guardar para no perder el último número si el guardado se hizo muy rápido."],
@@ -1062,9 +1063,7 @@ Decide el paquete principal:
 Responde UNICAMENTE con el JSON, sin markdown ni texto extra.`;
     let r = await llamarClaude(prompt, 500);
     r = r.replace(/```json|```/g, "").trim();
-    const ini = r.indexOf("{"), fin = r.lastIndexOf("}");
-    if (ini >= 0 && fin > ini) r = r.slice(ini, fin + 1);
-    const data = JSON.parse(r);
+    const data = JSON.parse(extraerJSON(r));
     cmpDictadoLineas = (Array.isArray(data.lineas) ? data.lineas : []).filter((cc) => cmpPartida(cc));
     if (data.compuesta && data.compuesta !== "__medida" && cmpCompuesta(data.compuesta)) {
       cmpModo = "compuesta";
@@ -1203,9 +1202,7 @@ Responde UNICAMENTE con JSON, sin markdown ni texto extra, con UNA de estas 4 fo
 {"tipo":"nueva_compuesta","nombre":"...","base":"area"|"largo","partidas":["03.05","04.05"]}`;
     let r = await llamarClaude(prompt, 400);
     r = r.replace(/```json|```/g, "").trim();
-    const ini = r.indexOf("{"), fin = r.lastIndexOf("}");
-    if (ini >= 0 && fin > ini) r = r.slice(ini, fin + 1);
-    const data = JSON.parse(r);
+    const data = JSON.parse(extraerJSON(r));
     if (data.tipo === "existe_simple" && cmpPartida(data.codigo)) {
       catCrear.resultado = { tipo: "existe_simple", codigo: data.codigo };
     } else if (data.tipo === "existe_compuesta" && cmpCompuesta(data.id)) {
@@ -2810,9 +2807,7 @@ async function triageFoto(fid, blobOverride, btn) {
 Responde ÚNICAMENTE con JSON, sin markdown ni texto extra: {"dano":"...","atc":"...","desc":"..."}`;
     let r = await llamarClaude(prompt, 300, b64);
     r = r.replace(/```json|```/g, "").trim();
-    const ini = r.indexOf("{"), fin = r.lastIndexOf("}");
-    if (ini >= 0 && fin > ini) r = r.slice(ini, fin + 1);
-    const data = JSON.parse(r);
+    const data = JSON.parse(extraerJSON(r));
     const sug = {};
     if (DANOS.includes(data.dano)) sug.dano = data.dano;
     if (ATC.includes(data.atc)) sug.atc = data.atc;
@@ -2869,9 +2864,7 @@ ${cat}
 Responde UNICAMENTE con JSON, sin markdown ni texto extra: {"partida":"NN.NN","elemento":"...","obs":"..."}`;
     let r = await llamarClaude(prompt, 300, b64);
     r = r.replace(/```json|```/g, "").trim();
-    const ini = r.indexOf("{"), fin = r.lastIndexOf("}");
-    if (ini >= 0 && fin > ini) r = r.slice(ini, fin + 1);
-    const data = JSON.parse(r);
+    const data = JSON.parse(extraerJSON(r));
     const sug = {};
     if (cmpPartida(data.partida)) sug.partida = data.partida;
     if (typeof data.elemento === "string" && data.elemento.trim()) sug.elemento = data.elemento.trim();
@@ -5323,6 +5316,29 @@ function rAjustes() {
     }
   };
 }
+// Saca el primer objeto JSON completo y balanceado de la respuesta de la IA.
+// Antes se cortaba desde la primera "{" hasta la ÚLTIMA "}" del texto: si el
+// modelo agregaba una nota o un ejemplo después del JSON (a pesar de pedir
+// "solo JSON"), esa "}" tardía se colaba en el corte y quedaba un texto con
+// dos objetos pegados, que JSON.parse rechaza con "unexpected non-whitespace
+// character after JSON". Contando llaves (e ignorando lo que hay dentro de
+// strings) nos quedamos con el primer objeto completo y se descarta el resto.
+function extraerJSON(texto) {
+  const ini = texto.indexOf("{");
+  if (ini < 0) throw new Error("La IA no devolvió JSON.");
+  let profundidad = 0, enString = false, escape = false;
+  for (let i = ini; i < texto.length; i++) {
+    const c = texto[i];
+    if (escape) { escape = false; continue; }
+    if (c === "\\") { escape = true; continue; }
+    if (c === '"') { enString = !enString; continue; }
+    if (enString) continue;
+    if (c === "{") profundidad++;
+    else if (c === "}") { profundidad--; if (profundidad === 0) return texto.slice(ini, i + 1); }
+  }
+  throw new Error("El JSON de la IA quedó incompleto.");
+}
+
 async function llamarClaude(prompt, maxTokens, imagenBase64) {
   if (!st.apiKey) throw new Error("Configura primero la clave API en Ajustes.");
   const content = imagenBase64
