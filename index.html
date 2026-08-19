@@ -121,8 +121,9 @@
 <script>
 "use strict";
 /* ================= Constantes ================= */
-const VERSION = "3.68";
+const VERSION = "3.69";
 const CHANGELOG = [
+  ["3.69", "En Cómputos métricos, cuando la zona es una unidad ya inspeccionada, aparece el botón \"Usar foto de la inspección\" para elegir una de las fotos que ya tomaste en el ATC-20 en vez de repetirla. Queda una copia independiente: si luego la quitas de la línea de cómputo, la foto original de la inspección no se toca."],
   ["3.68", "Columna, viga, muro y techo (losa maciza) ahora aceptan varias zonas dañadas en el mismo elemento: el botón \"Σ sumar varias zonas\" deja cargar cada parche con su propio largo × ancho y suma el área total, con la Profundidad como un solo valor compartido para el mortero. \"N.° de elementos\" sigue funcionando en este modo (por ejemplo, 2 vigas idénticas con el mismo patrón de daño)."],
   ["3.67", "En Cómputos métricos: cada línea guardada tiene un botón ⚑ para marcarla \"volver después\" (aparece con 🚩 en la lista), y arriba de \"Líneas capturadas\" hay un buscador (por observación, elemento, zona o piso) y un filtro \"Solo marcadas\". El botón Guardar cambia de color y avisa con ⚠ cuando hay una medida cargada sin guardar. Nueva partida 03.13 (reparación de delaminación superficial) y botón \"+ Guardar y agregar otra partida (misma zona)\" para reparaciones que llevan varias partidas sueltas (p. ej. delaminado + inyección epóxica, o sumar andamio)."],
   ["3.66", "Nueva pantalla \"Catálogo personal\" (Ajustes → Catálogo personal): lista lo que creaste con \"Crear con IA\", con opción de editar (descripción, unidad o notas de una partida simple; nombre de una compuesta) o eliminar cada una. Borrar o editar aquí no toca las líneas que ya guardaste en tus inspecciones."],
@@ -4271,6 +4272,48 @@ function cmpCinta() {
     <b style="font-size:20px">${cmpFmt(cmpParcial(l, p), p.unidad === "m3" ? 3 : 2)} <span style="font-size:13px;opacity:.75">${CMP_UNI[p.unidad]}</span></b>`;
 }
 
+/* Reutilizar una foto ya tomada durante la inspección ATC-20 de esta unidad,
+   en vez de tener que tomar (o repetir) la foto en Cómputos. Se copia el blob
+   a un id nuevo -- si se compartiera el mismo id y luego se "Quita" la foto
+   de la línea de cómputo, blobDel() borraría también la foto original de la
+   inspección, que vive bajo ese mismo id. */
+let cmpUsarFotoAbierto = false;
+async function cmpPintarUsarFoto() {
+  const cont = document.getElementById("cmUsarFoto");
+  if (!cont) return;
+  const u = cmpUnidadActual();
+  if (!cmpUsarFotoAbierto || !u || !(u.fotos || []).length) { cont.innerHTML = ""; return; }
+  cont.innerHTML = `<div class="tarjeta" style="padding:10px;margin-bottom:8px">
+    <div class="etiq" style="margin-top:0">Fotos de esta unidad — toque una para usarla aquí</div>
+    <div id="cmUsarFotoGrid" style="display:grid;grid-template-columns:repeat(3,1fr);gap:6px"></div>
+  </div>`;
+  const grid = document.getElementById("cmUsarFotoGrid");
+  for (const f of u.fotos) {
+    const url = await urlFoto(f.id);
+    const img = document.createElement("img");
+    img.src = url || "";
+    img.alt = "";
+    img.style.cssText = "width:100%;aspect-ratio:1;object-fit:cover;border-radius:8px;cursor:pointer;background:var(--borde)";
+    img.onclick = () => cmpUsarFotoInspeccion(f.id);
+    grid.appendChild(img);
+  }
+}
+async function cmpUsarFotoInspeccion(fid) {
+  const blob = await blobGet("photo:" + fid);
+  if (!blob) { alert("No se pudo cargar la foto."); return; }
+  const u = cmpUnidadActual();
+  const original = u && (u.fotos || []).find((f) => f.id === fid);
+  const nuevoId = uid();
+  await blobSet("photo:" + nuevoId, blob);
+  const _cf = { id: nuevoId, ts: new Date().toISOString() };
+  if (original && original.geo) _cf.geo = original.geo;
+  cmpBorrador.fotos.push(_cf);
+  cmpUsarFotoAbierto = false;
+  await cmpPintarUsarFoto();
+  await cmpPintarFotos();
+  await cmpColorSugerir(false);
+  cmpRepintarAcabado();
+}
 async function cmpPintarFotos() {
   const cont = document.getElementById("cmFotos");
   if (!cont) return;
@@ -5132,6 +5175,8 @@ function rComputos() {
         <button class="btn btn-negro" id="cmBCam">📷 Tomar foto</button>
         <button class="btn btn-linea" id="cmBGal">🖼 De galería</button>
       </div>
+      ${(cmpUnidadActual() && (cmpUnidadActual().fotos || []).length) ? `<button class="btn btn-linea" id="cmBUsarInsp" style="margin-bottom:8px">📷 Usar foto de la inspección (${cmpUnidadActual().fotos.length})</button>` : ""}
+      <div id="cmUsarFoto"></div>
       <div id="cmFotos"></div>
       <button class="btn btn-linea" id="cmMedir" style="margin-top:8px">📐 Medir sobre la foto</button>
       <p class="error" id="cmErr"></p>
@@ -5168,6 +5213,7 @@ function rComputos() {
   cmpPintarUbic();
   if (simple) { cmpPintarDims(); cmpPintarAcabado(); } else cmpPintarCompuesta();
   cmpPintarFotos();
+  cmpPintarUsarFoto();
   cmpCargarFotos();
   catCrearWire();
 
@@ -5239,6 +5285,8 @@ function rComputos() {
     cmpRepintarAcabado();
   };
   cam.onchange = onFotos; gal.onchange = onFotos;
+  const bUsarInsp = document.getElementById("cmBUsarInsp");
+  if (bUsarInsp) bUsarInsp.onclick = () => { cmpUsarFotoAbierto = !cmpUsarFotoAbierto; cmpPintarUsarFoto(); };
 
   document.getElementById("cmMedir").onclick = () => { cmpCapturar(); nav({ n: "medir", volverA: st.pantalla.volverA }); };
 
