@@ -121,8 +121,9 @@
 <script>
 "use strict";
 /* ================= Constantes ================= */
-const VERSION = "3.60";
+const VERSION = "3.61";
 const CHANGELOG = [
+  ["3.61", "Arreglado: en la reparación de viga o columna, el mortero a veces no quedaba incluido al guardar aunque se hubiera puesto la profundidad. Ahora la Profundidad se exige igual que las demás medidas cuando hace falta para el mortero, y se vuelve a leer lo tecleado justo antes de guardar para no perder el último número si el guardado se hizo muy rápido."],
   ["3.60", "En Cómputos métricos, cada foto que tomes para una línea ahora se puede analizar con IA igual que en la inspección: el botón \"Analizar con IA\" sugiere la partida, el elemento y una observación breve, y \"Delimitar y analizar\" deja acotar a mano la zona de interés antes de mandarla a analizar. La sugerencia siempre se muestra para confirmar, nunca se aplica sola — útil para cuando vas a medir un edificio que no has inspeccionado."],
   ["3.59", "La app ahora guarda, dentro de cada inspección, si aceptaste o descartaste cada sugerencia de la IA sobre daño y ATC-20 — para más adelante poder revisar qué tan seguido acierta."],
   ["3.58", "La IA ahora puede sugerir el tipo de daño y la clasificación ATC-20 de una foto: el botón \"Analizar con IA\" en cada foto propone una sugerencia que hay que confirmar (nunca se aplica sola). Si la foto tiene mucho alrededor que puede confundir el análisis, \"Delimitar y analizar\" deja trazar a mano el contorno de lo que interesa antes de mandarlo a analizar."],
@@ -3862,6 +3863,16 @@ function cmpCapturar() {
   const ob = document.getElementById("cmObs");
   if (el) cmpBorrador.elemento = el.value;
   if (ob) cmpBorrador.obs = ob.value;
+  // Relectura defensiva: por más que cada input tenga su oninput, un tap rápido
+  // sobre "Guardar" justo después de escribir (sobre todo con teclados numéricos
+  // que demoran en confirmar el último dígito) puede ganarle al evento. Antes de
+  // validar o guardar, se vuelve a leer el DOM para no perder lo ya tecleado.
+  document.querySelectorAll("#cmComp [data-base]").forEach((i) => { cmpComp.base[i.dataset.base] = i.value; });
+  document.querySelectorAll("#cmComp [data-cant]").forEach((i) => {
+    const k = i.dataset.cant;
+    cmpComp.comps[k] = cmpComp.comps[k] || {};
+    cmpComp.comps[k].cant = i.value;
+  });
 }
 
 function cmpCampoHtml(a, cc) {
@@ -4115,17 +4126,23 @@ function cmpGuardarCompuesta() {
   cmpCapturar();
   const errs = [];
   if (!String(cmpBorrador.zona || "").trim()) errs.push("Indique la zona donde tomó la medida.");
+  const incl = a.componentes.filter((x) => cmpIncluido(x));
   for (const cc of a.campos) {
     if (cmpComp.segsOn && a.sumable === cc) continue;
     if (cmpComp.segsOn && cc === "cantidad") continue;
-    if (a.camposInfo && a.camposInfo.indexOf(cc) >= 0) continue;
     if (a.baseCalc) continue;
+    const esInfo = a.camposInfo && a.camposInfo.indexOf(cc) >= 0;
+    // Un campo "info" (como profundidad) no entra en la superficie, pero si
+    // hay un componente incluido que lo necesita para su volumen (mortero,
+    // p. ej.), sí es obligatorio: si no, la partida sale en 0 sin que quede
+    // claro por qué, y termina descartándose por error.
+    const requeridoPorVolumen = esInfo && incl.some((x) => x.base === "volumen");
+    if (esInfo && !requeridoPorVolumen) continue;
     const v = cmpNum(cmpComp.base[cc], cc === "cantidad" ? 1 : NaN);
     if (!Number.isFinite(v) || v <= 0) errs.push((a.etiquetas[cc] || CMP_TXT[cc]) + " debe ser mayor que cero.");
   }
   if (a.baseCalc && cmpBaseCompuesta() <= 0) errs.push("La superficie a reparar debe ser mayor que cero.");
   if (cmpComp.segsOn && a.sumable && cmpSegSuma() <= 0) errs.push("Agregue al menos un tramo con longitud mayor que cero.");
-  const incl = a.componentes.filter((x) => cmpIncluido(x));
   if (!incl.length) errs.push("Debe incluir al menos una partida.");
   for (const x of incl) if (cmpCantidadComponente(x) <= 0)
     errs.push("La cantidad de la partida " + x.partida + " debe ser mayor que cero.");
