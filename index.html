@@ -133,8 +133,9 @@
 <script>
 "use strict";
 /* ================= Constantes ================= */
-const VERSION = "3.77";
+const VERSION = "3.78";
 const CHANGELOG = [
+  ["3.78", "En \"Líneas capturadas\" (Cómputos métricos), las partidas que salen de la misma reparación compuesta ahora se ven agrupadas: un punto de color junto a cada una (mismo color = misma reparación) y el nombre de la compuesta arriba del grupo, así queda claro por qué solo la primera trae foto. Además, esas partidas derivadas ahora sí se pueden corregir: se puede editar el elemento y la observación, y agregar, anotar o quitar fotos directo en cada línea (antes solo las partidas simples tenían esa opción; la cantidad se sigue corrigiendo desde el Dashboard)."],
   ["3.77", "Nuevo \"Dashboard de cómputos\" (botón en la pantalla de niveles): una tabla ancha, pensada para el computador, con todas las líneas de una vez — foto, partida, elemento, zona, nivel, observación y cantidad final editables directo ahí, sin pasar por el formulario de medidas, más un buscador y el botón ⚑/🚩 y ✕ de siempre. Incluye \"Exportar a Excel\", con una hoja de líneas (foto en miniatura incluida) y otra de resumen por partida con el desperdicio aplicado."],
   ["3.76", "\"+ Guardar y agregar otra partida (misma zona)\" ahora también está en Partida compuesta, no solo en Línea simple: sirve para encadenar, por ejemplo, una compuesta con una partida simple suelta, o dos compuestas seguidas en el mismo elemento. La foto se conserva igual que en modo simple."],
   ["3.75", "Arreglado: al tocar \"+ Guardar y agregar otra partida (misma zona)\", la foto que ya habías tomado desaparecía en vez de quedar disponible para la siguiente partida. Ahora se conserva (con una copia independiente, para que no se pierda la de la partida ya guardada si luego quitas la del borrador)."],
@@ -3800,14 +3801,27 @@ function cmpDetalleLinea(l) {
     ${l.pintura ? `<p class="aviso" style="margin:0 0 6px;display:flex;align-items:center;gap:6px">
       <span style="flex:none;width:14px;height:14px;border-radius:4px;border:1px solid var(--borde);background:${cmpHexOk(l.pintura.colorHex) || "transparent"}"></span>
       ${esc(cmpPinturaTxt(l))}</p>` : ""}
-    <p class="aviso" style="margin:0 0 6px"><b>${esc(org)}</b>${l.obs ? " · " + esc(l.obs) : ""}</p>
+    ${l.derivada ? `
+    <label class="campo" style="margin-bottom:8px"><span>Elemento</span>
+      <input data-derivelem="${l.id}" value="${esc(l.elemento || "")}" /></label>
+    <label class="campo" style="margin-bottom:8px"><span>${esc(org)} · Observación</span>
+      <textarea data-derivobs="${l.id}" rows="2">${esc(l.obs || "")}</textarea></label>
+    ` : `<p class="aviso" style="margin:0 0 6px"><b>${esc(org)}</b>${l.obs ? " · " + esc(l.obs) : ""}</p>`}
     ${fotos.length ? fotos.map((f) => `
       <div class="foto-card" style="margin-bottom:8px">
         <img data-foto="${f.id}" alt="Fotografía de respaldo" style="background:var(--borde);min-height:60px" />
         <div class="cuerpo"><p class="aviso" style="margin:0">${esc(f.pie || "")}</p>${f.geo ? `<p class="aviso" style="margin:4px 0 0">📍 ${geoTxt(f.geo)}</p>` : ""}
-          <button class="btn btn-linea" style="width:auto;padding:5px 10px;font-size:12px;margin-top:8px" data-anotarl="${f.id}">✏️ Anotar / ampliar</button></div>
+          <div style="display:flex;gap:6px;margin-top:8px">
+            <button class="btn btn-linea" style="width:auto;padding:5px 10px;font-size:12px" data-anotarl="${f.id}">✏️ Anotar / ampliar</button>
+            ${l.derivada ? `<button class="btn-rojo-linea" style="width:auto;padding:5px 10px;font-size:12px" data-derivquitarfoto="${f.id}" data-derivquitarfotoln="${l.id}">✕ Quitar</button>` : ""}
+          </div>
+        </div>
       </div>`).join("") : `<p class="aviso" style="margin:0">Esta línea no tiene fotografías de respaldo.</p>`}
-    ${!l.derivada ? `<button class="btn btn-linea" style="width:auto;padding:6px 11px;font-size:12px;margin:0 6px 6px 0" data-editln="${l.id}">✎ Editar / corregir</button>` : `<p class="aviso" style="margin:6px 0 0;font-style:italic">La edición de partidas compuestas llegará en una próxima versión.</p>`}
+    ${l.derivada ? `
+    <input type="file" accept="image/*" id="derivFoto_${l.id}" style="display:none" />
+    <button class="btn btn-linea" style="width:auto;padding:6px 11px;font-size:12px;margin:0 6px 6px 0" data-derivaddfoto="${l.id}">📷 Agregar foto a esta línea</button>
+    <p class="aviso" id="derivFotoMsg_${l.id}" style="margin:0"></p>
+    ` : `<button class="btn btn-linea" style="width:auto;padding:6px 11px;font-size:12px;margin:0 6px 6px 0" data-editln="${l.id}">✎ Editar / corregir</button>`}
     ${cmpReplicarUI(l)}
   </div>`;
 }
@@ -5181,6 +5195,16 @@ async function rMedir() {
   };
 }
 
+/* Color estable por grupo (mismo id de compuesta guardada -> mismo color),
+   para poder distinguir a simple vista en "Líneas capturadas" qué partidas
+   vienen de la misma reparación. */
+const CMP_GRUPO_COLORES = ["#2563eb", "#7c3aed", "#0891b2", "#c2410c", "#be185d", "#4d7c0f", "#0f766e", "#9333ea"];
+function cmpGrupoColor(gid) {
+  let h = 0;
+  for (let i = 0; i < gid.length; i++) h = (h * 31 + gid.charCodeAt(i)) >>> 0;
+  return CMP_GRUPO_COLORES[h % CMP_GRUPO_COLORES.length];
+}
+
 function rComputos() {
   const c = cmpDe(st.insp);
   const b = st.insp.edificio;
@@ -5220,18 +5244,27 @@ function rComputos() {
     </div>`;
   }).join("") : `<p class="aviso">Aún no hay cantidades computadas.</p>`;
 
+  let cmpGrupoAnterior = null;
   const linHtml = c.lineas.length ? c.lineas.slice().reverse().map((l) => {
     const p2 = cmpPartidaLinea(l) || { descripcion: "" };
     const meta = [l.elemento, l.zona, l.nivel].filter(Boolean).join(" · ");
     const nf = (l.fotos || []).length;
     const abierta = cmpVer === l.id;
     const buscar = esc([l.partida, p2.descripcion, l.elemento, l.zona, l.nivel, l.obs].filter(Boolean).join(" ").toLowerCase());
-    return `<div data-linea="${l.id}" data-buscar="${buscar}" data-marcada="${l.marcada ? "1" : "0"}">
+    const enGrupo = l.derivada && l.grupo;
+    const color = enGrupo ? cmpGrupoColor(l.grupo) : "";
+    const cabezaGrupo = enGrupo && l.grupo !== cmpGrupoAnterior
+      ? `<div class="aviso" style="margin:10px 0 4px;font-weight:700;color:${color};display:flex;align-items:center;gap:5px">
+          <span style="width:9px;height:9px;border-radius:50%;background:${color};flex:none"></span>⊞ ${esc(l.compuesta || "Partida compuesta")}</div>`
+      : "";
+    cmpGrupoAnterior = enGrupo ? l.grupo : null;
+    return `${cabezaGrupo}<div data-linea="${l.id}" data-buscar="${buscar}" data-marcada="${l.marcada ? "1" : "0"}"
+      ${enGrupo ? `style="border-left:3px solid ${color};padding-left:8px;margin-left:-8px"` : ""}>
       <div class="lista-foto">
         ${nf ? `<img data-foto="${l.fotos[0].id}" data-anotarl="${l.fotos[0].id}" alt="" title="Toque para ampliar"
           style="width:44px;height:44px;border-radius:8px;object-fit:cover;cursor:zoom-in;flex:none;background:var(--borde)" />` : ""}
         <button style="flex:1;background:none;border:none;text-align:left;font-family:inherit;font-size:13px;padding:0"
-          data-ver="${l.id}"><b>${l.partida}</b> ${esc(p2.descripcion)}${l.derivada ? ' <span class="chip">⊞</span>' : ""}${l.marcada ? ' <span class="chip a">🚩 volver después</span>' : ""}
+          data-ver="${l.id}"><b>${l.partida}</b> ${esc(p2.descripcion)}${enGrupo ? ` <span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:${color}" title="Parte de: ${esc(l.compuesta || "")}"></span>` : ""}${l.marcada ? ' <span class="chip a">🚩 volver después</span>' : ""}
           <br /><span class="aviso">${esc(meta)} · ${nf ? nf + (nf === 1 ? " foto" : " fotos") : "sin foto"} · ${abierta ? "ocultar" : "ver detalle"}</span></button>
         <b class="mono" style="font-size:14px">${cmpFmt(l.parcial)} ${CMP_UNI[l.unidad]}</b>
         <button class="btn-gris" style="width:auto;padding:6px 10px;${l.marcada ? "background:var(--ambar-bg);border-color:var(--ambar)" : ""}" data-marcar="${l.id}" title="Marcar para volver después">${l.marcada ? "🚩" : "⚑"}</button>
@@ -5533,6 +5566,53 @@ function rComputos() {
 
   $app.querySelectorAll("[data-editln]").forEach((b) => (b.onclick = () => cmpEditarLinea(b.dataset.editln)));
   $app.querySelectorAll("[data-anotarl]").forEach((b) => (b.onclick = () => abrirEditorFoto(b.dataset.anotarl, rComputos)));
+
+  // Edición liviana de líneas derivadas (compuestas): no tienen dimensiones
+  // propias que recalcular (se comparten con el resto del grupo), así que en
+  // vez del formulario completo solo se deja corregir el texto y las fotos.
+  $app.querySelectorAll("[data-derivelem]").forEach((i) => { i.oninput = (e) => { const l = c.lineas.find((x) => x.id === i.dataset.derivelem); if (l) { l.elemento = e.target.value; guardar(); } }; });
+  $app.querySelectorAll("[data-derivobs]").forEach((i) => { i.oninput = (e) => { const l = c.lineas.find((x) => x.id === i.dataset.derivobs); if (l) { l.obs = e.target.value; guardar(); } }; });
+  $app.querySelectorAll("[data-derivquitarfoto]").forEach((b) => {
+    b.onclick = async () => {
+      const l = c.lineas.find((x) => x.id === b.dataset.derivquitarfotoln);
+      if (!l) return;
+      if (!confirm("¿Quitar esta foto de la línea?")) return;
+      const fid = b.dataset.derivquitarfoto;
+      l.fotos = (l.fotos || []).filter((f) => f.id !== fid);
+      await blobDel("photo:" + fid);
+      guardar();
+      rComputos();
+    };
+  });
+  $app.querySelectorAll("[data-derivaddfoto]").forEach((b) => {
+    const id = b.dataset.derivaddfoto;
+    const input = document.getElementById("derivFoto_" + id);
+    if (!input) return;
+    b.onclick = () => input.click();
+    input.onchange = async () => {
+      const file = input.files && input.files[0];
+      input.value = "";
+      if (!file) return;
+      const l = c.lineas.find((x) => x.id === id);
+      if (!l) return;
+      const msg = document.getElementById("derivFotoMsg_" + id);
+      if (msg) msg.textContent = "Procesando foto…";
+      try {
+        const blob = await comprimir(file);
+        const fid = uid();
+        await blobSet("photo:" + fid, blob);
+        const _cf = { id: fid, ts: new Date().toISOString() };
+        if (!l.fotos) l.fotos = [];
+        l.fotos.push(_cf);
+        geoAdjuntar(_cf, rComputos);
+        guardar();
+        rComputos();
+      } catch (ex) {
+        if (msg) { msg.textContent = "No se pudo guardar la foto: " + (ex && ex.message ? ex.message : ex); msg.style.color = "var(--rojo)"; }
+      }
+    };
+  });
+
   const bEditCancel = document.getElementById("cmEditCancel");
   if (bEditCancel) bEditCancel.onclick = () => { cmpEditId = null; cmpPintEdit = null; cmpBorrador = { origen: "sitio", fotos: [] }; rComputos(); window.scrollTo(0, 0); };
   $app.querySelectorAll("[data-repltoggle]").forEach((b) => (b.onclick = () => {
