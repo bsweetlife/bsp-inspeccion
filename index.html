@@ -121,8 +121,9 @@
 <script>
 "use strict";
 /* ================= Constantes ================= */
-const VERSION = "3.71";
+const VERSION = "3.72";
 const CHANGELOG = [
+  ["3.72", "Botón \"Copiar\" en Mis inspecciones: crea una inspección nueva con los mismos niveles y unidades (nombres) y los datos del edificio (nombre, dirección, sistema constructivo, etc.), sin copiar fotos, ATC-20, cómputos ni el número de informe — útil para un edificio vecino o del mismo nombre, sin escribir todo de nuevo."],
   ["3.71", "Las líneas capturadas en Cómputos métricos muestran ahora una miniatura de su primera foto — tóquela para ampliarla o anotarla, igual que en \"ver detalle\"."],
   ["3.70", "Columna, viga y muro ahora miden largo, ancho y profundidad en centímetros (más rápido de teclear en obra) en vez de metros — el área y el volumen del mortero se siguen mostrando en m² y m³ como el resto del catálogo, la app hace la conversión sola. Aplica también al modo de varias zonas. Techo (losa maciza) y las demás compuestas no cambiaron: siguen en metros."],
   ["3.69", "En Cómputos métricos, cuando la zona es una unidad ya inspeccionada, aparece el botón \"Usar foto de la inspección\" para elegir una de las fotos que ya tomaste en el ATC-20 en vez de repetirla. Queda una copia independiente: si luego la quitas de la línea de cómputo, la foto original de la inspección no se toca."],
@@ -458,6 +459,33 @@ function nuevaInsp() {
 const mkNivel = (nombre, apts, comun) => ({ id: uid(), nombre, comun: !!comun,
   apts: apts.map((n) => ({ id: uid(), nombre: n })), voz: { audio: null, texto: "" } });
 const unidadVacia = () => ({ fotos: [], voz: { audio: null, texto: "" }, atc: "", estado: "" });
+// Copia SOLO la estructura de una inspección (edificio, niveles, unidades por
+// nombre) para no reescribir todo en un edificio vecino o del mismo nombre.
+// Nunca copia hallazgos: ni fotos, ni ATC-20, ni cómputos, ni observaciones
+// de voz, ni el número de informe (cada inspección necesita el suyo) ni la
+// fecha/hora/GPS de la visita original.
+function copiarEstructuraInsp(orig) {
+  const ahora = new Date();
+  const eo = orig.edificio || {};
+  return {
+    edificio: {
+      nombre: eo.nombre || "", direccion: eo.direccion || "", parroquia: eo.parroquia || "",
+      municipio: eo.municipio || "", estado: eo.estado || "", informe: "", anio: eo.anio || "",
+      sistema: eo.sistema || "", parcela: eo.parcela || "", construccion: eo.construccion || "",
+      unidades: eo.unidades || "", pisos: eo.pisos || "", notas: "", atcGlobal: "",
+      antecedentes: "", conserje: "", gps: null,
+      fecha: ahora.toISOString().slice(0, 10),
+      horaInicio: ahora.toTimeString().slice(0, 5)
+    },
+    niveles: (orig.niveles || []).map((nv) => ({
+      id: uid(), nombre: nv.nombre, comun: !!nv.comun,
+      apts: (nv.apts || []).map((a) => ({ id: uid(), nombre: a.nombre })),
+      voz: { audio: null, texto: "" }
+    })),
+    unidades: {},
+    listo: true
+  };
+}
 
 /* ================= Cómputos métricos ================= */
 const CMP_UNI = { m: "m", m2: "m²", m3: "m³", kg: "kg", und: "und", gbl: "gbl" };
@@ -1800,6 +1828,7 @@ function rLista() {
         <div class="detalle">${e.informe ? "BSP-2026-" + esc(e.informe) : "Sin n.° de informe"}${e.fecha ? " · " + esc(e.fecha) : ""}</div>
         ${e.nComp ? `<div style="margin-top:5px"><span class="chip" style="${e.atc ? "border-color:var(--borde);color:var(--gris);background:var(--fondo)" : "border-color:var(--ambar);color:var(--ambar-tx);background:var(--ambar-bg)"}">${e.atc ? "CÓMPUTOS · " + e.nComp : "SOLO CÓMPUTOS · " + e.nComp}</span></div>` : ""}
       </button>
+      <button class="btn-gris" style="width:auto;padding:7px 10px;border-radius:8px;font-size:12px" data-copiar="${e.id}">Copiar</button>
       <button class="btn-rojo-linea" style="width:auto;padding:7px 10px;border-radius:8px;font-size:12px" data-borrar="${e.id}">Eliminar</button>
     </div>`).join("");
   $app.innerHTML = `
@@ -1837,6 +1866,20 @@ function rLista() {
     st.omitirLogin = false;
     render();
   };
+  $app.querySelectorAll("[data-copiar]").forEach((b) => (b.onclick = async () => {
+    const id = b.dataset.copiar;
+    const raw = await kvGet("insp:" + id);
+    if (!raw) return;
+    const orig = JSON.parse(raw);
+    if (!confirm(`¿Copiar la estructura de "${orig.edificio.nombre || "esta inspección"}" (niveles y unidades) a una inspección nueva? No se copian fotos, ATC-20, cómputos ni el número de informe.`)) return;
+    const nuevo = copiarEstructuraInsp(orig);
+    const newId = uid();
+    st.insp = nuevo; st.inspId = newId; st.urls = {};
+    st.index.push({ id: newId, nombre: nuevo.edificio.nombre, informe: "", fecha: nuevo.edificio.fecha });
+    await kvSet("insp:" + newId, JSON.stringify(nuevo));
+    await kvSet("index", JSON.stringify(st.index));
+    nav({ n: "setup" });
+  }));
   $app.querySelectorAll("[data-abrir]").forEach((b) => (b.onclick = async () => {
     const id = b.dataset.abrir;
     const raw = await kvGet("insp:" + id);
