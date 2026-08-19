@@ -121,8 +121,9 @@
 <script>
 "use strict";
 /* ================= Constantes ================= */
-const VERSION = "3.69";
+const VERSION = "3.70";
 const CHANGELOG = [
+  ["3.70", "Columna, viga y muro ahora miden largo, ancho y profundidad en centímetros (más rápido de teclear en obra) en vez de metros — el área y el volumen del mortero se siguen mostrando en m² y m³ como el resto del catálogo, la app hace la conversión sola. Aplica también al modo de varias zonas. Techo (losa maciza) y las demás compuestas no cambiaron: siguen en metros."],
   ["3.69", "En Cómputos métricos, cuando la zona es una unidad ya inspeccionada, aparece el botón \"Usar foto de la inspección\" para elegir una de las fotos que ya tomaste en el ATC-20 en vez de repetirla. Queda una copia independiente: si luego la quitas de la línea de cómputo, la foto original de la inspección no se toca."],
   ["3.68", "Columna, viga, muro y techo (losa maciza) ahora aceptan varias zonas dañadas en el mismo elemento: el botón \"Σ sumar varias zonas\" deja cargar cada parche con su propio largo × ancho y suma el área total, con la Profundidad como un solo valor compartido para el mortero. \"N.° de elementos\" sigue funcionando en este modo (por ejemplo, 2 vigas idénticas con el mismo patrón de daño)."],
   ["3.67", "En Cómputos métricos: cada línea guardada tiene un botón ⚑ para marcarla \"volver después\" (aparece con 🚩 en la lista), y arriba de \"Líneas capturadas\" hay un buscador (por observación, elemento, zona o piso) y un filtro \"Solo marcadas\". El botón Guardar cambia de color y avisa con ⚠ cuando hay una medida cargada sin guardar. Nueva partida 03.13 (reparación de delaminación superficial) y botón \"+ Guardar y agregar otra partida (misma zona)\" para reparaciones que llevan varias partidas sueltas (p. ej. delaminado + inyección epóxica, o sumar andamio)."],
@@ -779,9 +780,10 @@ const CMP_COMPUESTAS = [
     id: "columna",
     nombre: "Reparación de columna con cabillas expuestas",
     campos: ["cantidad", "largo", "ancho", "profundidad"],
-    etiquetas: { cantidad: "N.° de columnas", largo: "Longitud a reparar (m)", ancho: "Ancho de la zona (m)", profundidad: "Profundidad (m)" },
+    etiquetas: { cantidad: "N.° de columnas", largo: "Longitud a reparar (cm)", ancho: "Ancho de la zona (cm)", profundidad: "Profundidad (cm)" },
     camposInfo: ["profundidad"],
     sumableArea: true,
+    medidaCm: true,
     magnitud: "Superficie a reparar",
     unidad: "m2",
     nota: "Las cabillas nuevas se computan aparte, en kg, con la partida 03.02. Si hay varios parches en la misma columna, use «Σ sumar varias zonas» para cargar cada uno con su propio largo × ancho.",
@@ -865,9 +867,10 @@ const CMP_COMPUESTAS = [
     id: "viga",
     nombre: "Reparación de viga con cabillas expuestas",
     campos: ["cantidad", "largo", "ancho", "profundidad"],
-    etiquetas: { cantidad: "N.° de vigas", largo: "Longitud a reparar (m)", ancho: "Ancho de la zona (m)", profundidad: "Profundidad (m)" },
+    etiquetas: { cantidad: "N.° de vigas", largo: "Longitud a reparar (cm)", ancho: "Ancho de la zona (cm)", profundidad: "Profundidad (cm)" },
     camposInfo: ["profundidad"],
     sumableArea: true,
+    medidaCm: true,
     magnitud: "Superficie a reparar",
     unidad: "m2",
     nota: "Las cabillas nuevas se computan aparte, en kg, con la partida 03.02. Si hay varios parches en la misma viga, use «Σ sumar varias zonas» para cargar cada uno con su propio largo × ancho.",
@@ -884,9 +887,10 @@ const CMP_COMPUESTAS = [
     id: "muro",
     nombre: "Reparación de muro o pantalla estructural con cabillas expuestas",
     campos: ["cantidad", "largo", "ancho", "profundidad"],
-    etiquetas: { cantidad: "N.° de muros/pantallas", largo: "Longitud a reparar (m)", ancho: "Alto de la zona (m)", profundidad: "Profundidad (m)" },
+    etiquetas: { cantidad: "N.° de muros/pantallas", largo: "Longitud a reparar (cm)", ancho: "Alto de la zona (cm)", profundidad: "Profundidad (cm)" },
     camposInfo: ["profundidad"],
     sumableArea: true,
+    medidaCm: true,
     magnitud: "Superficie a reparar",
     unidad: "m2",
     nota: "Las cabillas nuevas se computan aparte, en kg, con la partida 03.02. Si hay varios parches en el mismo muro, use «Σ sumar varias zonas» para cargar cada uno con su propio largo × alto.",
@@ -1432,11 +1436,18 @@ function cmpSegSuma() {
 }
 // Suma de áreas de varias zonas (largo × ancho por zona) — el equivalente de
 // cmpSegSuma() para columna/viga/muro/techo_maciza cuando el daño tiene
-// varios parches en el mismo elemento en vez de uno solo.
-function cmpZonaSuma() {
-  return (cmpComp.segs || []).reduce((sum, z) => sum + cmpNum(z && z.a) * cmpNum(z && z.b), 0);
+// varios parches en el mismo elemento en vez de uno solo. Si la compuesta
+// mide en centímetros (medidaCm), cada dimensión se pasa a metros antes de
+// multiplicar, para que el área salga siempre en m².
+function cmpZonaSuma(a) {
+  const f = (a && a.medidaCm) ? 0.01 : 1;
+  return (cmpComp.segs || []).reduce((sum, z) => sum + (cmpNum(z && z.a) * f) * (cmpNum(z && z.b) * f), 0);
 }
-// Valor efectivo de un campo base, respetando el modo "sumar varias".
+// Valor efectivo de un campo base, respetando el modo "sumar varias". Las
+// compuestas con medidaCm (columna/viga/muro) capturan largo/ancho/profundidad
+// en centímetros -- más cómodo de teclear en obra -- así que aquí se pasan a
+// metros antes de que el resto de las fórmulas (que siempre trabajan en
+// metros) las use. "cantidad" nunca se convierte: no es una medida lineal.
 function cmpBaseCampoVal(a, cc) {
   if (cmpComp.segsOn && a && a.sumable === cc) return cmpRed(cmpSegSuma());
   // "cantidad" no aplica cuando se suman tramos de una sola magnitud (grieta):
@@ -1445,7 +1456,8 @@ function cmpBaseCampoVal(a, cc) {
   // varios elementos idénticos con el mismo patrón de zonas, así que "cantidad"
   // se mantiene visible y multiplica el total.
   if (cc === "cantidad" && cmpComp.segsOn && !(a && a.sumableArea)) return 1;
-  return cmpNum(cmpComp.base[cc], cc === "cantidad" ? 1 : 0);
+  const v = cmpNum(cmpComp.base[cc], cc === "cantidad" ? 1 : 0);
+  return (a && a.medidaCm && cc !== "cantidad") ? v * 0.01 : v;
 }
 function cmpBaseCompuesta() {
   const a = cmpCompuesta(cmpComp.id);
@@ -1455,7 +1467,7 @@ function cmpBaseCompuesta() {
     const aNerv = cmpNum(cmpComp.base.nervios) * cmpNum(cmpComp.base.largoNervio) * cmpNum(cmpComp.base.anchoNervio);
     return cmpRed(aLosa + aNerv);
   }
-  if (cmpComp.segsOn && a.sumableArea) return cmpRed(cmpBaseCampoVal(a, "cantidad") * cmpZonaSuma());
+  if (cmpComp.segsOn && a.sumableArea) return cmpRed(cmpBaseCampoVal(a, "cantidad") * cmpZonaSuma(a));
   // La magnitud principal que se muestra en el recuadro. Si la compuesta
   // declara baseCampo, esa es la magnitud rectora (p. ej. la longitud de la
   // grieta); si no, se multiplican todos los campos dimensionales.
@@ -1469,11 +1481,12 @@ function cmpBaseMedidaTxt() {
   const a = cmpCompuesta(cmpComp.id);
   if (!a) return "";
   const info = a.camposInfo || [];
+  const unidLineal = a.medidaCm ? " cm" : " m";
   if (cmpComp.segsOn && a.sumableArea) {
     const zonas = (cmpComp.segs || []).filter((z) => cmpNum(z && z.a) > 0 && cmpNum(z && z.b) > 0);
-    let t = "área sumada de " + zonas.length + (zonas.length === 1 ? " zona" : " zonas") + " = " + cmpFmt(cmpZonaSuma()) + " m²";
+    let t = "área sumada de " + zonas.length + (zonas.length === 1 ? " zona" : " zonas") + " = " + cmpFmt(cmpZonaSuma(a)) + " m²";
     const infoVals = info.filter((x) => cmpNum(cmpComp.base[x]) > 0)
-      .map((x) => (a.etiquetas[x] || x).replace(/\s*\(m\)\s*$/, "") + " " + cmpFmt(cmpNum(cmpComp.base[x])) + " m");
+      .map((x) => (a.etiquetas[x] || x).replace(/\s*\((m|cm)\)\s*$/, "") + " " + cmpFmt(cmpNum(cmpComp.base[x])) + unidLineal);
     if (infoVals.length) t += "  ·  " + infoVals.join("  ·  ");
     return t;
   }
@@ -1491,10 +1504,10 @@ function cmpBaseMedidaTxt() {
   }
   const dim = a.campos.filter((x) => x !== "cantidad" && info.indexOf(x) < 0);
   let t = cmpFmt(cmpNum(cmpComp.base.cantidad, 1), 0) + " × " +
-    dim.map((x) => cmpFmt(cmpNum(cmpComp.base[x])) + " m").join(" × ") +
+    dim.map((x) => cmpFmt(cmpNum(cmpComp.base[x])) + unidLineal).join(" × ") +
     " = " + cmpFmt(cmpBaseCompuesta()) + " " + CMP_UNI[a.unidad];
   const infoVals = info.filter((x) => cmpNum(cmpComp.base[x]) > 0)
-    .map((x) => (a.etiquetas[x] || x).replace(/\s*\(m\)\s*$/, "") + " " + cmpFmt(cmpNum(cmpComp.base[x])) + " m");
+    .map((x) => (a.etiquetas[x] || x).replace(/\s*\((m|cm)\)\s*$/, "") + " " + cmpFmt(cmpNum(cmpComp.base[x])) + unidLineal);
   if (infoVals.length) t += "  ·  " + infoVals.join("  ·  ");
   return t;
 }
@@ -1506,12 +1519,12 @@ function cmpBaseDe(comp) {
   const n = cmpBaseCampoVal(a, "cantidad");
   const zonasOn = cmpComp.segsOn && a.sumableArea;
   if (comp.base === "volumen") {
-    const area = zonasOn ? cmpZonaSuma() : cmpBaseCampoVal(a, "largo") * cmpBaseCampoVal(a, "ancho");
+    const area = zonasOn ? cmpZonaSuma(a) : cmpBaseCampoVal(a, "largo") * cmpBaseCampoVal(a, "ancho");
     return cmpRed(n * area * cmpBaseCampoVal(a, "profundidad"));
   }
   if (comp.base === "largo") return cmpRed(n * cmpBaseCampoVal(a, "largo"));
   if (comp.base === "area") {
-    if (zonasOn) return cmpRed(n * cmpZonaSuma());
+    if (zonasOn) return cmpRed(n * cmpZonaSuma(a));
     let v = n;
     for (const c of a.campos) { if (c === "cantidad" || (a.camposInfo && a.camposInfo.indexOf(c) >= 0)) continue; v *= cmpBaseCampoVal(a, c); }
     return cmpRed(v);
@@ -4406,8 +4419,8 @@ function cmpCampoHtml(a, cc) {
   if (zonaPar && cmpComp.segsOn) {
     if (cc === "ancho") return ""; // el par largo × ancho ya se dibuja junto con "largo"
     const zonas = cmpComp.segs || [];
-    const etLargo = (a.etiquetas.largo || "Largo").replace(/\s*\(m\)\s*$/, "");
-    const etAncho = (a.etiquetas.ancho || "Ancho").replace(/\s*\(m\)\s*$/, "");
+    const etLargo = (a.etiquetas.largo || "Largo").replace(/\s*\((m|cm)\)\s*$/, "");
+    const etAncho = (a.etiquetas.ancho || "Ancho").replace(/\s*\((m|cm)\)\s*$/, "");
     return `<div class="campo" style="grid-column:1 / -1">
       <span>Zonas a reparar · ${zonas.length} ${zonas.length === 1 ? "zona" : "zonas"}</span>
       ${zonas.map((z, i) => `<div style="display:flex;gap:6px;align-items:center;margin-bottom:5px">
@@ -4418,7 +4431,7 @@ function cmpCampoHtml(a, cc) {
       <div style="display:flex;gap:8px;align-items:center;margin-top:2px">
         <button class="btn btn-linea" style="width:auto;padding:6px 11px;font-size:13px" data-zonaadd>+ agregar zona</button>
         <button class="btn btn-linea" style="width:auto;padding:6px 11px;font-size:13px" data-zonaoff>una sola</button>
-        <b class="mono" id="cmZonaSuma" style="margin-left:auto">Σ ${cmpFmt(cmpRed(cmpZonaSuma()))} m²</b>
+        <b class="mono" id="cmZonaSuma" style="margin-left:auto">Σ ${cmpFmt(cmpRed(cmpZonaSuma(a)))} m²</b>
       </div></div>`;
   }
   if (seg && cmpComp.segsOn) {
@@ -4584,7 +4597,7 @@ function cmpPintarCompuesta() {
       cmpComp.segs[+idx] = cmpComp.segs[+idx] || { a: "", b: "" };
       cmpComp.segs[+idx][campo] = e.target.value;
       const sm = document.getElementById("cmZonaSuma");
-      if (sm) sm.textContent = "Σ " + cmpFmt(cmpRed(cmpZonaSuma())) + " m²";
+      if (sm) sm.textContent = "Σ " + cmpFmt(cmpRed(cmpZonaSuma(a))) + " m²";
       cmpActualizarComp();
     };
   });
@@ -4711,7 +4724,7 @@ function cmpGuardarCompuesta() {
   }
   if (a.baseCalc && cmpBaseCompuesta() <= 0) errs.push("La superficie a reparar debe ser mayor que cero.");
   if (cmpComp.segsOn && a.sumable && cmpSegSuma() <= 0) errs.push("Agregue al menos un tramo con longitud mayor que cero.");
-  if (cmpComp.segsOn && a.sumableArea && cmpZonaSuma() <= 0) errs.push("Agregue al menos una zona con largo y ancho mayores que cero.");
+  if (cmpComp.segsOn && a.sumableArea && cmpZonaSuma(a) <= 0) errs.push("Agregue al menos una zona con largo y ancho mayores que cero.");
   if (!incl.length) errs.push("Debe incluir al menos una partida.");
   for (const x of incl) if (cmpCantidadComponente(x) <= 0)
     errs.push("La cantidad de la partida " + x.partida + " debe ser mayor que cero.");
@@ -4745,7 +4758,7 @@ function cmpGuardarCompuesta() {
       unidad: x.unidad || p.unidad, parcialFijo: q, parcial: q,
       derivada: true, grupo: gid, compuesta: a.nombre,
       baseMedida: (x.base === "volumen"
-        ? (cmpFmt(cmpBaseCompuesta()) + " m² × " + cmpFmt(cmpNum(cmpComp.base.profundidad)) + " m (prof.) = " + cmpFmt(cmpBaseDe(x), 3) + " m³")
+        ? (cmpFmt(cmpBaseCompuesta()) + " m² × " + cmpFmt(cmpNum(cmpComp.base.profundidad)) + (a.medidaCm ? " cm (prof.)" : " m (prof.)") + " = " + cmpFmt(cmpBaseDe(x), 3) + " m³")
         : baseTxt) + (x.factor !== 1 ? "  ×" + x.factor : "") +
         (x.caras ? "  ·  " + cmpCarasDe(x.caras) + (cmpCarasDe(x.caras) === 1 ? " cara" : " caras") : "") +
         ((e.alcance || x.alcanceDef) === "parcial" ? "  ·  alcance parcial declarado" : ""),
