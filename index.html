@@ -142,8 +142,9 @@
 <script>
 "use strict";
 /* ================= Constantes ================= */
-const VERSION = "3.80";
+const VERSION = "3.81";
 const CHANGELOG = [
+  ["3.81", "En \"Líneas capturadas\", dentro de un grupo de partidas compuestas la partida con foto ahora aparece primero (antes quedaba de última, porque toda la lista se mostraba de más nueva a más vieja incluyendo el orden interno del grupo)."],
   ["3.80", "En Cómputos métricos, la cantidad calculada y el botón Guardar ahora quedan fijos abajo de la pantalla mientras teclea las medidas — así no hace falta bajar y subir para revisar el número o guardar. Funciona igual en Línea simple y en Partida compuesta (ahí muestra la superficie o medida base)."],
   ["3.79", "El botón ⚑ para marcar \"volver después\" ahora también está disponible ANTES de guardar, junto a Origen de la medida (tanto en Línea simple como en Partida compuesta): si lo activa antes de guardar, la línea (o todas las que salgan de una compuesta) queda marcada de una vez, sin tener que ir a buscarla después en Líneas capturadas para marcarla."],
   ["3.78", "En \"Líneas capturadas\" (Cómputos métricos), las partidas que salen de la misma reparación compuesta ahora se ven agrupadas: un punto de color junto a cada una (mismo color = misma reparación) y el nombre de la compuesta arriba del grupo, así queda claro por qué solo la primera trae foto. Además, esas partidas derivadas ahora sí se pueden corregir: se puede editar el elemento y la observación, y agregar, anotar o quitar fotos directo en cada línea (antes solo las partidas simples tenían esa opción; la cantidad se sigue corrigiendo desde el Dashboard)."],
@@ -5237,6 +5238,23 @@ function cmpGrupoColor(gid) {
   return CMP_GRUPO_COLORES[h % CMP_GRUPO_COLORES.length];
 }
 
+/* Orden para mostrar las líneas: los bloques más recientes primero (como con
+   slice().reverse()), pero SIN invertir el orden interno de cada compuesta --
+   así la primera partida generada (la que trae la foto) queda arriba del
+   bloque en vez de al final. Las líneas sueltas (sin grupo) siguen
+   comportándose igual que antes, cada una es su propio bloque. */
+function cmpOrdenVisual(lineas) {
+  const bloques = [];
+  let actual = null;
+  for (const l of lineas) {
+    const clave = l.derivada && l.grupo ? l.grupo : null;
+    if (clave && actual && actual.clave === clave) actual.items.push(l);
+    else { actual = { clave, items: [l] }; bloques.push(actual); }
+  }
+  bloques.reverse();
+  return bloques.flatMap((b) => b.items);
+}
+
 function rComputos() {
   const c = cmpDe(st.insp);
   const b = st.insp.edificio;
@@ -5277,7 +5295,7 @@ function rComputos() {
   }).join("") : `<p class="aviso">Aún no hay cantidades computadas.</p>`;
 
   let cmpGrupoAnterior = null;
-  const linHtml = c.lineas.length ? c.lineas.slice().reverse().map((l) => {
+  const linHtml = c.lineas.length ? cmpOrdenVisual(c.lineas).map((l) => {
     const p2 = cmpPartidaLinea(l) || { descripcion: "" };
     const meta = [l.elemento, l.zona, l.nivel].filter(Boolean).join(" · ");
     const nf = (l.fotos || []).length;
@@ -5821,7 +5839,7 @@ function rDashboard() {
     </tr>`;
   };
 
-  const linHtml = c.lineas.length ? c.lineas.slice().reverse().map(filaHtml).join("") : "";
+  const linHtml = c.lineas.length ? cmpOrdenVisual(c.lineas).map(filaHtml).join("") : "";
 
   $app.innerHTML = `
     <h2>Dashboard de cómputos métricos</h2>
