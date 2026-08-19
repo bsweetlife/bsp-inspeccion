@@ -121,8 +121,9 @@
 <script>
 "use strict";
 /* ================= Constantes ================= */
-const VERSION = "3.66";
+const VERSION = "3.67";
 const CHANGELOG = [
+  ["3.67", "En Cómputos métricos: cada línea guardada tiene un botón ⚑ para marcarla \"volver después\" (aparece con 🚩 en la lista), y arriba de \"Líneas capturadas\" hay un buscador (por observación, elemento, zona o piso) y un filtro \"Solo marcadas\". El botón Guardar cambia de color y avisa con ⚠ cuando hay una medida cargada sin guardar. Nueva partida 03.13 (reparación de delaminación superficial) y botón \"+ Guardar y agregar otra partida (misma zona)\" para reparaciones que llevan varias partidas sueltas (p. ej. delaminado + inyección epóxica, o sumar andamio)."],
   ["3.66", "Nueva pantalla \"Catálogo personal\" (Ajustes → Catálogo personal): lista lo que creaste con \"Crear con IA\", con opción de editar (descripción, unidad o notas de una partida simple; nombre de una compuesta) o eliminar cada una. Borrar o editar aquí no toca las líneas que ya guardaste en tus inspecciones."],
   ["3.65", "Las compuestas nuevas que arma la IA (\"Crear con IA\" y \"Dictar tareas\") ahora sí pueden incluir mortero de reparación por volumen (03.11) cuando hace falta, con su campo de Profundidad — antes esa partida se quedaba afuera con una nota de \"agregarla aparte\", aunque fuera la más importante del trabajo (el caso típico: reparación de dintel con cabillas expuestas)."],
   ["3.64", "Arreglado: \"Crear con IA\" (y las demás respuestas de la IA — dictado, análisis de foto) a veces fallaba con \"No se pudo interpretar\" si la IA agregaba una nota después del JSON, aunque se le pidiera responder solo JSON. Ahora se toma el primer bloque JSON completo y se ignora lo que venga después, en vez de cortar hasta la última llave del texto."],
@@ -508,6 +509,7 @@ const CMP_CAT = [
   ["03.10", "03 Reparación estructural", "Confinamiento de nodo viga-columna", "und", "Cantidad de nodos intervenidos."],
   ["03.11", "03 Reparación estructural", "Mortero de reparación estructural tixotrópico (por volumen)", "m3", "Volumen reparado: superficie del parche por la profundidad."],
   ["03.12", "03 Reparación estructural", "Vaciado de losa de piso de concreto nueva (paño completo)", "m2", "Área en planta del paño vaciado. El espesor va en la observación; el acero de refuerzo se computa aparte con la 03.02."],
+  ["03.13", "03 Reparación estructural", "Reparación de delaminación superficial de concreto", "m2", "Área detectada por sondeo (sonido hueco al golpear), picada y sellada. Si además hay grieta a inyectar, agregue aparte la 03.03."],
   ["04.01", "04 Mampostería y acabados", "Construcción de paredes de bloque de arcilla", "m2", "Largo por alto del paño construido."],
   ["04.02", "04 Mampostería y acabados", "Sellado de grietas en paredes de mampostería", "m", "Longitud real de la grieta."],
   ["04.03", "04 Mampostería y acabados", "Friso liso sobre elementos estructurales", "m2", "Superficie desarrollada del elemento."],
@@ -764,7 +766,7 @@ async function catPersonalGuardarYSync() {
 const CMP_SUGER = {
   "Mampostería menor": { partidas: ["04.02", "04.04", "04.05"], compuestas: ["friso"] },
   "Mampostería mayor": { partidas: ["02.02", "02.03", "04.01", "04.04", "04.05"], compuestas: ["pared", "friso", "grieta", "perimetral_demo", "perimetral_friso"] },
-  "Daño estructural": { partidas: ["02.01", "02.04", "03.01", "03.02", "03.03", "03.05", "04.03", "04.05"], compuestas: ["columna", "viga", "muro", "encamisado", "techo_nervado", "techo_maciza", "piso_repello", "pano_piso"] },
+  "Daño estructural": { partidas: ["02.01", "02.04", "03.01", "03.02", "03.03", "03.05", "03.13", "04.03", "04.05"], compuestas: ["columna", "viga", "muro", "encamisado", "techo_nervado", "techo_maciza", "piso_repello", "pano_piso"] },
   "Preexistente no sísmico": { partidas: ["04.04", "04.05", "05.01", "05.02"], compuestas: [] }
 };
 
@@ -1516,6 +1518,7 @@ function cmpCantidadComponente(comp) {
   return cmpRed(cmpBaseDe(comp) * comp.factor * caras, comp.base === "volumen" ? 3 : 2);
 }
 let cmpVer = null;
+let cmpFiltro = { texto: "", soloMarcadas: false };
 let cmpEditId = null;
 let cmpModo = "simple";
 let cmpComp = { id: "", base: {}, comps: {} };
@@ -3636,6 +3639,26 @@ async function cmpZip(btn) {
   }
 }
 
+// Filtro de "Líneas capturadas": se aplica directamente sobre el DOM ya
+// pintado (mostrar/ocultar), sin volver a llamar rComputos(). Igual que con
+// el input de profundidad en Medición sobre fotografía, repintar toda la
+// pantalla en cada tecla le quitaría el foco al recuadro de búsqueda.
+function cmpAplicarFiltro() {
+  const filtroTxt = (cmpFiltro.texto || "").trim().toLowerCase();
+  const filas = $app.querySelectorAll("[data-linea]");
+  let visibles = 0;
+  filas.forEach((el) => {
+    const coincideTxt = !filtroTxt || (el.dataset.buscar || "").includes(filtroTxt);
+    const coincideMarc = !cmpFiltro.soloMarcadas || el.dataset.marcada === "1";
+    const visible = coincideTxt && coincideMarc;
+    el.style.display = visible ? "" : "none";
+    if (visible) visibles++;
+  });
+  const contador = document.getElementById("cmLineasContador");
+  if (contador) contador.textContent = visibles === filas.length ? String(filas.length) : visibles + " de " + filas.length;
+  const vacio = document.getElementById("cmLineasVacio");
+  if (vacio) vacio.style.display = (visibles === 0 && filas.length > 0) ? "" : "none";
+}
 function cmpDetalleLinea(l) {
   const p = cmpPartidaLinea(l) || {};
   const med = cmpCampos(p).map((x) =>
@@ -4120,6 +4143,20 @@ function cmpPintarDims() {
   cmpCinta();
 }
 
+// ¿Hay algo cargado en el borrador que se perdería si se navega sin guardar?
+// No es un contador de "cambios" exacto, sino una señal de si vale la pena
+// avisar: si el borrador está vacío, no hay nada que perder.
+function cmpHayCambiosSinGuardar(simple) {
+  if (cmpBorrador.elemento || cmpBorrador.obs || (cmpBorrador.fotos && cmpBorrador.fotos.length)) return true;
+  if (simple) {
+    const D = cmpBorrador.dims || {};
+    return Object.keys(D).some((k) => String(D[k] || "").trim() !== "");
+  }
+  const a = cmpCompuesta(cmpComp.id);
+  if (!a) return false;
+  return a.campos.some((cc) => String(cmpComp.base[cc] || "").trim() !== "") ||
+    !!(cmpComp.segs && cmpComp.segs.some((v) => String(v || "").trim() !== ""));
+}
 function cmpLeer() {
   const p = cmpPartidaBorrador();
   const D = cmpBorrador.dims || {};
@@ -4956,12 +4993,14 @@ function rComputos() {
     const meta = [l.elemento, l.zona, l.nivel].filter(Boolean).join(" · ");
     const nf = (l.fotos || []).length;
     const abierta = cmpVer === l.id;
-    return `<div>
+    const buscar = esc([l.partida, p2.descripcion, l.elemento, l.zona, l.nivel, l.obs].filter(Boolean).join(" ").toLowerCase());
+    return `<div data-linea="${l.id}" data-buscar="${buscar}" data-marcada="${l.marcada ? "1" : "0"}">
       <div class="lista-foto">
         <button style="flex:1;background:none;border:none;text-align:left;font-family:inherit;font-size:13px;padding:0"
-          data-ver="${l.id}"><b>${l.partida}</b> ${esc(p2.descripcion)}${l.derivada ? ' <span class="chip">⊞</span>' : ""}
+          data-ver="${l.id}"><b>${l.partida}</b> ${esc(p2.descripcion)}${l.derivada ? ' <span class="chip">⊞</span>' : ""}${l.marcada ? ' <span class="chip a">🚩 volver después</span>' : ""}
           <br /><span class="aviso">${esc(meta)} · ${nf ? nf + (nf === 1 ? " foto" : " fotos") : "sin foto"} · ${abierta ? "ocultar" : "ver detalle"}</span></button>
         <b class="mono" style="font-size:14px">${cmpFmt(l.parcial)} ${CMP_UNI[l.unidad]}</b>
+        <button class="btn-gris" style="width:auto;padding:6px 10px;${l.marcada ? "background:var(--ambar-bg);border-color:var(--ambar)" : ""}" data-marcar="${l.id}" title="Marcar para volver después">${l.marcada ? "🚩" : "⚑"}</button>
         <button class="btn btn-rojo-linea" style="width:auto;padding:6px 10px" data-borrar="${l.id}">✕</button>
       </div>
       ${abierta ? cmpDetalleLinea(l) : ""}
@@ -4970,6 +5009,7 @@ function rComputos() {
 
   const orig = [["sitio", "En sitio"], ["foto", "Sobre foto"], ["planos", "De planos"], ["muestreo", "Por muestreo"]];
   const simple = cmpModo === "simple";
+  const sinGuardar = cmpHayCambiosSinGuardar(simple);
 
   $app.innerHTML = `
     <h2>Cómputos métricos</h2>
@@ -5023,19 +5063,28 @@ function rComputos() {
       ${simple ? (cmpEditId ? `<div class="tarjeta" style="background:var(--ambar-bg);border-color:var(--ambar);padding:8px 11px;margin-bottom:8px">
         <span class="aviso" style="color:var(--ambar-tx)">Editando una línea guardada. Los cambios reemplazan la original.</span></div>
       <div class="grid2">
-        <button class="btn btn-negro" id="cmGuardar">Guardar cambios</button>
+        <button class="btn ${sinGuardar ? "btn-ambar" : "btn-negro"}" id="cmGuardar">Guardar cambios</button>
         <button class="btn btn-linea" id="cmEditCancel">Cancelar</button>
-      </div>` : `<div class="grid2">
-        <button class="btn btn-negro" id="cmGuardar">Guardar línea</button>
+      </div>
+      ` : `<div class="grid2">
+        <button class="btn ${sinGuardar ? "btn-ambar" : "btn-negro"}" id="cmGuardar">Guardar línea${sinGuardar ? " ⚠" : ""}</button>
         <button class="btn btn-linea" id="cmRepetir" ${c.lineas.length ? "" : "disabled"}>Repetir última</button>
-      </div>`) : `<button class="btn btn-negro" id="cmGuardarComp">Guardar partidas generadas</button>`}
+      </div>
+      <button class="btn btn-linea" id="cmGuardarOtra" style="margin-top:8px">+ Guardar y agregar otra partida (misma zona)</button>
+      <p class="aviso" style="margin-bottom:0">Para reparaciones que llevan varias partidas sueltas (p. ej. delaminado + inyección epóxica), o para sumar algo aparte como andamio.</p>
+      `) : `<button class="btn ${sinGuardar ? "btn-ambar" : "btn-negro"}" id="cmGuardarComp">Guardar partidas generadas${sinGuardar ? " ⚠" : ""}</button>`}
     </div>
 
     <div class="etiq">Resumen por partida</div>
     ${resHtml}
     <hr class="sep" />
-    <div class="etiq">Líneas capturadas (${c.lineas.length})</div>
+    <div class="etiq" id="cmLineasEtiq">Líneas capturadas (<span id="cmLineasContador">${c.lineas.length}</span>)</div>
+    ${c.lineas.length ? `<div class="grid2" style="margin-bottom:8px">
+      <input id="cmFiltroTxt" value="${esc(cmpFiltro.texto)}" placeholder="Buscar por observación, elemento, zona, piso…" />
+      <button class="btn ${cmpFiltro.soloMarcadas ? "btn-negro" : "btn-linea"}" id="cmFiltroMarc">🚩 Solo marcadas (${c.lineas.filter((x) => x.marcada).length})</button>
+    </div>` : ""}
     ${linHtml}
+    <p class="aviso" id="cmLineasVacio" style="display:none">Ninguna línea coincide con la búsqueda.</p>
     ${c.lineas.length ? `<div class="grid2" style="margin-top:12px">
       <button class="btn btn-negro" id="cmZip">Exportar ZIP (datos + fotos)</button>
       <button class="btn btn-gris" id="cmExport">Solo JSON</button>
@@ -5118,8 +5167,12 @@ function rComputos() {
 
   document.getElementById("cmMedir").onclick = () => { cmpCapturar(); nav({ n: "medir", volverA: st.pantalla.volverA }); };
 
-  const bg = document.getElementById("cmGuardar");
-  if (bg) bg.onclick = () => {
+  // mantenerZona: para "+ Otra partida (misma zona)" — cuando una reparación
+  // necesita varias partidas sueltas (p. ej. delaminado + inyección epóxica,
+  // o una compuesta + andamio) sin repetir zona/nivel/elemento cada vez.
+  // Devuelve true si guardó, false si quedó bloqueado por un error o el aviso
+  // de cantidad atípica (que hay que confirmar tocando de nuevo).
+  function cmpGuardarLinea(mantenerZona) {
     const p = cmpPartidaBorrador();
     const l = cmpLeer();
     const errs = cmpValidar(l, p);
@@ -5128,7 +5181,7 @@ function rComputos() {
       box.style.color = "var(--rojo)";
       box.innerHTML = errs.map(esc).join("<br />");
       box.scrollIntoView({ behavior: "smooth", block: "center" });
-      return;
+      return false;
     }
     const at = cmpAtipico(l, p);
     if (at && !cmpBorrador.atipicoOk && !cmpEditId) {
@@ -5136,7 +5189,7 @@ function rComputos() {
       box.innerHTML = esc(at) + "<br />Vuelva a tocar Guardar línea si la cantidad es correcta.";
       cmpBorrador.atipicoOk = true;
       box.scrollIntoView({ behavior: "smooth", block: "center" });
-      return;
+      return false;
     }
     l.unidad = p.unidad;
     l.factor = p.unidad === "kg" ? (CMP_CABILLA[l.diametro] || 1) : 1;
@@ -5156,16 +5209,23 @@ function rComputos() {
     }
     cmpUltObs = l.obs || cmpUltObs;
     cmpBorrador.fotos = [];
-    cmpBorrador.elemento = "";
     cmpBorrador.obs = "";
     cmpBorrador.dims = {};
     cmpBorrador.fijo = null;
     cmpBorrador.medicion = null;
     cmpBorrador.atipicoOk = false;
+    if (!mantenerZona) cmpBorrador.elemento = "";
+    else cmpBorrador.partida = "";
     cmpOlvidarColor();
     guardar();
-    rComputos();
-  };
+    return true;
+  }
+
+  const bg = document.getElementById("cmGuardar");
+  if (bg) bg.onclick = () => { if (cmpGuardarLinea(false)) rComputos(); };
+
+  const bgo = document.getElementById("cmGuardarOtra");
+  if (bgo) bgo.onclick = () => { if (cmpGuardarLinea(true)) rComputos(); };
 
   const bgc = document.getElementById("cmGuardarComp");
   if (bgc) bgc.onclick = cmpGuardarCompuesta;
@@ -5192,6 +5252,21 @@ function rComputos() {
       rComputos();
     };
   });
+
+  $app.querySelectorAll("[data-marcar]").forEach((btn) => {
+    btn.onclick = () => {
+      const l = c.lineas.find((x) => x.id === btn.dataset.marcar);
+      if (!l) return;
+      l.marcada = !l.marcada;
+      guardar();
+      rComputos();
+    };
+  });
+  const fTxt = document.getElementById("cmFiltroTxt");
+  if (fTxt) fTxt.oninput = (e) => { cmpFiltro.texto = e.target.value; cmpAplicarFiltro(); };
+  const fMarc = document.getElementById("cmFiltroMarc");
+  if (fMarc) fMarc.onclick = () => { cmpFiltro.soloMarcadas = !cmpFiltro.soloMarcadas; rComputos(); };
+  cmpAplicarFiltro();
 
   $app.querySelectorAll("[data-editln]").forEach((b) => (b.onclick = () => cmpEditarLinea(b.dataset.editln)));
   $app.querySelectorAll("[data-anotarl]").forEach((b) => (b.onclick = () => abrirEditorFoto(b.dataset.anotarl, rComputos)));
