@@ -121,8 +121,9 @@
 <script>
 "use strict";
 /* ================= Constantes ================= */
-const VERSION = "3.62";
+const VERSION = "3.63";
 const CHANGELOG = [
+  ["3.63", "Catálogo personal: en Cómputos métricos, el botón \"No la encuentro: crear con IA\" (junto a Línea simple y Partida compuesta) deja describir una partida que no está en el catálogo. La IA revisa todo lo que ya existe (incluidas tus propias partidas anteriores) y, si no hay nada parecido, propone crear una nueva simple o compuesta — siempre para confirmar antes de guardarla. Una vez creada queda disponible para siempre, en todas tus inspecciones y sincronizada entre tus dispositivos, sin tener que describirla de nuevo cada vez."],
   ["3.62", "Cuatro compuestas nuevas en Cómputos métricos: reparación de techo (losa maciza) y de muro o pantalla estructural con cabillas expuestas (igual que columna/viga), repello de piso de concreto sin cabillas, y remoción y fabricación de paño de piso. Cada unidad tiene ahora un botón \"Agregar cómputo aquí\" que va directo a Cómputos métricos con el nivel y la zona ya puestos, y el botón de volver regresa a esa misma unidad. En Medición sobre fotografía: tocar cerca de un punto ya puesto ahora lo arrastra para ajustarlo en vez de crear una línea nueva (para sumar un punto se usa el botón \"+ Agregar punto\"), y escribir la longitud de referencia o de control ya no le quita el foco al recuadro en cada tecla."],
   ["3.61", "Arreglado: en la reparación de viga o columna, el mortero a veces no quedaba incluido al guardar aunque se hubiera puesto la profundidad. Ahora la Profundidad se exige igual que las demás medidas cuando hace falta para el mortero, y se vuelve a leer lo tecleado justo antes de guardar para no perder el último número si el guardado se hizo muy rápido."],
   ["3.60", "En Cómputos métricos, cada foto que tomes para una línea ahora se puede analizar con IA igual que en la inspección: el botón \"Analizar con IA\" sugiere la partida, el elemento y una observación breve, y \"Delimitar y analizar\" deja acotar a mano la zona de interés antes de mandarla a analizar. La sugerencia siempre se muestra para confirmar, nunca se aplica sola — útil para cuando vas a medir un edificio que no has inspeccionado."],
@@ -336,17 +337,42 @@ async function sincronizar(soloActual) {
   }
   _sincronizando = false;
 }
-async function sincronizarContador() {
+// Combina dos catálogos personales (local y remoto) por unión: no se pierde
+// nada creado en cualquiera de los dos dispositivos aunque no se hayan
+// sincronizado entre sí. Los contadores de código toman el mayor de los dos.
+function catPersonalMerge(a, b) {
+  a = a || {}; b = b || {};
+  const unir = (xs, ys, key) => {
+    const m = new Map();
+    for (const x of (xs || [])) m.set(x[key], x);
+    for (const y of (ys || [])) if (!m.has(y[key])) m.set(y[key], y);
+    return Array.from(m.values());
+  };
+  return {
+    partidas: unir(a.partidas, b.partidas, "codigo"),
+    compuestas: unir(a.compuestas, b.compuestas, "id"),
+    proxP: Math.max(a.proxP || 1, b.proxP || 1),
+    proxC: Math.max(a.proxC || 1, b.proxC || 1)
+  };
+}
+// Fila especial "_ajustes_<user_id>" con id fijo: guarda tanto el contador de
+// informes como el catálogo personal (partidas/compuestas creadas con IA).
+// Los dos van juntos en el mismo upsert porque Supabase reemplaza toda la
+// columna "data": si se escribiera uno sin el otro, se borraría el que falte.
+async function sincronizarAjustes() {
   if (!supa || !nube.sesion) return;
   try {
-    // Fila especial de ajustes con id fijo
     const { data } = await supa.from("inspecciones").select("data").eq("id", "_ajustes_" + nube.sesion.user.id).maybeSingle();
-    const remoto = data && data.data && data.data.proxInforme;
+    const remoto = (data && data.data) || {};
     const local = parseInt(await kvGet("proxInforme")) || 0;
-    const mayor = Math.max(remoto || 0, local, 10);
-    await kvSet("proxInforme", mayor);
-    if (mayor !== remoto) {
-      await supa.from("inspecciones").upsert({ id: "_ajustes_" + nube.sesion.user.id, user_id: nube.sesion.user.id, data: { proxInforme: mayor }, updated_at: new Date().toISOString() });
+    const proxInforme = Math.max(remoto.proxInforme || 0, local, 10);
+    const catFusionado = catPersonalMerge(catPersonal, remoto.catalogoPersonal);
+    Object.assign(catPersonal, catFusionado);
+    await kvSet("proxInforme", proxInforme);
+    await kvSet("catalogoPersonal", JSON.stringify(catPersonal));
+    const cambio = proxInforme !== remoto.proxInforme || JSON.stringify(catPersonal) !== JSON.stringify(remoto.catalogoPersonal || {});
+    if (cambio) {
+      await supa.from("inspecciones").upsert({ id: "_ajustes_" + nube.sesion.user.id, user_id: nube.sesion.user.id, data: { proxInforme, catalogoPersonal: catPersonal }, updated_at: new Date().toISOString() });
     }
   } catch (e) {}
 }
@@ -357,7 +383,7 @@ async function iniciarNube() {
     const { data } = await supa.auth.getSession();
     nube.sesion = data && data.session;
   } catch (e) { nube.sesion = null; }
-  if (nube.sesion) { ponNube("ok", "Sesión activa"); sincronizar(false); sincronizarContador(); }
+  if (nube.sesion) { ponNube("ok", "Sesión activa"); sincronizar(false); sincronizarAjustes(); }
   else ponNube("sin-sesion", "Sin sesión");
   supa.auth.onAuthStateChange((ev, ses) => {
     const antes = !!nube.sesion;
@@ -507,7 +533,7 @@ const CMP_CAT = [
 ].map(([codigo, grupo, descripcion, unidad, notas]) =>
   Object.assign({ codigo, grupo, descripcion, unidad, notas }, CMP_MEDIDA[codigo] || {}));
 
-const cmpPartida = (cod) => CMP_CAT.find((p) => p.codigo === cod) || null;
+const cmpPartida = (cod) => catTodasPartidas().find((p) => p.codigo === cod) || null;
 function cmpPartidaBorrador() {
   const cod = cmpBorrador.partida;
   if (cod === "99.99") return { codigo: "99.99", grupo: "99 Otros", descripcion: cmpBorrador.otroDesc || "Otro", unidad: cmpBorrador.otroUni || "und", notas: "Partida personalizada." };
@@ -716,6 +742,20 @@ function cmpDe(insp) {
 }
 let cmpBorrador = { origen: "sitio", fotos: [] };
 let cmpUltObs = "";
+/* Catálogo personal: partidas y compuestas que el ingeniero crea con IA
+   cuando no encuentra lo que necesita. Vive aparte de CMP_CAT/CMP_COMPUESTAS
+   (que son fijas en el código) y se guarda en IndexedDB + se sincroniza por
+   usuario en la fila "_ajustes_<user_id>", igual que el contador de informes:
+   una vez creada, queda disponible en todos los dispositivos y en todas las
+   inspecciones futuras, sin tener que volver a describirla. */
+let catPersonal = { partidas: [], compuestas: [], proxP: 1, proxC: 1 };
+let catCrear = { abierto: false, texto: "", cargando: false, resultado: null };
+function catTodasPartidas() { return catPersonal.partidas.length ? CMP_CAT.concat(catPersonal.partidas) : CMP_CAT; }
+function catTodasCompuestas() { return catPersonal.compuestas.length ? CMP_COMPUESTAS.concat(catPersonal.compuestas) : CMP_COMPUESTAS; }
+async function catPersonalGuardarYSync() {
+  await kvSet("catalogoPersonal", JSON.stringify(catPersonal));
+  sincronizarAjustes();
+}
 /* Partidas que suelen aplicar según el daño registrado en la unidad.
    Se ofrecen, nunca se imponen. */
 const CMP_SUGER = {
@@ -959,8 +999,13 @@ const CMP_COMPUESTAS = [
   }
 ];
 
-const cmpCompuesta = (id) => (id === "__medida" && cmpMedidaDef) ? cmpMedidaDef : (CMP_COMPUESTAS.find((x) => x.id === id) || null);
-function cmpArmarMedida(base, codes) {
+const cmpCompuesta = (id) => (id === "__medida" && cmpMedidaDef) ? cmpMedidaDef : (catTodasCompuestas().find((x) => x.id === id) || null);
+// Arma el objeto de una compuesta "a medida": combina SOLO códigos que ya
+// existen en el catálogo (propios o personales), medidos por área (largo ×
+// alto) o por longitud. Es la base tanto del dictado de una sola vez
+// (cmpArmarMedida, id "__medida") como de las compuestas nuevas que se crean
+// con IA para quedar guardadas en el catálogo personal (catCrearNuevaCompuesta).
+function catArmarCompuestaObjeto(id, nombre, base, codes) {
   const esArea = base !== "largo";
   const comps = [], aparte = [];
   for (const cod of codes) {
@@ -970,18 +1015,22 @@ function cmpArmarMedida(base, codes) {
     else if (p.unidad === "m2") comps.push({ partida: cod, factor: 1, base: "area", nota: p.descripcion });
     else aparte.push(p.codigo + " " + p.descripcion + " (" + CMP_UNI[p.unidad] + ")");
   }
-  cmpMedidaDef = {
-    id: "__medida",
-    nombre: "Compuesta a medida (dictada)",
+  return {
+    id, nombre,
     campos: esArea ? ["cantidad", "largo", "alto"] : ["cantidad", "largo"],
     etiquetas: esArea ? { cantidad: "N.° de elementos", largo: "Largo (m)", alto: "Alto (m)" } : { cantidad: "N.° de elementos", largo: "Longitud (m)" },
     magnitud: esArea ? "Área" : "Longitud",
     unidad: esArea ? "m2" : "m",
     baseCampo: esArea ? undefined : "largo",
-    nota: "Compuesta armada desde tu dictado. Revisa y ajusta lo que haga falta." + (aparte.length ? " Aparte, agrégalas como líneas simples: " + aparte.join("; ") + "." : ""),
+    nota: aparte.length ? "Aparte, agrégalas como líneas simples: " + aparte.join("; ") + "." : "",
     componentes: comps
   };
-  return comps.length;
+}
+function cmpArmarMedida(base, codes) {
+  const obj = catArmarCompuestaObjeto("__medida", "Compuesta a medida (dictada)", base, codes);
+  obj.nota = "Compuesta armada desde tu dictado. Revisa y ajusta lo que haga falta." + (obj.nota ? " " + obj.nota : "");
+  cmpMedidaDef = obj;
+  return obj.componentes.length;
 }
 async function cmpDictarTareas(btn) {
   const texto = String(cmpDictado.texto || "").trim();
@@ -989,8 +1038,8 @@ async function cmpDictarTareas(btn) {
   if (!st.apiKey) { alert("Configura primero la clave API en Ajustes."); return; }
   if (btn) { btn.disabled = true; btn.textContent = "Interpretando…"; }
   try {
-    const cat = CMP_CAT.filter((p) => p.codigo !== "99.99").map((p) => p.codigo + " | " + p.descripcion + " | " + p.unidad).join("\n");
-    const paquetes = CMP_COMPUESTAS.map((x) => x.id + " | " + x.nombre + " | partidas: " + x.componentes.map((c) => c.partida).join(", ")).join("\n");
+    const cat = catTodasPartidas().filter((p) => p.codigo !== "99.99").map((p) => p.codigo + " | " + p.descripcion + " | " + p.unidad).join("\n");
+    const paquetes = catTodasCompuestas().map((x) => x.id + " | " + x.nombre + " | partidas: " + x.componentes.map((c) => c.partida).join(", ")).join("\n");
     const prompt = `Eres asistente de un ingeniero estructural en Venezuela armando el computo metrico de reparacion de UN elemento tras un sismo. El ingeniero dicta las tareas. Tienes DOS formas de responder.
 
 PAQUETES PREDEFINIDOS (compuestas ya armadas por el ingeniero: id | nombre | partidas):
@@ -1058,6 +1107,177 @@ function cmpDictadoHtml() {
     </div>
     ${st.apiKey ? "" : `<p class="aviso" style="color:var(--rojo);margin-bottom:0">Falta configurar la clave API en Ajustes.</p>`}
   </div>`;
+}
+
+/* ================= Catálogo personal: crear partida con IA =================
+   Para cuando la partida que hace falta no está ni en el catálogo fijo ni en
+   el personal. Se describe el trabajo, la IA revisa TODO el catálogo (fijo +
+   personal) y responde con una de cuatro cosas: ya existe como partida simple,
+   ya existe como compuesta, o hace falta crear una de las dos — la propuesta
+   siempre se muestra para confirmar antes de guardarla, nunca se aplica sola. */
+const CAT_UNIDADES = [["und", "und"], ["m2", "m²"], ["m", "m (lineal)"], ["m3", "m³"], ["kg", "kg"]];
+function catCrearHtml() {
+  if (!catCrear.abierto) return `<button class="btn btn-linea" id="catCrearAbrir" style="margin-bottom:10px">➕ No la encuentro: crear con IA</button>`;
+  const r = catCrear.resultado;
+  if (r && r.tipo === "existe_simple") {
+    const p = cmpPartida(r.codigo);
+    return `<div class="tarjeta" style="background:var(--ambar-bg);border-color:var(--ambar);margin-bottom:10px">
+      <div class="etiq" style="color:var(--ambar-tx)">Ya existe en el catálogo</div>
+      <p class="aviso" style="margin-top:0"><b>${esc(r.codigo)}</b> ${esc(p ? p.descripcion : "")}</p>
+      <div class="grid2"><button class="btn btn-negro" data-catusesimple="${esc(r.codigo)}">Usar esta partida</button>
+      <button class="btn btn-linea" id="catCrearCerrar">Cerrar</button></div>
+    </div>`;
+  }
+  if (r && r.tipo === "existe_compuesta") {
+    const a = cmpCompuesta(r.id);
+    return `<div class="tarjeta" style="background:var(--ambar-bg);border-color:var(--ambar);margin-bottom:10px">
+      <div class="etiq" style="color:var(--ambar-tx)">Ya existe en el catálogo</div>
+      <p class="aviso" style="margin-top:0">Compuesta: <b>${esc(a ? a.nombre : r.id)}</b></p>
+      <div class="grid2"><button class="btn btn-negro" data-catusecomp="${esc(r.id)}">Usar esta compuesta</button>
+      <button class="btn btn-linea" id="catCrearCerrar">Cerrar</button></div>
+    </div>`;
+  }
+  if (r && r.tipo === "nueva_simple") {
+    return `<div class="tarjeta" style="background:var(--ambar-bg);border-color:var(--ambar);margin-bottom:10px">
+      <div class="etiq" style="color:var(--ambar-tx)">Propuesta de partida nueva (simple)</div>
+      <p class="aviso" style="margin-top:0">No está en el catálogo. Revisa y ajusta antes de crearla — queda guardada para siempre, en todas tus inspecciones y dispositivos.</p>
+      <label class="campo"><span>Descripción</span><input id="catNDesc" value="${esc(r.descripcion)}" /></label>
+      <label class="campo"><span>Unidad</span><select id="catNUni">${CAT_UNIDADES.map(([v, t]) => `<option value="${v}" ${r.unidad === v ? "selected" : ""}>${t}</option>`).join("")}</select></label>
+      <label class="campo"><span>Notas / criterio de medición</span><input id="catNNotas" value="${esc(r.notas || "")}" /></label>
+      <div class="grid2"><button class="btn btn-negro" id="catCrearConfirmar">Crear y usar</button>
+      <button class="btn btn-linea" id="catCrearCerrar">Descartar</button></div>
+    </div>`;
+  }
+  if (r && r.tipo === "nueva_compuesta") {
+    const detalle = r.partidas.map((cod) => { const p = cmpPartida(cod); return p ? cod + " " + p.descripcion : cod; }).join(" · ");
+    return `<div class="tarjeta" style="background:var(--ambar-bg);border-color:var(--ambar);margin-bottom:10px">
+      <div class="etiq" style="color:var(--ambar-tx)">Propuesta de partida nueva (compuesta)</div>
+      <p class="aviso" style="margin-top:0">No está en el catálogo. Combina partidas que ya existen, medida por ${r.base === "largo" ? "longitud" : "área (largo × alto)"}. Queda guardada para siempre.</p>
+      <label class="campo"><span>Nombre</span><input id="catNNombre" value="${esc(r.nombre)}" /></label>
+      <p class="aviso" style="margin-bottom:0"><b>Incluye:</b> ${esc(detalle)}</p>
+      <div class="grid2" style="margin-top:8px"><button class="btn btn-negro" id="catCrearConfirmar">Crear y usar</button>
+      <button class="btn btn-linea" id="catCrearCerrar">Descartar</button></div>
+    </div>`;
+  }
+  return `<div class="tarjeta" style="background:var(--ambar-bg);border-color:var(--ambar);margin-bottom:10px">
+    <div class="etiq" style="color:var(--ambar-tx)">Describe la partida que no encuentras</div>
+    <p class="aviso" style="margin-top:0">La IA revisa el catálogo, incluidas tus partidas personalizadas; si no hay nada parecido, te propone crear una nueva simple o compuesta.</p>
+    <textarea id="catCrearTxt" rows="2" placeholder="Ejemplo: reemplazo de baranda metálica de escalera dañada">${esc(catCrear.texto || "")}</textarea>
+    <div class="grid2" style="margin-top:8px">
+      <button class="btn btn-negro" id="catCrearIr">Buscar / crear con IA</button>
+      <button class="btn btn-linea" id="catCrearCerrar">Cancelar</button>
+    </div>
+    ${st.apiKey ? "" : `<p class="aviso" style="color:var(--rojo);margin-bottom:0">Falta configurar la clave API en Ajustes.</p>`}
+  </div>`;
+}
+async function catCrearBuscar(btn) {
+  const texto = String(catCrear.texto || "").trim();
+  if (!texto) { alert("Describe primero qué necesitas."); return; }
+  if (!st.apiKey) { alert("Configura primero la clave API en Ajustes."); return; }
+  if (btn) { btn.disabled = true; btn.textContent = "Buscando…"; }
+  try {
+    const cat = catTodasPartidas().filter((p) => p.codigo !== "99.99").map((p) => p.codigo + " | " + p.descripcion + " | " + p.unidad).join("\n");
+    const paquetes = catTodasCompuestas().map((x) => x.id + " | " + x.nombre + " | partidas: " + x.componentes.map((c) => c.partida).join(", ")).join("\n");
+    const prompt = `Eres asistente de un ingeniero estructural en Venezuela armando el catalogo de partidas para el computo metrico de reparacion post-sismo de un edificio.
+
+CATALOGO EXISTENTE (codigo | descripcion | unidad):
+${cat}
+
+COMPUESTAS EXISTENTES (id | nombre | partidas que incluye):
+${paquetes}
+
+El ingeniero describe una partida que necesita y no encuentra: "${texto}"
+
+Responde UNICAMENTE con JSON, sin markdown ni texto extra, con UNA de estas 4 formas segun el caso:
+
+1) Ya existe una partida simple que sirve tal cual:
+{"tipo":"existe_simple","codigo":"NN.NN"}
+
+2) Ya existe una compuesta que sirve tal cual:
+{"tipo":"existe_compuesta","id":"xxx"}
+
+3) Hace falta una partida NUEVA y simple (una sola medida: area en m2, longitud en m, volumen en m3, peso en kg, o por unidad "und"):
+{"tipo":"nueva_simple","descripcion":"...","unidad":"m2|m|m3|kg|und","notas":"breve criterio de medicion"}
+
+4) Hace falta una partida NUEVA compuesta, armada UNICAMENTE combinando codigos YA EXISTENTES del catalogo de arriba (nunca inventes codigos nuevos dentro de la compuesta), medida por area (largo x alto) o por longitud:
+{"tipo":"nueva_compuesta","nombre":"...","base":"area"|"largo","partidas":["03.05","04.05"]}`;
+    let r = await llamarClaude(prompt, 400);
+    r = r.replace(/```json|```/g, "").trim();
+    const ini = r.indexOf("{"), fin = r.lastIndexOf("}");
+    if (ini >= 0 && fin > ini) r = r.slice(ini, fin + 1);
+    const data = JSON.parse(r);
+    if (data.tipo === "existe_simple" && cmpPartida(data.codigo)) {
+      catCrear.resultado = { tipo: "existe_simple", codigo: data.codigo };
+    } else if (data.tipo === "existe_compuesta" && cmpCompuesta(data.id)) {
+      catCrear.resultado = { tipo: "existe_compuesta", id: data.id };
+    } else if (data.tipo === "nueva_simple" && data.descripcion) {
+      catCrear.resultado = {
+        tipo: "nueva_simple", descripcion: String(data.descripcion).trim(),
+        unidad: CAT_UNIDADES.some(([v]) => v === data.unidad) ? data.unidad : "und",
+        notas: String(data.notas || "").trim()
+      };
+    } else if (data.tipo === "nueva_compuesta" && data.nombre && Array.isArray(data.partidas) && data.partidas.length) {
+      const codesValidos = data.partidas.filter((cod) => cmpPartida(cod));
+      if (!codesValidos.length) throw new Error("La IA no encontró partidas existentes para combinar.");
+      catCrear.resultado = { tipo: "nueva_compuesta", nombre: String(data.nombre).trim(), base: data.base === "largo" ? "largo" : "area", partidas: codesValidos };
+    } else {
+      throw new Error("La IA no devolvió una propuesta utilizable.");
+    }
+    rComputos();
+  } catch (e) {
+    alert("No se pudo interpretar: " + e.message);
+    if (btn) { btn.disabled = false; btn.textContent = "Buscar / crear con IA"; }
+  }
+}
+function catUsarSimple(codigo) {
+  cmpModo = "simple"; cmpBorrador.partida = codigo; cmpBorrador.dims = {};
+  catCrear = { abierto: false, texto: "", cargando: false, resultado: null };
+  rComputos();
+}
+function catUsarCompuesta(id) {
+  cmpModo = "compuesta"; cmpComp = { id, base: {}, comps: {}, carasFrisar: 0, carasPintar: 0 };
+  catCrear = { abierto: false, texto: "", cargando: false, resultado: null };
+  rComputos();
+}
+function catCrearNuevaSimple() {
+  const desc = String(document.getElementById("catNDesc").value || "").trim();
+  const uni = document.getElementById("catNUni").value;
+  const notas = String(document.getElementById("catNNotas").value || "").trim();
+  if (!desc) { alert("Falta la descripción."); return; }
+  const codigo = "P." + String(catPersonal.proxP).padStart(2, "0");
+  catPersonal.proxP++;
+  catPersonal.partidas.push({ codigo, grupo: "Personalizadas", descripcion: desc, unidad: uni, notas: notas || "Partida personalizada creada con IA." });
+  catPersonalGuardarYSync();
+  catUsarSimple(codigo);
+}
+function catCrearNuevaCompuesta() {
+  const nombre = String(document.getElementById("catNNombre").value || "").trim();
+  if (!nombre) { alert("Falta el nombre."); return; }
+  const r = catCrear.resultado;
+  const id = "PC." + String(catPersonal.proxC).padStart(2, "0");
+  const obj = catArmarCompuestaObjeto(id, nombre, r.base, r.partidas);
+  if (!obj.componentes.length) { alert("No se pudo armar: ninguna partida válida."); return; }
+  catPersonal.proxC++;
+  catPersonal.compuestas.push(obj);
+  catPersonalGuardarYSync();
+  catUsarCompuesta(id);
+}
+function catCrearWire() {
+  const abrir = document.getElementById("catCrearAbrir");
+  if (abrir) abrir.onclick = () => { catCrear = { abierto: true, texto: "", cargando: false, resultado: null }; rComputos(); };
+  const cerrar = document.getElementById("catCrearCerrar");
+  if (cerrar) cerrar.onclick = () => { catCrear = { abierto: false, texto: "", cargando: false, resultado: null }; rComputos(); };
+  const txt = document.getElementById("catCrearTxt");
+  if (txt) txt.oninput = (e) => { catCrear.texto = e.target.value; };
+  const ir = document.getElementById("catCrearIr");
+  if (ir) ir.onclick = () => catCrearBuscar(ir);
+  const confirmar = document.getElementById("catCrearConfirmar");
+  if (confirmar) confirmar.onclick = () => {
+    if (catCrear.resultado.tipo === "nueva_simple") catCrearNuevaSimple();
+    else if (catCrear.resultado.tipo === "nueva_compuesta") catCrearNuevaCompuesta();
+  };
+  $app.querySelectorAll("[data-catusesimple]").forEach((b) => (b.onclick = () => catUsarSimple(b.dataset.catusesimple)));
+  $app.querySelectorAll("[data-catusecomp]").forEach((b) => (b.onclick = () => catUsarCompuesta(b.dataset.catusecomp)));
 }
 
 function cmpUnidadActual() {
@@ -1578,7 +1798,7 @@ function rSetup() {
       if (!isNaN(n)) kvGet("proxInforme").then((prox) => {
         if (!prox || n >= prox) {
           kvSet("proxInforme", n + 1);
-          if (supa && nube.sesion) supa.from("inspecciones").upsert({ id: "_ajustes_" + nube.sesion.user.id, user_id: nube.sesion.user.id, data: { proxInforme: n + 1 }, updated_at: new Date().toISOString() }).then(() => {}, () => {});
+          if (supa && nube.sesion) supa.from("inspecciones").upsert({ id: "_ajustes_" + nube.sesion.user.id, user_id: nube.sesion.user.id, data: { proxInforme: n + 1, catalogoPersonal: catPersonal }, updated_at: new Date().toISOString() }).then(() => {}, () => {});
         }
       });
     }
@@ -2640,7 +2860,7 @@ async function triageFotoCmp(fid, blobOverride, btn) {
     if (!original) throw new Error("No se encontró la foto.");
     const chico = await comprimir(original, 1024, 0.7);
     const b64 = await blobABase64(chico);
-    const cat = CMP_CAT.filter((p) => p.codigo !== "99.99").map((p) => p.codigo + " | " + p.descripcion + " | " + p.unidad).join("\n");
+    const cat = catTodasPartidas().filter((p) => p.codigo !== "99.99").map((p) => p.codigo + " | " + p.descripcion + " | " + p.unidad).join("\n");
     const prompt = `Eres asistente de un ingeniero estructural armando el computo metrico de reparacion tras un sismo en Venezuela. Observa la foto (si ves un area cubierta de gris uniforme, ignorala: fue delimitada a mano para descartar el fondo) y sugiere:
 1) la partida de reparacion que mejor corresponde a lo que se ve, ELEGIDA EXACTAMENTE de este catalogo (codigo | descripcion | unidad):
 ${cat}
@@ -4047,7 +4267,7 @@ function cmpPintarCompuesta() {
     <label class="campo"><span>Partida compuesta</span>
       <select id="cmCompSel">
         ${cmpComp.id === "__medida" ? `<option value="__medida" selected>${esc((cmpMedidaDef && cmpMedidaDef.nombre) || "Compuesta a medida")}</option>` : ""}
-        ${CMP_COMPUESTAS.map((x) => `<option value="${x.id}" ${x.id === cmpComp.id ? "selected" : ""}>${esc(x.nombre)}</option>`).join("")}
+        ${catTodasCompuestas().map((x) => `<option value="${x.id}" ${x.id === cmpComp.id ? "selected" : ""}>${esc(x.nombre)}</option>`).join("")}
       </select></label>
     ${a.nota ? `<p class="aviso" style="margin-top:-6px">${esc(a.nota)}</p>` : ""}
     <div class="etiq">Medición base</div>
@@ -4583,7 +4803,7 @@ function rComputos() {
   if (!cmpComp.id) cmpComp = { id: CMP_COMPUESTAS[0].id, base: {}, comps: {}, carasFrisar: 0, carasPintar: 0 };
 
   let grupo = "", opts = "";
-  for (const p of CMP_CAT) {
+  for (const p of catTodasPartidas()) {
     if (p.grupo !== grupo) { if (grupo) opts += "</optgroup>"; grupo = p.grupo; opts += `<optgroup label="${esc(grupo)}">`; }
     opts += `<option value="${p.codigo}" ${p.codigo === cmpBorrador.partida ? "selected" : ""}>${p.codigo} ${esc(p.descripcion)}</option>`;
   }
@@ -4652,6 +4872,7 @@ function rComputos() {
       ${cmpDictLineasHtml()}
       ${sugHtml}
       <label class="campo"><span>Elemento</span><input id="cmElem" value="${esc(cmpBorrador.elemento || "")}" placeholder="Columna C-4" /></label>
+      ${catCrearHtml()}
 
       <div id="cmSimple" ${simple ? "" : 'style="display:none"'}>
         <label class="campo"><span>Partida</span><select id="cmPart">${opts}</select></label>
@@ -4708,6 +4929,7 @@ function rComputos() {
   if (simple) { cmpPintarDims(); cmpPintarAcabado(); } else cmpPintarCompuesta();
   cmpPintarFotos();
   cmpCargarFotos();
+  catCrearWire();
 
   const _elModo = document.getElementById("cmModo");
   if (_elModo) _elModo.querySelectorAll("[data-modo]").forEach((btn) => {
@@ -5154,6 +5376,8 @@ Responde solo con el párrafo del resumen, sin preámbulos.`;
     if (idxRaw) st.index = JSON.parse(idxRaw);
     const k = await kvGet("apikey");
     if (k) st.apiKey = k;
+    const catRaw = await kvGet("catalogoPersonal");
+    if (catRaw) Object.assign(catPersonal, JSON.parse(catRaw));
     ponEstado("Guardado ✓", false);
   } catch (e) {
     ponEstado("⚠ ALMACÉN NO DISPONIBLE", true);
