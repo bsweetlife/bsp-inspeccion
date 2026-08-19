@@ -121,8 +121,9 @@
 <script>
 "use strict";
 /* ================= Constantes ================= */
-const VERSION = "3.72";
+const VERSION = "3.73";
 const CHANGELOG = [
+  ["3.73", "Nueva partida 03.14 (vaciado de concreto en elementos menores nuevos: brocales, poyos, repisas, dinteles, umbrales, por volumen). Antes, al pedirle a \"Crear con IA\" algo como \"construcción de brocal\", no había ningún código en m³ que combinar y la compuesta salía midiendo solo el largo, sin ancho ni alto. Si ya creaste una así, bórrala en Ajustes → Catálogo personal y descríbela de nuevo — ahora la IA encuentra la 03.14 y arma la compuesta completa."],
   ["3.72", "Botón \"Copiar\" en Mis inspecciones: crea una inspección nueva con los mismos niveles y unidades (nombres) y los datos del edificio (nombre, dirección, sistema constructivo, etc.), sin copiar fotos, ATC-20, cómputos ni el número de informe — útil para un edificio vecino o del mismo nombre, sin escribir todo de nuevo."],
   ["3.71", "Las líneas capturadas en Cómputos métricos muestran ahora una miniatura de su primera foto — tóquela para ampliarla o anotarla, igual que en \"ver detalle\"."],
   ["3.70", "Columna, viga y muro ahora miden largo, ancho y profundidad en centímetros (más rápido de teclear en obra) en vez de metros — el área y el volumen del mortero se siguen mostrando en m² y m³ como el resto del catálogo, la app hace la conversión sola. Aplica también al modo de varias zonas. Techo (losa maciza) y las demás compuestas no cambiaron: siguen en metros."],
@@ -512,7 +513,8 @@ const CMP_MEDIDA = {
   "04.07": { etiquetas: { largo: "Largo en planta (m)", ancho: "Ancho en planta (m)" } },
   "05.01": { etiquetas: { largo: "Largo en planta (m)", ancho: "Ancho en planta (m)" } },
   "02.10": { etiquetas: { largo: "Largo en planta (m)", ancho: "Ancho en planta (m)" } },
-  "03.12": { etiquetas: { largo: "Largo en planta (m)", ancho: "Ancho en planta (m)" } }
+  "03.12": { etiquetas: { largo: "Largo en planta (m)", ancho: "Ancho en planta (m)" } },
+  "03.14": { etiquetas: { largo: "Largo (m)", ancho: "Ancho (m)", alto: "Alto (m)" } }
 };
 const CMP_CAT = [
   ["01.01", "01 Obras preliminares", "Apuntalamiento provisional de elementos estructurales", "und", "Se mide por elemento apuntalado, no por puntal."],
@@ -542,6 +544,7 @@ const CMP_CAT = [
   ["03.11", "03 Reparación estructural", "Mortero de reparación estructural tixotrópico (por volumen)", "m3", "Volumen reparado: superficie del parche por la profundidad."],
   ["03.12", "03 Reparación estructural", "Vaciado de losa de piso de concreto nueva (paño completo)", "m2", "Área en planta del paño vaciado. El espesor va en la observación; el acero de refuerzo se computa aparte con la 03.02."],
   ["03.13", "03 Reparación estructural", "Reparación de delaminación superficial de concreto", "m2", "Área detectada por sondeo (sonido hueco al golpear), picada y sellada. Si además hay grieta a inyectar, agregue aparte la 03.03."],
+  ["03.14", "03 Reparación estructural", "Vaciado de concreto en elementos menores nuevos (brocales, poyos, repisas, dinteles, umbrales)", "m3", "Volumen del elemento nuevo: largo × ancho × alto. El acero de refuerzo se computa aparte, en kg, con la 03.02."],
   ["04.01", "04 Mampostería y acabados", "Construcción de paredes de bloque de arcilla", "m2", "Largo por alto del paño construido."],
   ["04.02", "04 Mampostería y acabados", "Sellado de grietas en paredes de mampostería", "m", "Longitud real de la grieta."],
   ["04.03", "04 Mampostería y acabados", "Friso liso sobre elementos estructurales", "m2", "Superficie desarrollada del elemento."],
