@@ -121,8 +121,9 @@
 <script>
 "use strict";
 /* ================= Constantes ================= */
-const VERSION = "3.74";
+const VERSION = "3.75";
 const CHANGELOG = [
+  ["3.75", "Arreglado: al tocar \"+ Guardar y agregar otra partida (misma zona)\", la foto que ya habías tomado desaparecía en vez de quedar disponible para la siguiente partida. Ahora se conserva (con una copia independiente, para que no se pierda la de la partida ya guardada si luego quitas la del borrador)."],
   ["3.74", "\"Crear con IA\" ahora también está disponible desde Ajustes → Catálogo personal, no solo dentro de Cómputos métricos — útil para armar el catálogo con calma en vez de sobre la marcha. Ahí no hay línea que aplicarlo, así que simplemente crea la partida o compuesta y queda lista para usarse."],
   ["3.73", "Nueva partida 03.14 (vaciado de concreto en elementos menores nuevos: brocales, poyos, repisas, dinteles, umbrales, por volumen). Antes, al pedirle a \"Crear con IA\" algo como \"construcción de brocal\", no había ningún código en m³ que combinar y la compuesta salía midiendo solo el largo, sin ancho ni alto. Si ya creaste una así, bórrala en Ajustes → Catálogo personal y descríbela de nuevo — ahora la IA encuentra la 03.14 y arma la compuesta completa."],
   ["3.72", "Botón \"Copiar\" en Mis inspecciones: crea una inspección nueva con los mismos niveles y unidades (nombres) y los datos del edificio (nombre, dirección, sistema constructivo, etc.), sin copiar fotos, ATC-20, cómputos ni el número de informe — útil para un edificio vecino o del mismo nombre, sin escribir todo de nuevo."],
@@ -5372,7 +5373,7 @@ function rComputos() {
   // o una compuesta + andamio) sin repetir zona/nivel/elemento cada vez.
   // Devuelve true si guardó, false si quedó bloqueado por un error o el aviso
   // de cantidad atípica (que hay que confirmar tocando de nuevo).
-  function cmpGuardarLinea(mantenerZona) {
+  async function cmpGuardarLinea(mantenerZona) {
     const p = cmpPartidaBorrador();
     const l = cmpLeer();
     const errs = cmpValidar(l, p);
@@ -5408,24 +5409,43 @@ function rComputos() {
       c.lineas.push(l);
     }
     cmpUltObs = l.obs || cmpUltObs;
-    cmpBorrador.fotos = [];
+    if (mantenerZona) {
+      // "+ Otra partida (misma zona)": la foto sigue haciendo falta para la
+      // próxima partida (para anotar algo, por ejemplo), así que se copia a
+      // ids nuevos en vez de conservar los mismos -- si compartieran id,
+      // "Quitar" sobre el borrador que sigue borraría también la foto de la
+      // línea que se acaba de guardar (mismo blob).
+      const fotosNuevas = [];
+      for (const f of cmpBorrador.fotos) {
+        const blob = await blobGet("photo:" + f.id);
+        if (!blob) continue;
+        const nuevoId = uid();
+        await blobSet("photo:" + nuevoId, blob);
+        const _cf = { id: nuevoId, ts: new Date().toISOString() };
+        if (f.geo) _cf.geo = f.geo;
+        fotosNuevas.push(_cf);
+      }
+      cmpBorrador.fotos = fotosNuevas;
+    } else {
+      cmpBorrador.fotos = [];
+      cmpBorrador.elemento = "";
+    }
     cmpBorrador.obs = "";
     cmpBorrador.dims = {};
     cmpBorrador.fijo = null;
     cmpBorrador.medicion = null;
     cmpBorrador.atipicoOk = false;
-    if (!mantenerZona) cmpBorrador.elemento = "";
-    else cmpBorrador.partida = "";
+    if (mantenerZona) cmpBorrador.partida = "";
     cmpOlvidarColor();
     guardar();
     return true;
   }
 
   const bg = document.getElementById("cmGuardar");
-  if (bg) bg.onclick = () => { if (cmpGuardarLinea(false)) rComputos(); };
+  if (bg) bg.onclick = async () => { if (await cmpGuardarLinea(false)) rComputos(); };
 
   const bgo = document.getElementById("cmGuardarOtra");
-  if (bgo) bgo.onclick = () => { if (cmpGuardarLinea(true)) rComputos(); };
+  if (bgo) bgo.onclick = async () => { if (await cmpGuardarLinea(true)) rComputos(); };
 
   const bgc = document.getElementById("cmGuardarComp");
   if (bgc) bgc.onclick = cmpGuardarCompuesta;
