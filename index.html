@@ -142,8 +142,9 @@
 <script>
 "use strict";
 /* ================= Constantes ================= */
-const VERSION = "3.81";
+const VERSION = "3.82";
 const CHANGELOG = [
+  ["3.82", "El Dashboard de cómputos tiene un nuevo botón \"Exportar reporte con fotos (PDF)\": un documento para imprimir o mandar al comité/dueño, con la foto de cada partida a tamaño legible (no la miniatura del Excel), agrupado por nivel, con la observación y la cantidad final, y avisando en rojo las partidas que quedaron sin foto de respaldo. Antes solo estaba el Excel, pensado para seguir editando cantidades, no para mostrar el hallazgo."],
   ["3.81", "En \"Líneas capturadas\", dentro de un grupo de partidas compuestas la partida con foto ahora aparece primero (antes quedaba de última, porque toda la lista se mostraba de más nueva a más vieja incluyendo el orden interno del grupo)."],
   ["3.80", "En Cómputos métricos, la cantidad calculada y el botón Guardar ahora quedan fijos abajo de la pantalla mientras teclea las medidas — así no hace falta bajar y subir para revisar el número o guardar. Funciona igual en Línea simple y en Partida compuesta (ahí muestra la superficie o medida base)."],
   ["3.79", "El botón ⚑ para marcar \"volver después\" ahora también está disponible ANTES de guardar, junto a Origen de la medida (tanto en Línea simple como en Partida compuesta): si lo activa antes de guardar, la línea (o todas las que salgan de una compuesta) queda marcada de una vez, sin tener que ir a buscarla después en Líneas capturadas para marcarla."],
@@ -5860,11 +5861,12 @@ function rDashboard() {
       </table>
     </div>
     <p class="aviso" id="dashVacio" style="display:none">Ninguna línea coincide con la búsqueda.</p>
-    <div class="grid2" style="margin-top:14px">
-      <button class="btn btn-negro" id="dashExcel">📊 Exportar a Excel</button>
+    <button class="btn btn-negro" id="dashPDF" style="margin-top:14px">📷 Exportar reporte con fotos (PDF)</button>
+    <div class="grid2" style="margin-top:8px">
+      <button class="btn btn-linea" id="dashExcel">📊 Exportar a Excel</button>
       <button class="btn btn-linea" id="dashVolverComp">Ir a Cómputos métricos</button>
     </div>
-    <p class="aviso" id="dashExcelMsg" style="margin-top:6px"></p>
+    <p class="aviso" id="dashMsg" style="margin-top:6px"></p>
     ` : `<p class="aviso">Aún no hay líneas capturadas. Agréguelas desde "Cómputos métricos".</p>
     <button class="btn btn-linea" id="dashVolverComp" style="margin-top:8px">Ir a Cómputos métricos</button>`}`;
 
@@ -5920,6 +5922,8 @@ function rDashboard() {
   if (bVolver) bVolver.onclick = () => nav({ n: "computos" });
   const bExcel = document.getElementById("dashExcel");
   if (bExcel) bExcel.onclick = () => dashExportarExcel(c, b);
+  const bPDF = document.getElementById("dashPDF");
+  if (bPDF) bPDF.onclick = () => dashExportarPDF(c, b);
 }
 
 function blobABase64(blob) {
@@ -5931,8 +5935,28 @@ function blobABase64(blob) {
   });
 }
 
+// Reescala una foto a lo más maxLado px por lado antes de meterla en un PDF:
+// las fotos de cámara pesan varios MB y a 42 mm de ancho no hace falta full-res.
+function imgReducida(blob, maxLado) {
+  return new Promise((resolve) => {
+    const img = new Image();
+    const url = URL.createObjectURL(blob);
+    img.onload = () => {
+      let w = img.naturalWidth || 4, h = img.naturalHeight || 3;
+      if (maxLado && Math.max(w, h) > maxLado) { const k = maxLado / Math.max(w, h); w = Math.round(w * k); h = Math.round(h * k); }
+      const cv = document.createElement("canvas");
+      cv.width = w; cv.height = h;
+      cv.getContext("2d").drawImage(img, 0, 0, w, h);
+      URL.revokeObjectURL(url);
+      resolve({ b64: cv.toDataURL("image/jpeg", 0.74), w, h });
+    };
+    img.onerror = () => { URL.revokeObjectURL(url); resolve(null); };
+    img.src = url;
+  });
+}
+
 async function dashExportarExcel(c, b) {
-  const msg = document.getElementById("dashExcelMsg");
+  const msg = document.getElementById("dashMsg");
   const setMsg = (t) => { if (msg) msg.textContent = t; };
   if (typeof ExcelJS === "undefined") { setMsg("✗ No se pudo cargar el generador de Excel. Verifique la conexión e intente de nuevo."); return; }
   setMsg("Generando Excel…");
@@ -6017,6 +6041,204 @@ async function dashExportarExcel(c, b) {
     setMsg("✓ Excel descargado (" + c.lineas.length + " líneas).");
   } catch (e) {
     setMsg("✗ No se pudo generar el Excel: " + e.message);
+  }
+}
+
+/* Reporte fotográfico en PDF: resumen por partida + una ficha por línea con
+   su foto a tamaño legible, pensado para imprimir o mandar al comité/dueño
+   (a diferencia del Excel, que es para seguir editando cantidades). */
+async function dashExportarPDF(c, b) {
+  const msg = document.getElementById("dashMsg");
+  const setMsg = (t) => { if (msg) msg.textContent = t; };
+  if (typeof window.jspdf === "undefined") { setMsg("✗ No se pudo cargar el generador de PDF. Verifique la conexión e intente de nuevo."); return; }
+  if (!c.lineas.length) { setMsg("No hay líneas para exportar."); return; }
+  setMsg("Generando PDF, puede tardar unos segundos…");
+  try {
+    const { jsPDF } = window.jspdf;
+    const pdf = new jsPDF({ unit: "mm", format: "letter" });
+    const W = pdf.internal.pageSize.getWidth();
+    const H = pdf.internal.pageSize.getHeight();
+    const M = 18;
+    const base = "BSP-2026-" + (b.informe || "X");
+    const negro = [17, 24, 39];
+
+    let y = 34;
+    pdf.setFillColor(17, 24, 39);
+    pdf.rect(0, 0, W, 26, "F");
+    pdf.setTextColor(255, 255, 255);
+    pdf.setFont("helvetica", "bold"); pdf.setFontSize(13);
+    pdf.text("BSP · Building Safety Program", M, 11);
+    pdf.setFont("helvetica", "normal"); pdf.setFontSize(9);
+    pdf.text("Cómputos métricos · Registro fotográfico de partidas", M, 18);
+    pdf.setTextColor(...negro);
+    pdf.setFont("helvetica", "bold"); pdf.setFontSize(15);
+    pdf.text(`${b.nombre || "Edificio"} · Informe ${base}`, M, y); y += 7;
+    pdf.setFont("helvetica", "normal"); pdf.setFontSize(10);
+    const dir = [b.direccion, b.parroquia, b.municipio, b.estado].filter(Boolean).join(", ");
+    if (dir) { const t = pdf.splitTextToSize("Dirección: " + dir, W - 2 * M); pdf.text(t, M, y); y += 5.5 * t.length; }
+    pdf.text(`Fecha de medición: ${c.fecha || "-"}${c.responsable ? " · Responsable: " + c.responsable : ""} · Revisión ${c.rev || 1}`, M, y); y += 9;
+
+    // ----- Resumen por partida -----
+    const res = cmpResumen(c);
+    pdf.setFont("helvetica", "bold"); pdf.setFontSize(11);
+    pdf.text("Resumen por partida", M, y); y += 6.5;
+
+    const cols = [
+      { label: "Código", w: 16, align: "left" },
+      { label: "Descripción", w: 76, align: "left" },
+      { label: "Cantidad neta", w: 30, align: "right" },
+      { label: "Desperdicio", w: 22, align: "right" },
+      { label: "Con desperdicio", w: 34, align: "right" }
+    ];
+    let cx = M; const xs = cols.map((cc) => { const v = cx; cx += cc.w; return v; });
+    const anchoDesc = cols[1].w - 2;
+
+    const filaResumen = (valores, esCabecera, sombreado) => {
+      const descLineas = esCabecera ? [String(valores[1])] : pdf.splitTextToSize(String(valores[1]), anchoDesc);
+      const alto = Math.max(6.4, descLineas.length * 3.9 + 2.6);
+      if (y + alto > H - M) { pdf.addPage(); y = M + 4; }
+      if (sombreado) { pdf.setFillColor(248, 250, 252); pdf.rect(M, y - 4.2, W - 2 * M, alto, "F"); }
+      pdf.setFont("helvetica", esCabecera ? "bold" : "normal"); pdf.setFontSize(8.6);
+      pdf.setTextColor(esCabecera ? 100 : 30, esCabecera ? 116 : 41, esCabecera ? 139 : 59);
+      cols.forEach((cc, i) => {
+        if (i === 1) { pdf.text(descLineas, xs[i], y); return; }
+        pdf.text(String(valores[i]), cc.align === "right" ? xs[i] + cc.w - 1 : xs[i], y, { align: cc.align === "right" ? "right" : "left" });
+      });
+      pdf.setTextColor(...negro);
+      y += alto;
+      if (esCabecera) { pdf.setDrawColor(200); pdf.line(M, y - alto + 1.6, W - M, y - alto + 1.6); }
+    };
+    filaResumen(cols.map((cc) => cc.label), true, false);
+    let alterna = false;
+    for (const r of res) {
+      const d = cmpDespDe(r.codigo);
+      filaResumen([
+        r.codigo, r.descripcion,
+        cmpFmt(cmpRed(r.total, 2)) + " " + CMP_UNI[r.unidad],
+        cmpFmt(d, 0) + " %",
+        cmpFmt(cmpRed(r.total * (1 + d / 100), 2)) + " " + CMP_UNI[r.unidad]
+      ], false, alterna);
+      alterna = !alterna;
+    }
+
+    // ----- Ficha fotográfica por línea -----
+    pdf.addPage();
+    y = M;
+    const anchoFoto = 42, altoFoto = 42, gap = 5;
+    const anchoTexto = (W - 2 * M) - anchoFoto - gap;
+    const tx = M + anchoFoto + gap;
+    let nivelAnt = null;
+
+    const encabezaNivel = (nivel) => {
+      if (y + 12 > H - M) { pdf.addPage(); y = M; }
+      pdf.setFillColor(241, 245, 249);
+      pdf.rect(M, y, W - 2 * M, 8, "F");
+      pdf.setFont("helvetica", "bold"); pdf.setFontSize(10); pdf.setTextColor(30, 41, 59);
+      pdf.text(nivel, M + 3, y + 5.6);
+      pdf.setTextColor(...negro);
+      y += 12;
+    };
+
+    pdf.setFont("helvetica", "bold"); pdf.setFontSize(12);
+    pdf.text("Registro fotográfico", M, y); y += 8;
+
+    for (const l of cmpOrdenVisual(c.lineas)) {
+      const p = cmpPartidaLinea(l) || { descripcion: "", unidad: l.unidad };
+      const nivel = l.nivel || "Sin nivel especificado";
+      if (nivel !== nivelAnt) { encabezaNivel(nivel); nivelAnt = nivel; }
+
+      const titulo = l.partida + "  " + (p.descripcion || "");
+      const tituloLineas = pdf.splitTextToSize(titulo, anchoTexto).slice(0, 2);
+      const ubic = [l.elemento, l.zona].filter(Boolean).join(" · ");
+      const obsLineas = l.obs ? pdf.splitTextToSize("Observación: " + l.obs, anchoTexto).slice(0, 3) : [];
+      const derivLineas = (l.derivada && l.baseMedida) ? pdf.splitTextToSize("Derivado de: " + l.baseMedida, anchoTexto).slice(0, 2) : [];
+      const textoAlto = 4.6 * tituloLineas.length + (ubic ? 4.3 : 0) + 3.9 * obsLineas.length + 3.6 * derivLineas.length + 7;
+      const altoTarjeta = Math.max(altoFoto, textoAlto) + 5;
+
+      if (y + altoTarjeta > H - M) { pdf.addPage(); y = M; encabezaNivel(nivel); }
+
+      const fy = y;
+      pdf.setDrawColor(225); pdf.setFillColor(248, 250, 252);
+      pdf.roundedRect(M, fy, anchoFoto, altoFoto, 2, 2, "FD");
+      const foto = (l.fotos || [])[0];
+      let dibujada = false;
+      if (foto) {
+        try {
+          const blob = await blobGet("photo:" + foto.id);
+          if (blob) {
+            const r = await imgReducida(blob, 700);
+            if (r) {
+              const esc2 = Math.min((anchoFoto - 2) / r.w, (altoFoto - 2) / r.h);
+              const dw = r.w * esc2, dh = r.h * esc2;
+              pdf.addImage(r.b64, "JPEG", M + (anchoFoto - dw) / 2, fy + (altoFoto - dh) / 2, dw, dh);
+              dibujada = true;
+            }
+          }
+        } catch (e) {}
+      }
+      if (!dibujada) {
+        pdf.setFont("helvetica", "italic"); pdf.setFontSize(7.6);
+        if (l.derivada && l.compuesta) {
+          pdf.setTextColor(100, 116, 139);
+          const t = pdf.splitTextToSize("Ver foto arriba (misma reparación: " + l.compuesta + ")", anchoFoto - 4);
+          pdf.text(t, M + anchoFoto / 2, fy + altoFoto / 2 - (t.length - 1) * 3, { align: "center" });
+        } else {
+          pdf.setFont("helvetica", "bold"); pdf.setTextColor(185, 28, 28);
+          pdf.text("SIN FOTO", M + anchoFoto / 2, fy + altoFoto / 2, { align: "center" });
+        }
+        pdf.setTextColor(...negro);
+      }
+
+      let ty = fy + 4.6;
+      pdf.setFont("helvetica", "bold"); pdf.setFontSize(9.3); pdf.setTextColor(...negro);
+      pdf.text(tituloLineas, tx, ty); ty += 4.6 * tituloLineas.length + 1;
+      if (ubic) {
+        pdf.setFont("helvetica", "normal"); pdf.setFontSize(8.3); pdf.setTextColor(71, 85, 105);
+        pdf.text(ubic, tx, ty); ty += 4.3;
+      }
+      if (derivLineas.length) {
+        pdf.setFont("helvetica", "normal"); pdf.setFontSize(7.6); pdf.setTextColor(100, 116, 139);
+        pdf.text(derivLineas, tx, ty); ty += 3.6 * derivLineas.length;
+      }
+      if (obsLineas.length) {
+        pdf.setFont("helvetica", "italic"); pdf.setFontSize(8); pdf.setTextColor(100, 116, 139);
+        pdf.text(obsLineas, tx, ty); ty += 3.9 * obsLineas.length;
+      }
+      pdf.setTextColor(...negro);
+
+      pdf.setFont("helvetica", "bold"); pdf.setFontSize(9.7);
+      pdf.text(cmpFmt(l.parcial, l.unidad === "m3" ? 3 : 2) + " " + (CMP_UNI[l.unidad] || l.unidad), tx, fy + altoFoto - 2.6);
+      pdf.setFont("helvetica", "normal"); pdf.setFontSize(7.3); pdf.setTextColor(148, 163, 184);
+      pdf.text(DASH_ORIGEN_TXT[l.origen] || "", tx + anchoTexto, fy + altoFoto - 2.6, { align: "right" });
+      pdf.setTextColor(...negro);
+
+      y = fy + altoTarjeta;
+      pdf.setDrawColor(230); pdf.line(M, y - 3.2, W - M, y - 3.2);
+    }
+
+    // ----- Pie de página -----
+    const totPag = pdf.internal.getNumberOfPages();
+    for (let i = 1; i <= totPag; i++) {
+      pdf.setPage(i);
+      pdf.setDrawColor(220); pdf.line(M, H - 12, W - M, H - 12);
+      pdf.setFont("helvetica", "normal"); pdf.setFontSize(7.5); pdf.setTextColor(140, 150, 165);
+      pdf.text(base + " · Ing. Eduardo Lubo · CIV N.° 115.692", M, H - 7.5);
+      pdf.text("Página " + i + " de " + totPag, W - M, H - 7.5, { align: "right" });
+      pdf.setTextColor(...negro);
+    }
+
+    const blob = pdf.output("blob");
+    const nombre = base + "-reporte-fotografico.pdf";
+    const file = new File([blob], nombre, { type: "application/pdf" });
+    if (navigator.canShare && navigator.canShare({ files: [file] })) {
+      try { await navigator.share({ files: [file] }); setMsg("PDF compartido."); return; } catch (e) {}
+    }
+    const a = document.createElement("a");
+    a.href = URL.createObjectURL(blob); a.download = nombre; a.click();
+    URL.revokeObjectURL(a.href);
+    setMsg("✓ PDF descargado (" + c.lineas.length + " líneas).");
+  } catch (e) {
+    setMsg("✗ No se pudo generar el PDF: " + e.message);
   }
 }
 
