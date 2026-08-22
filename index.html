@@ -142,8 +142,9 @@
 <script>
 "use strict";
 /* ================= Constantes ================= */
-const VERSION = "3.83";
+const VERSION = "3.84";
 const CHANGELOG = [
+  ["3.84", "Anotar foto ahora arranca en modo Libre (dibujo a mano) en vez de Flecha. En \"Renumerar unidades\", escribir el número/letra inicial o el prefijo ya no le quita el foco al recuadro en cada tecla. En la descripción de cada foto aparece un botón \"Usar descripción anterior\" para repetir el texto de la última descripción escrita, cuando el campo está vacío."],
   ["3.83", "En \"Mis inspecciones\" la lista ahora sale ordenada de la más nueva a la más vieja (antes salía en el orden en que se habían creado, con la más vieja de primera)."],
   ["3.82", "El Dashboard de cómputos tiene un nuevo botón \"Exportar reporte con fotos (PDF)\": un documento para imprimir o mandar al comité/dueño, con la foto de cada partida a tamaño legible (no la miniatura del Excel), agrupado por nivel, con la observación y la cantidad final, y avisando en rojo las partidas que quedaron sin foto de respaldo. Antes solo estaba el Excel, pensado para seguir editando cantidades, no para mostrar el hallazgo."],
   ["3.81", "En \"Líneas capturadas\", dentro de un grupo de partidas compuestas la partida con foto ahora aparece primero (antes quedaba de última, porque toda la lista se mostraba de más nueva a más vieja incluyendo el orden interno del grupo)."],
@@ -813,6 +814,7 @@ function cmpDe(insp) {
 }
 let cmpBorrador = { origen: "sitio", fotos: [] };
 let cmpUltObs = "";
+let ultDescFoto = "";
 /* Catálogo personal: partidas y compuestas que el ingeniero crea con IA
    cuando no encuentra lo que necesita. Vive aparte de CMP_CAT/CMP_COMPUESTAS
    (que son fijas en el código) y se guarda en IndexedDB + se sincroniza por
@@ -2581,7 +2583,7 @@ function rRenumerar() {
 
       <div class="tarjeta" style="padding:12px;background:var(--fondo);margin-bottom:12px">
         <div class="etiq" style="margin-top:0">Vista previa</div>
-        <p class="aviso" style="margin:0;line-height:1.7">${muestra || "Complete los datos para ver la vista previa."}${reales.length > 6 ? "<br />…" : ""}</p>
+        <p class="aviso" id="rnMuestra" style="margin:0;line-height:1.7">${muestra || "Complete los datos para ver la vista previa."}${reales.length > 6 ? "<br />…" : ""}</p>
       </div>
       <p class="aviso">Se renumeran en el orden en que están hoy. Las fotos y clasificaciones se conservan: solo cambia el nombre.</p>
       <button class="btn btn-negro" id="rnAplicar">Aplicar a las ${reales.length} unidades</button>
@@ -2591,11 +2593,16 @@ function rRenumerar() {
   document.getElementById("rnFormato").querySelectorAll("[data-f]").forEach((b) => {
     b.onclick = () => { T.formato = b.dataset.f; rRenumerar(); };
   });
+  const actualizarMuestra = () => {
+    const m = reales.slice(0, 6).map((a, i) => `${esc(a.nombre)} → <b>${esc(previa(i)) || "?"}</b>`).join("<br />");
+    const el = document.getElementById("rnMuestra");
+    if (el) el.innerHTML = (m || "Complete los datos para ver la vista previa.") + (reales.length > 6 ? "<br />…" : "");
+  };
   const dd = document.getElementById("rnDesde");
-  if (dd) dd.oninput = (e) => { T.desde = e.target.value; rRenumerar(); };
+  if (dd) dd.oninput = (e) => { T.desde = e.target.value; actualizarMuestra(); };
   const ll = document.getElementById("rnLetra");
-  if (ll) ll.oninput = (e) => { T.letraBase = e.target.value; rRenumerar(); };
-  document.getElementById("rnPrefijo").oninput = (e) => { T.prefijo = e.target.value; rRenumerar(); };
+  if (ll) ll.oninput = (e) => { T.letraBase = e.target.value; actualizarMuestra(); };
+  document.getElementById("rnPrefijo").oninput = (e) => { T.prefijo = e.target.value; actualizarMuestra(); };
 
   document.getElementById("rnAplicar").onclick = () => {
     const nombres = reales.map((a, i) => previa(i));
@@ -2627,6 +2634,7 @@ function rUnidad() {
         </div>
         <p class="aviso" data-geo="${f.id}" style="margin:0 0 6px">${f.geo ? "📍 " + geoTxt(f.geo) : ""}</p>
         <textarea rows="2" placeholder="Descripción de lo observado…" data-desc="${f.id}">${esc(f.desc)}</textarea>
+        ${ultDescFoto && !f.desc ? `<button class="btn btn-linea" data-descprev="${f.id}" style="width:auto;padding:5px 10px;font-size:12px;margin:-2px 0 8px">↩ Usar descripción anterior</button>` : ""}
         <div class="pildoras" style="margin:6px 0 2px">
           ${FRASES.map((fr) => `<button data-frase="${f.id}|${esc(fr)}" style="font-size:12px;padding:5px 9px">${esc(fr)}</button>`).join("")}
         </div>
@@ -2730,8 +2738,20 @@ function rUnidad() {
     requestAnimationFrame(() => requestAnimationFrame(() => rUnidad()));
   };
   fCam.onchange = onArchivos; fGal.onchange = onArchivos;
-  $app.querySelectorAll("[data-desc]").forEach((t) => (t.oninput = () => {
-    const f = u.fotos.find((x) => x.id === t.dataset.desc); if (f) { f.desc = t.value; guardar(); }
+  $app.querySelectorAll("[data-desc]").forEach((t) => {
+    t.oninput = () => {
+      const f = u.fotos.find((x) => x.id === t.dataset.desc); if (f) { f.desc = t.value; guardar(); }
+    };
+    t.onblur = () => { if (t.value.trim()) ultDescFoto = t.value.trim(); };
+  });
+  $app.querySelectorAll("[data-descprev]").forEach((bt) => (bt.onclick = () => {
+    const f = u.fotos.find((x) => x.id === bt.dataset.descprev);
+    if (!f) return;
+    f.desc = ultDescFoto;
+    const t = $app.querySelector(`[data-desc="${bt.dataset.descprev}"]`);
+    if (t) { t.value = ultDescFoto; t.focus(); }
+    bt.style.display = "none";
+    guardar();
   }));
   $app.querySelectorAll("[data-frase]").forEach((bt) => (bt.onclick = () => {
     const sep = bt.dataset.frase.indexOf("|");
@@ -2872,7 +2892,7 @@ async function abrirEditorFoto(fid, despues) {
   canvas.width = img.naturalWidth; canvas.height = img.naturalHeight;
   const ctx = canvas.getContext("2d");
   let color = "#e11d48";
-  let tool = "flecha";
+  let tool = "libre";
   const formas = [];
   let actual = null;
   const grosor = Math.max(4, Math.round(canvas.width / 220));
