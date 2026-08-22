@@ -142,8 +142,9 @@
 <script>
 "use strict";
 /* ================= Constantes ================= */
-const VERSION = "3.82";
+const VERSION = "3.83";
 const CHANGELOG = [
+  ["3.83", "En \"Mis inspecciones\" la lista ahora sale ordenada de la más nueva a la más vieja (antes salía en el orden en que se habían creado, con la más vieja de primera)."],
   ["3.82", "El Dashboard de cómputos tiene un nuevo botón \"Exportar reporte con fotos (PDF)\": un documento para imprimir o mandar al comité/dueño, con la foto de cada partida a tamaño legible (no la miniatura del Excel), agrupado por nivel, con la observación y la cantidad final, y avisando en rojo las partidas que quedaron sin foto de respaldo. Antes solo estaba el Excel, pensado para seguir editando cantidades, no para mostrar el hallazgo."],
   ["3.81", "En \"Líneas capturadas\", dentro de un grupo de partidas compuestas la partida con foto ahora aparece primero (antes quedaba de última, porque toda la lista se mostraba de más nueva a más vieja incluyendo el orden interno del grupo)."],
   ["3.80", "En Cómputos métricos, la cantidad calculada y el botón Guardar ahora quedan fijos abajo de la pantalla mientras teclea las medidas — así no hace falta bajar y subir para revisar el número o guardar. Funciona igual en Línea simple y en Partida compuesta (ahí muestra la superficie o medida base)."],
@@ -1872,7 +1873,10 @@ function rLogin() {
 
 /* ================= Pantalla: lista ================= */
 function rLista() {
-  const items = st.index.map((e) => `
+  const ordenados = st.index.map((e, i) => [e, i])
+    .sort(([ea, i], [eb, j]) => (eb.fecha || "").localeCompare(ea.fecha || "") || j - i)
+    .map(([e]) => e);
+  const items = ordenados.map((e) => `
     <div class="item" style="padding:10px 13px">
       <button class="cuerpo" style="background:none;border:none;text-align:left;font-family:inherit;padding:0" data-abrir="${e.id}">
         <div class="nombre">${esc(e.nombre) || "(sin nombre)"}</div>
