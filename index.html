@@ -142,8 +142,9 @@
 <script>
 "use strict";
 /* ================= Constantes ================= */
-const VERSION = "3.84";
+const VERSION = "3.85";
 const CHANGELOG = [
+  ["3.85", "Nuevo botón \"↔ Mover a otra unidad\" en cada foto: para cuando una foto quedó guardada en la unidad equivocada (por ejemplo, una foto de la escalera entre el piso 10 y 11 que se guardó por error en el pasillo del piso 10). Permite llevarla a cualquier nivel y a una unidad o zona ya existente, o crear una zona nueva con el nombre que haga falta, sin tocar el resto de fotos de la unidad de origen."],
   ["3.84", "Anotar foto ahora arranca en modo Libre (dibujo a mano) en vez de Flecha. En \"Renumerar unidades\", escribir el número/letra inicial o el prefijo ya no le quita el foco al recuadro en cada tecla. En la descripción de cada foto aparece un botón \"Usar descripción anterior\" para repetir el texto de la última descripción escrita, cuando el campo está vacío."],
   ["3.83", "En \"Mis inspecciones\" la lista ahora sale ordenada de la más nueva a la más vieja (antes salía en el orden en que se habían creado, con la más vieja de primera)."],
   ["3.82", "El Dashboard de cómputos tiene un nuevo botón \"Exportar reporte con fotos (PDF)\": un documento para imprimir o mandar al comité/dueño, con la foto de cada partida a tamaño legible (no la miniatura del Excel), agrupado por nivel, con la observación y la cantidad final, y avisando en rojo las partidas que quedaron sin foto de respaldo. Antes solo estaba el Excel, pensado para seguir editando cantidades, no para mostrar el hallazgo."],
@@ -1797,6 +1798,7 @@ document.getElementById("btnVolver").onclick = () => {
   else if (p.n === "dashboard") nav({ n: "casa" });
   else if (p.n === "medir") nav({ n: "computos", volverA: p.volverA });
   else if (p.n === "mover") { const nv = st.insp.niveles.find((x) => x.apts.some((a) => a.id === p.moverApt)); nav(nv ? { n: "unidad", nivelId: nv.id, unidadId: p.moverApt } : { n: "casa" }); }
+  else if (p.n === "moverfoto") nav({ n: "unidad", nivelId: p.nivelId, unidadId: p.unidadId });
   else if (p.n === "renumerar") nav({ n: "nivel", nivelId: st.pantalla.nivelId });
   else if (p.n === "casa") nav({ n: "lista" });
   else if (p.n === "setup") nav(st.insp && st.insp.listo ? { n: "casa" } : { n: "lista" });
@@ -1828,6 +1830,7 @@ function render() {
   else if (p.n === "dashboard") rDashboard();
   else if (p.n === "medir") rMedir();
   else if (p.n === "mover") rMover();
+  else if (p.n === "moverfoto") rMoverFoto();
   else if (p.n === "renumerar") rRenumerar();
   else if (p.n === "export") rExport();
   else if (p.n === "ajustes") rAjustes();
@@ -2541,6 +2544,79 @@ function rMover() {
   };
 }
 
+/* Mueve UNA foto de su unidad a otra unidad/zona, incluso de otro nivel,
+   sin tocar el resto de fotos de la unidad de origen. Para el caso de fotos
+   guardadas por error en la unidad equivocada (p. ej. fotos de la escalera
+   entre dos pisos que quedaron en el pasillo de uno de ellos). El destino
+   puede ser una unidad/zona ya existente o una nueva, escrita a mano. */
+function rMoverFoto() {
+  const p = st.pantalla;
+  const nivOrigen = st.insp.niveles.find((x) => x.id === p.nivelId);
+  const aptOrigen = nivOrigen && nivOrigen.apts.find((a) => a.id === p.unidadId);
+  const uOrigen = aptOrigen && st.insp.unidades[aptOrigen.id];
+  const foto = uOrigen && (uOrigen.fotos || []).find((f) => f.id === p.fotoId);
+  if (!foto || !aptOrigen) return nav({ n: "casa" });
+
+  if (!st.movFoto || st.movFoto.fotoId !== p.fotoId) st.movFoto = { fotoId: p.fotoId, nivelId: "", unidadId: "", nueva: "" };
+  const MF = st.movFoto;
+
+  const nivelDestino = st.insp.niveles.find((nv) => nv.id === MF.nivelId);
+  const aptsDestino = nivelDestino ? nivelDestino.apts.filter((a) => a.id !== aptOrigen.id) : [];
+
+  $app.innerHTML = `
+    <div class="fila" style="margin-bottom:2px">
+      <button class="btn-gris" style="width:auto;border-radius:10px" id="mfVolver">‹ Volver</button>
+    </div>
+    <h2>Mover foto</h2>
+    <p class="sub">Desde: ${esc(aptOrigen.nombre)} · ${esc(nivOrigen.nombre)}</p>
+    <img id="mfImg" alt="" style="width:100%;max-height:220px;object-fit:contain;background:#111;border-radius:10px;margin-bottom:12px" />
+
+    <div class="tarjeta">
+      <div class="etiq">Llevar a</div>
+      <label class="campo"><span>Nivel de destino</span>
+        <select id="mfNivel">
+          <option value="">Seleccione</option>
+          ${st.insp.niveles.map((nv) => `<option value="${nv.id}" ${nv.id === MF.nivelId ? "selected" : ""}>${esc(nv.nombre)}</option>`).join("")}
+        </select></label>
+
+      ${nivelDestino ? `
+      <label class="campo"><span>Unidad / zona existente</span>
+        <select id="mfUnidad">
+          <option value="">Ninguna — crear una nueva abajo</option>
+          ${aptsDestino.map((a) => `<option value="${a.id}" ${a.id === MF.unidadId ? "selected" : ""}>${esc(a.nombre)}</option>`).join("")}
+        </select></label>
+      ${!MF.unidadId ? `<label class="campo"><span>O el nombre de una zona nueva en ${esc(nivelDestino.nombre)}</span>
+        <input id="mfNueva" value="${esc(MF.nueva)}" placeholder="Ej: Escalera 10-11" /></label>` : ""}
+      <button class="btn btn-negro" id="mfConfirmar">Mover foto aquí</button>` : ""}
+    </div>`;
+
+  urlFoto(foto.id).then((url) => { const im = document.getElementById("mfImg"); if (im && url) im.src = url; });
+
+  document.getElementById("mfVolver").onclick = () => nav({ n: "unidad", nivelId: nivOrigen.id, unidadId: aptOrigen.id });
+  document.getElementById("mfNivel").onchange = (e) => { MF.nivelId = e.target.value; MF.unidadId = ""; MF.nueva = ""; rMoverFoto(); };
+  const su = document.getElementById("mfUnidad");
+  if (su) su.onchange = (e) => { MF.unidadId = e.target.value; rMoverFoto(); };
+  const nu = document.getElementById("mfNueva");
+  if (nu) nu.oninput = (e) => { MF.nueva = e.target.value; };
+
+  const cf = document.getElementById("mfConfirmar");
+  if (cf) cf.onclick = () => {
+    let destApt = MF.unidadId ? aptsDestino.find((a) => a.id === MF.unidadId) : null;
+    if (!destApt) {
+      const nombre = MF.nueva.trim();
+      if (!nombre) { alert("Elige una unidad existente o escribe el nombre de una zona nueva."); return; }
+      destApt = { id: uid(), nombre };
+      nivelDestino.apts.push(destApt);
+    }
+    uOrigen.fotos = uOrigen.fotos.filter((f) => f.id !== foto.id);
+    if (!st.insp.unidades[destApt.id]) st.insp.unidades[destApt.id] = unidadVacia();
+    st.insp.unidades[destApt.id].fotos.push(foto);
+    st.movFoto = null;
+    guardar();
+    nav({ n: "unidad", nivelId: nivelDestino.id, unidadId: destApt.id });
+  };
+}
+
 /* Renumera en lote las unidades reales de un nivel (deja intactos los
    pasillos y las zonas comunes). Toma un primer valor y un formato,
    y reescribe los nombres en el orden actual de la lista. */
@@ -2643,6 +2719,7 @@ function rUnidad() {
           ${DANOS.map((dm) => `<option ${f.dano === dm ? "selected" : ""}>${dm}</option>`).join("")}
         </select>
         <div class="atc">${ATC.map((a) => `<button class="${ATC_CLS[a]} ${f.atc === a ? "on" : ""}" data-fatc="${f.id}|${a}">${ATC_CORTO[a]}</button>`).join("")}</div>
+        <button class="btn-linea" style="margin-top:8px;font-size:12px;padding:8px" data-moverfoto="${f.id}">↔ Mover a otra unidad</button>
         ${st.apiKey ? `<div class="fila" style="gap:8px;margin-top:8px">
           <button class="btn-linea" style="font-size:12px;padding:8px" data-triage="${f.id}">🔎 Analizar con IA</button>
           <button class="btn-linea" style="font-size:12px;padding:8px" data-triagearea="${f.id}">✂️ Delimitar y analizar</button>
@@ -2775,6 +2852,10 @@ function rUnidad() {
     if (f) { f.star = !f.star; guardar(); rUnidad(); }
   }));
   $app.querySelectorAll("[data-anotar]").forEach((bt) => (bt.onclick = () => abrirEditorFoto(bt.dataset.anotar)));
+  $app.querySelectorAll("[data-moverfoto]").forEach((bt) => (bt.onclick = () => {
+    st.movFoto = null;
+    nav({ n: "moverfoto", nivelId: nv.id, unidadId: apt.id, fotoId: bt.dataset.moverfoto });
+  }));
   $app.querySelectorAll("[data-triage]").forEach((bt) => (bt.onclick = () => triageFoto(bt.dataset.triage, null, bt)));
   $app.querySelectorAll("[data-triagearea]").forEach((bt) => (bt.onclick = async () => {
     const fid = bt.dataset.triagearea;
