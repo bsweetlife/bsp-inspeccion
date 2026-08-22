@@ -142,8 +142,9 @@
 <script>
 "use strict";
 /* ================= Constantes ================= */
-const VERSION = "3.86";
+const VERSION = "3.87";
 const CHANGELOG = [
+  ["3.87", "Arreglado: el botón \"Usar descripción anterior\" de las fotos no aparecía si acababas de abrir o recargar la app, porque solo miraba lo tecleado en esa sesión. Ahora toma la descripción de la última foto ya guardada en la misma unidad, así que aparece desde la primera vez que agregas una foto sin descripción."],
   ["3.86", "En \"Mis inspecciones\", el botón \"+ Nueva inspección\" ahora está arriba, justo debajo del título y el texto de ayuda, en vez de al final de la lista."],
   ["3.85", "Nuevo botón \"↔ Mover a otra unidad\" en cada foto: para cuando una foto quedó guardada en la unidad equivocada (por ejemplo, una foto de la escalera entre el piso 10 y 11 que se guardó por error en el pasillo del piso 10). Permite llevarla a cualquier nivel y a una unidad o zona ya existente, o crear una zona nueva con el nombre que haga falta, sin tocar el resto de fotos de la unidad de origen."],
   ["3.84", "Anotar foto ahora arranca en modo Libre (dibujo a mano) en vez de Flecha. En \"Renumerar unidades\", escribir el número/letra inicial o el prefijo ya no le quita el foco al recuadro en cada tecla. En la descripción de cada foto aparece un botón \"Usar descripción anterior\" para repetir el texto de la última descripción escrita, cuando el campo está vacío."],
@@ -817,6 +818,18 @@ function cmpDe(insp) {
 let cmpBorrador = { origen: "sitio", fotos: [] };
 let cmpUltObs = "";
 let ultDescFoto = "";
+/* Última descripción disponible para prellenar una foto sin descripción:
+   prioriza la foto anterior YA GUARDADA en la misma unidad (así funciona de
+   entrada aunque se recargue la app), y si no hay ninguna cae al último texto
+   escrito en esta sesión (ultDescFoto), útil al pasar a una unidad nueva. */
+function ultimaDescFoto(u, excluirId) {
+  const fotos = (u && u.fotos) || [];
+  for (let k = fotos.length - 1; k >= 0; k--) {
+    const f = fotos[k];
+    if (f.id !== excluirId && f.desc && f.desc.trim()) return f.desc.trim();
+  }
+  return ultDescFoto || "";
+}
 /* Catálogo personal: partidas y compuestas que el ingeniero crea con IA
    cuando no encuentra lo que necesita. Vive aparte de CMP_CAT/CMP_COMPUESTAS
    (que son fijas en el código) y se guarda en IndexedDB + se sincroniza por
@@ -2711,7 +2724,7 @@ function rUnidad() {
         </div>
         <p class="aviso" data-geo="${f.id}" style="margin:0 0 6px">${f.geo ? "📍 " + geoTxt(f.geo) : ""}</p>
         <textarea rows="2" placeholder="Descripción de lo observado…" data-desc="${f.id}">${esc(f.desc)}</textarea>
-        ${ultDescFoto && !f.desc ? `<button class="btn btn-linea" data-descprev="${f.id}" style="width:auto;padding:5px 10px;font-size:12px;margin:-2px 0 8px">↩ Usar descripción anterior</button>` : ""}
+        ${ultimaDescFoto(u, f.id) && !f.desc ? `<button class="btn btn-linea" data-descprev="${f.id}" style="width:auto;padding:5px 10px;font-size:12px;margin:-2px 0 8px">↩ Usar descripción anterior</button>` : ""}
         <div class="pildoras" style="margin:6px 0 2px">
           ${FRASES.map((fr) => `<button data-frase="${f.id}|${esc(fr)}" style="font-size:12px;padding:5px 9px">${esc(fr)}</button>`).join("")}
         </div>
@@ -2825,9 +2838,10 @@ function rUnidad() {
   $app.querySelectorAll("[data-descprev]").forEach((bt) => (bt.onclick = () => {
     const f = u.fotos.find((x) => x.id === bt.dataset.descprev);
     if (!f) return;
-    f.desc = ultDescFoto;
+    const anterior = ultimaDescFoto(u, f.id);
+    f.desc = anterior;
     const t = $app.querySelector(`[data-desc="${bt.dataset.descprev}"]`);
-    if (t) { t.value = ultDescFoto; t.focus(); }
+    if (t) { t.value = anterior; t.focus(); }
     bt.style.display = "none";
     guardar();
   }));
