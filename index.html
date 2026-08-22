@@ -142,8 +142,9 @@
 <script>
 "use strict";
 /* ================= Constantes ================= */
-const VERSION = "3.85";
+const VERSION = "3.86";
 const CHANGELOG = [
+  ["3.86", "En \"Mis inspecciones\", el botón \"+ Nueva inspección\" ahora está arriba, justo debajo del título y el texto de ayuda, en vez de al final de la lista."],
   ["3.85", "Nuevo botón \"↔ Mover a otra unidad\" en cada foto: para cuando una foto quedó guardada en la unidad equivocada (por ejemplo, una foto de la escalera entre el piso 10 y 11 que se guardó por error en el pasillo del piso 10). Permite llevarla a cualquier nivel y a una unidad o zona ya existente, o crear una zona nueva con el nombre que haga falta, sin tocar el resto de fotos de la unidad de origen."],
   ["3.84", "Anotar foto ahora arranca en modo Libre (dibujo a mano) en vez de Flecha. En \"Renumerar unidades\", escribir el número/letra inicial o el prefijo ya no le quita el foco al recuadro en cada tecla. En la descripción de cada foto aparece un botón \"Usar descripción anterior\" para repetir el texto de la última descripción escrita, cuando el campo está vacío."],
   ["3.83", "En \"Mis inspecciones\" la lista ahora sale ordenada de la más nueva a la más vieja (antes salía en el orden en que se habían creado, con la más vieja de primera)."],
@@ -1894,8 +1895,8 @@ function rLista() {
   $app.innerHTML = `
     <h2>Mis inspecciones</h2>
     <p class="sub">Cada edificio es una inspección. Al terminar: exporta, respalda el ZIP y elimínala.</p>
+    <button class="btn btn-negro" id="bNueva" style="margin-bottom:12px">+ Nueva inspección</button>
     ${items || '<p class="sub" style="text-align:center;padding:24px 0">No hay inspecciones activas. Crea la primera.</p>'}
-    <button class="btn btn-negro" id="bNueva" style="margin-top:8px">+ Nueva inspección</button>
     <hr class="sep" />
     <button class="btn btn-gris" id="bAjustes">⚙️ Ajustes y conexión con Claude</button>
     ${nube.sesion ? `<button class="btn btn-gris" id="bSalirLista" style="margin-top:8px">🚪 Cerrar sesión (${esc(nube.sesion.user.email)})</button>` : ""}`;
