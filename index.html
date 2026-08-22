@@ -142,8 +142,9 @@
 <script>
 "use strict";
 /* ================= Constantes ================= */
-const VERSION = "3.87";
+const VERSION = "3.88";
 const CHANGELOG = [
+  ["3.88", "Nuevo \"acceso rápido\" para zonas comunes: dentro de \"Zonas comunes\" cada zona tiene una ⭐ para marcarla (por ejemplo, la escalera principal). Las zonas marcadas aparecen como atajo arriba de cada piso, para entrar y volver sin tener que ir y venir hasta \"Zonas comunes\" cada vez. El botón \"‹ Volver\" desde ahí regresa directo al piso de donde saliste."],
   ["3.87", "Arreglado: el botón \"Usar descripción anterior\" de las fotos no aparecía si acababas de abrir o recargar la app, porque solo miraba lo tecleado en esa sesión. Ahora toma la descripción de la última foto ya guardada en la misma unidad, así que aparece desde la primera vez que agregas una foto sin descripción."],
   ["3.86", "En \"Mis inspecciones\", el botón \"+ Nueva inspección\" ahora está arriba, justo debajo del título y el texto de ayuda, en vez de al final de la lista."],
   ["3.85", "Nuevo botón \"↔ Mover a otra unidad\" en cada foto: para cuando una foto quedó guardada en la unidad equivocada (por ejemplo, una foto de la escalera entre el piso 10 y 11 que se guardó por error en el pasillo del piso 10). Permite llevarla a cualquier nivel y a una unidad o zona ya existente, o crear una zona nueva con el nombre que haga falta, sin tocar el resto de fotos de la unidad de origen."],
@@ -1806,7 +1807,7 @@ function activarCorrector() {
 
 document.getElementById("btnVolver").onclick = () => {
   const p = st.pantalla;
-  if (p.n === "unidad") nav({ n: "nivel", nivelId: p.nivelId });
+  if (p.n === "unidad") nav(p.volverA || { n: "nivel", nivelId: p.nivelId });
   else if (p.n === "nivel" || p.n === "export") nav({ n: "casa" });
   else if (p.n === "computos") { if (cmpDescartar()) nav(p.volverA || { n: "casa" }); }
   else if (p.n === "dashboard") nav({ n: "casa" });
@@ -2386,24 +2387,35 @@ function rNivel() {
   const nv = st.insp.niveles.find((x) => x.id === st.pantalla.nivelId);
   if (!nv) return nav({ n: "casa" });
   const catOpc = nv.comun ? ZONAS_OPCIONALES : nv.opcionalesCat === "casa" ? ZONAS_CASA_OPCIONALES : null;
+  const accesos = [];
+  for (const otroNv of st.insp.niveles) {
+    if (otroNv.id === nv.id) continue;
+    for (const a of otroNv.apts) if (a.accesoRapido) accesos.push({ nivel: otroNv, apt: a });
+  }
   const items = nv.apts.map((a) => {
     const u = st.insp.unidades[a.id];
     const atc = u && u.atc;
     const nf = u && u.fotos ? u.fotos.length : 0;
     return `
-    <button class="item" data-unidad="${a.id}" ${atc ? `style="border:2px solid var(--${ATC_CLS[atc] === "v" ? "verde" : ATC_CLS[atc] === "a" ? "ambar" : "rojo"})"` : ""}>
-      <div class="cuerpo">
-        <div class="nombre">${esc(a.nombre)}</div>
-        <div class="detalle">${u && u.estado === "sin-hallazgos" ? "✓ Sin hallazgos" : u && u.estado === "no-accedida" ? "🚫 No accedida" : u && u.estado === "no-existe" ? "⊘ No existe" : nf ? nf + " foto" + (nf > 1 ? "s" : "") : "Sin fotos"}${u && u.voz && (u.voz.texto || u.voz.audio) ? " · 🎙" : ""}</div>
-      </div>
-      ${atc ? `<span class="chip ${ATC_CLS[atc]}">${ATC_CORTO[atc]}</span>` : unidadLista(u) ? '<span style="color:var(--verde);font-weight:700">✓</span>' : ""}
-    </button>`;
+    <div class="item" ${atc ? `style="border:2px solid var(--${ATC_CLS[atc] === "v" ? "verde" : ATC_CLS[atc] === "a" ? "ambar" : "rojo"})"` : ""}>
+      <button style="background:none;border:none;text-align:left;font-family:inherit;padding:0;display:flex;align-items:center;gap:12px;flex:1;min-width:0" data-unidad="${a.id}">
+        <div class="cuerpo">
+          <div class="nombre">${esc(a.nombre)}</div>
+          <div class="detalle">${u && u.estado === "sin-hallazgos" ? "✓ Sin hallazgos" : u && u.estado === "no-accedida" ? "🚫 No accedida" : u && u.estado === "no-existe" ? "⊘ No existe" : nf ? nf + " foto" + (nf > 1 ? "s" : "") : "Sin fotos"}${u && u.voz && (u.voz.texto || u.voz.audio) ? " · 🎙" : ""}</div>
+        </div>
+        ${atc ? `<span class="chip ${ATC_CLS[atc]}">${ATC_CORTO[atc]}</span>` : unidadLista(u) ? '<span style="color:var(--verde);font-weight:700">✓</span>' : ""}
+      </button>
+      ${nv.comun ? `<button class="btn-gris" style="width:auto;padding:6px 9px;border-radius:8px;font-size:15px;flex:0 0 auto;${a.accesoRapido ? "background:#fbbf24;border-color:#f59e0b" : ""}" data-accrap="${a.id}" title="${a.accesoRapido ? "Quitar acceso rápido" : "Marcar como acceso rápido"}">⭐</button>` : ""}
+    </div>`;
   }).join("");
   $app.innerHTML = `
     <div class="fila" style="margin-bottom:12px">
       <h2 style="flex:1;margin:0">${esc(nv.nombre)}</h2>
       <button class="btn-gris" style="width:auto;border-radius:10px" id="bRenNivel">Renombrar</button>
     </div>
+    ${accesos.length ? `<div class="pildoras" style="margin-bottom:12px">
+      ${accesos.map(({ nivel: nvA, apt: a }) => `<button data-accrapir="${a.id}|${nvA.id}">⭐ ${esc(a.nombre)}</button>`).join("")}
+    </div>` : ""}
     ${nv.comun ? "" : `<button class="btn-gris" id="bRenumerar" style="margin-bottom:10px">Renumerar unidades de este nivel</button>`}
     ${items}
     <div class="fila" style="margin:10px 0">
@@ -2453,6 +2465,14 @@ function rNivel() {
     guardar(); rNivel();
   }));
   $app.querySelectorAll("[data-unidad]").forEach((b) => (b.onclick = () => nav({ n: "unidad", nivelId: nv.id, unidadId: b.dataset.unidad })));
+  $app.querySelectorAll("[data-accrap]").forEach((bt) => (bt.onclick = () => {
+    const a = nv.apts.find((x) => x.id === bt.dataset.accrap);
+    if (a) { a.accesoRapido = !a.accesoRapido; guardar(); rNivel(); }
+  }));
+  $app.querySelectorAll("[data-accrapir]").forEach((bt) => (bt.onclick = () => {
+    const [aptId, nivelId] = bt.dataset.accrapir.split("|");
+    nav({ n: "unidad", nivelId, unidadId: aptId, volverA: { n: "nivel", nivelId: nv.id } });
+  }));
   wireGrabadora("gNivel", () => nv.voz);
 }
 
