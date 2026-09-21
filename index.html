@@ -142,8 +142,9 @@
 <script>
 "use strict";
 /* ================= Constantes ================= */
-const VERSION = "3.91";
+const VERSION = "3.92";
 const CHANGELOG = [
+  ["3.92", "Cómputos más fáciles de revisar en inspecciones largas: las líneas capturadas van ahora en una tarjeta por piso que se abre y se cierra (con botones para abrir o cerrar todos), con las zonas dentro, y cada partida compuesta aparece como un solo bloque. Al abrir el bloque se ven sus partidas y se puede replicar toda la compuesta a otros pisos, moverla a otra inspección, marcarla o eliminarla completa. La búsqueda y \"Solo marcadas\" abren solos los pisos que tienen coincidencias. Nuevo también: cantidades tipo. Una cantidad ya calculada (por ejemplo, la pintura de la escalera, igual en todos los pisos) se guarda con un nombre con \"★ Guardar como tipo\" (en los renglones) o \"★ Guardar como cantidad tipo\" (en el detalle de una línea), y en otro sitio se agrega como renglón con \"★ Usar cantidad tipo\": 1 ×, 2 × o restándola. Están en todas las áreas y longitudes, y en volúmenes y parches con profundidad se multiplica por el alto o la profundidad del renglón."],
   ["3.91", "Nuevo \"◯ Círculo\" en los renglones de área, junto a \"△ Triángulo\": se anota solo el diámetro y calcula π × diámetro² ÷ 4. Se combina con \"− Restar\" para descontar huecos circulares (sumideros, pases de tubería, ventanas redondas). Está en todas las partidas de área y de volumen (en volumen, círculo por alto: un cilindro), en los parches de columna, viga, muro y losa maciza (círculo por profundidad para el mortero), en la losa nervada y en lo intervenido de cada componente."],
   ["3.90", "Todas las medidas van ahora por renglones, tantos como hagan falta, según lo que pida cada partida: longitud (tramos), largo × ancho o alto (áreas), largo × ancho × alto (volúmenes) y barras × largo × diámetro (cabillas, cada renglón con su diámetro). Aplica a las partidas simples y a las compuestas: en columna, viga, muro y losa maciza cada parche lleva su propio largo, ancho y profundidad, y el mortero sale de sumar el volumen de cada uno; en la grieta cada tramo lleva su ancho de banda; en la losa nervada, la losa y los nervios van por renglones; y lo intervenido de cada componente también. En áreas y volúmenes un renglón puede marcarse \"△ Triángulo\" (base × altura ÷ 2), y en longitudes, áreas y volúmenes \"− Restar\" descuenta el renglón (puertas, ventanas, vanos); también está el botón \"− Agregar descuento\". La medición de longitud sobre foto cae en un renglón. Y arriba de la lista de partidas aparecen las últimas que usaste en esa inspección, para escogerlas de un toque; al volver a entrar queda seleccionada la última."],
   ["3.89", "Nuevo: mover cómputos a otra inspección, para cuando se capturaron partidas en el edificio equivocado (por ejemplo, al volver a entrar a la app quedó abierta otra inspección y no se notó). En Cómputos métricos, el botón \"↔ Mover líneas a otra inspección\" (arriba de la lista) permite marcar varias líneas a la vez, con un atajo para marcar todas las de un mismo día; también está \"↔ Mover a otra inspección\" dentro del detalle de cada línea. Se elige el edificio de destino y cada línea cae en el nivel que se llame igual allá (se puede cambiar). Las fotos se van con su línea, y una partida compuesta se mueve entera."],
@@ -700,14 +701,16 @@ const cmpFmt = (v, d) => Number.isFinite(v)
    es triángulo es la medida de siempre, y así se guarda: en los campos de
    siempre, sin lista (ver cmpLeer). Donde va el triángulo va también el
    círculo: π × diámetro² ÷ 4, con el diámetro en la primera medida del par
-   (en volumen, por el alto o la profundidad: un cilindro).
+   (en volumen, por el alto o la profundidad: un cilindro). Un renglón también
+   puede ser una cantidad tipo (ver "Cantidades tipo"): lleva el valor guardado
+   en lugar de las medidas del par, por su cantidad y por la tercera medida.
    Cada renglón es { c: cantidad, <campo>: valor…, tri, neg } con los mismos
    nombres de campo que la línea o la compuesta ("largo", "alto", "diametro",
    "profundidad"…). El teclado decimal de iOS no trae signo menos: restar es un
    botón, aunque un "-" tecleado también sirve. k pasa las medidas a metros
    (0,01 cuando la compuesta mide en cm); el diámetro nunca se convierte. */
 const cmpStr = (v) => String(v == null ? "" : v).trim();
-const CMP_FILA_META = { c: 1, tri: 1, circ: 1, neg: 1 };
+const CMP_FILA_META = { c: 1, tri: 1, circ: 1, neg: 1, tipo: 1, tipoNombre: 1, tipoValor: 1 };
 function cmpFilaNueva(campos, neg) {
   const r = { c: "1" };
   for (const x of campos || []) r[x] = "";
@@ -718,11 +721,18 @@ function cmpFilaNueva(campos, neg) {
 // en un círculo se reemplazan por π × Ø² ÷ 4, con Ø en la primera.
 const cmpParFila = (campos) => campos.filter((x) => x !== "diametro").slice(0, 2);
 // Un renglón sin ninguna medida tecleada no cuenta (el diámetro solo, tampoco).
-function cmpFilaVacia(r) { return !Object.keys(r).some((x) => !CMP_FILA_META[x] && x !== "diametro" && cmpStr(r[x])); }
+function cmpFilaVacia(r) { return !r.tipo && !Object.keys(r).some((x) => !CMP_FILA_META[x] && x !== "diametro" && cmpStr(r[x])); }
 function cmpCamposDeFilas(filas) { const r = (filas || [])[0]; return r ? Object.keys(r).filter((x) => !CMP_FILA_META[x]) : []; }
 function cmpFilaVal(r, campos, k) {
   const f = k || 1;
   let v = Math.abs(cmpNum(r.c, 1));
+  // Cantidad tipo: su valor (ya en m² o m) reemplaza el par de medidas
+  if (r.tipo) {
+    const par = cmpParFila(campos);
+    v *= Math.abs(cmpNum(r.tipoValor));
+    for (const x of campos) if (par.indexOf(x) < 0) v *= x === "diametro" ? (CMP_CABILLA[r.diametro] || 0) : Math.abs(cmpNum(r[x])) * f;
+    return r.neg ? -v : v;
+  }
   const par = r.circ ? cmpParFila(campos) : [];
   const circ = par.length === 2;
   if (circ) { const d = Math.abs(cmpNum(r[par[0]])) * f; v *= Math.PI * d * d / 4; }
@@ -737,7 +747,7 @@ function cmpFilasVal(filas, campos, k) { return (filas || []).reduce((s, r) => s
 // Longitud de los renglones que suman, para lo que se mide a lo largo (rodapié,
 // sellado de grieta). Lo que resta, los triángulos y los círculos no la cambian.
 function cmpFilasLargo(filas, campo, k) {
-  return (filas || []).filter((r) => !r.neg && !r.tri && !r.circ)
+  return (filas || []).filter((r) => !r.neg && !r.tri && !r.circ && !r.tipo)
     .reduce((s, r) => s + Math.abs(cmpNum(r.c, 1)) * Math.abs(cmpNum(r[campo])) * (k || 1), 0);
 }
 // "3,50 × 2,60 + 4,00 × 1,50 ÷ 2 − 2 × círculo Ø 0,60" / "4 × 3,00 × Ø 1/2""
@@ -746,8 +756,10 @@ function cmpFilasTxt(filas, campos) {
   const med = (r, x) => x === "diametro" ? "Ø " + (r.diametro || "?") : cmpFmt(Math.abs(cmpNum(r[x])));
   return (filas || []).filter((r) => !cmpFilaVacia(r)).map((r, i) => {
     const n = Math.abs(cmpNum(r.c, 1));
-    const par = r.circ ? cmpParFila(cs) : [];
-    const partes = par.length === 2
+    const par = r.tipo || r.circ ? cmpParFila(cs) : [];
+    const partes = r.tipo
+      ? ["★ " + (r.tipoNombre || "cantidad tipo") + " (" + cmpFmt(Math.abs(cmpNum(r.tipoValor))) + (par.length === 2 ? " m²" : " m") + ")"].concat(cs.filter((x) => par.indexOf(x) < 0).map((x) => med(r, x)))
+      : par.length === 2
       ? ["círculo Ø " + med(r, par[0])].concat(cs.filter((x) => par.indexOf(x) < 0).map((x) => med(r, x)))
       : cs.map((x) => med(r, x));
     const t = (n !== 1 ? cmpFmt(n, Number.isInteger(n) ? 0 : 2) + " × " : "") + partes.join(" × ") + (r.tri && !par.length ? " ÷ 2" : "");
@@ -763,8 +775,10 @@ function cmpFilasErrores(filas, campos, etiq, o) {
     if (cmpFilaVacia(r)) return;
     const cual = lista.length > 1 ? " (renglón " + (i + 1) + ")" : "";
     const par = r.circ ? cmpParFila(campos) : [];
+    const parTipo = r.tipo ? cmpParFila(campos) : [];
     campos.forEach((x, j) => {
       if (x === "diametro") { if (!(r.diametro in CMP_CABILLA)) e.push("Seleccione el diámetro de la cabilla" + cual + "."); return; }
+      if (parTipo.indexOf(x) >= 0) return; // la cantidad tipo ya trae el valor del par
       if (par.length === 2 && x === par[1]) return; // el círculo solo usa el diámetro
       if (opc.indexOf(x) >= 0 && !cmpStr(r[x])) return;
       const nombre = par.length === 2 && x === par[0] ? "El diámetro" : r.tri && j < 2 ? (j ? "La altura" : "La base") : etiq(x);
@@ -796,6 +810,9 @@ function cmpFilasSimple(p) {
     campos, uni: CMP_UNI[u] || u, etiq: (x) => cmpEtiq(p, x),
     formas: u === "m2" || u === "m3", resta: u === "m" || u === "m2" || u === "m3",
     etC: u === "kg" ? "Barras" : "Cant.", copiar: ["diametro"],
+    // Cantidades tipo: de m² en áreas y volúmenes (área × alto), de m en longitudes
+    tipoUni: u === "m" ? "m" : (u === "m2" || u === "m3") ? "m2" : null, guardaTipo: u === "m" || u === "m2",
+    nombreTipo: () => [p.descripcion, cmpBorrador.zona, cmpBorrador.nivel].filter(Boolean).join(" · "),
     agregar: u === "m" ? "Agregar tramo" : u === "kg" ? "Agregar barras" : u === "m3" ? "Agregar volumen" : "Agregar área"
   };
 }
@@ -4060,19 +4077,31 @@ async function cmpZip(btn) {
 // pantalla en cada tecla le quitaría el foco al recuadro de búsqueda.
 function cmpAplicarFiltro() {
   const filtroTxt = (cmpFiltro.texto || "").trim().toLowerCase();
-  const filas = $app.querySelectorAll("[data-linea]");
-  let visibles = 0;
-  filas.forEach((el) => {
-    const coincideTxt = !filtroTxt || (el.dataset.buscar || "").includes(filtroTxt);
-    const coincideMarc = !cmpFiltro.soloMarcadas || el.dataset.marcada === "1";
-    const visible = coincideTxt && coincideMarc;
-    el.style.display = visible ? "" : "none";
-    if (visible) visibles++;
+  const activo = !!filtroTxt || cmpFiltro.soloMarcadas;
+  const tiles = $app.querySelectorAll("[data-nivtile]");
+  let visibles = 0, total = 0;
+  tiles.forEach((tile) => {
+    let enPiso = 0;
+    tile.querySelectorAll("[data-zonagrupo]").forEach((zg) => {
+      let enZona = 0;
+      zg.querySelectorAll("[data-bloque]").forEach((el) => {
+        const n = +el.dataset.n || 1;
+        total += n;
+        const visible = (!filtroTxt || (el.dataset.buscar || "").includes(filtroTxt)) && (!cmpFiltro.soloMarcadas || el.dataset.marcada === "1");
+        el.style.display = visible ? "" : "none";
+        if (visible) enZona += n;
+      });
+      zg.style.display = enZona ? "" : "none";
+      enPiso += enZona;
+    });
+    visibles += enPiso;
+    tile.style.display = enPiso ? "" : "none";
+    cmpNivMostrar(tile, activo ? enPiso > 0 : cmpNivEstaAbierto(tile.dataset.nivtile, tiles.length === 1));
   });
   const contador = document.getElementById("cmLineasContador");
-  if (contador) contador.textContent = visibles === filas.length ? String(filas.length) : visibles + " de " + filas.length;
+  if (contador) contador.textContent = visibles === total ? String(total) : visibles + " de " + total;
   const vacio = document.getElementById("cmLineasVacio");
-  if (vacio) vacio.style.display = (visibles === 0 && filas.length > 0) ? "" : "none";
+  if (vacio) vacio.style.display = (visibles === 0 && total > 0) ? "" : "none";
 }
 function cmpDetalleLinea(l) {
   const p = cmpPartidaLinea(l) || {};
@@ -4111,8 +4140,8 @@ function cmpDetalleLinea(l) {
     <button class="btn btn-linea" style="width:auto;padding:6px 11px;font-size:12px;margin:0 6px 6px 0" data-derivaddfoto="${l.id}">📷 Agregar foto a esta línea</button>
     <p class="aviso" id="derivFotoMsg_${l.id}" style="margin:0"></p>
     ` : `<button class="btn btn-linea" style="width:auto;padding:6px 11px;font-size:12px;margin:0 6px 6px 0" data-editln="${l.id}">✎ Editar / corregir</button>`}
-    ${st.index.length > 1 ? `<button class="btn btn-gris" style="width:auto;padding:6px 10px;font-size:12px;margin:0 6px 6px 0" data-movln="${l.id}">↔ Mover a otra inspección</button>` : ""}
-    ${cmpReplicarUI(l)}
+    ${l.unidad === "m2" || l.unidad === "m" ? `<button class="btn btn-gris" style="width:auto;padding:6px 10px;font-size:12px;margin:0 6px 6px 0" data-tipodelinea="${l.id}">★ Guardar como cantidad tipo</button>` : ""}
+    ${l.derivada ? "" : (st.index.length > 1 ? `<button class="btn btn-gris" style="width:auto;padding:6px 10px;font-size:12px;margin:0 6px 6px 0" data-movln="${l.id}">↔ Mover a otra inspección</button>` : "") + cmpReplicarUI(l)}
   </div>`;
 }
 
@@ -4163,9 +4192,13 @@ function cmpReplicar(l, nivelIds) {
   return n;
 }
 
-async function cmpCargarFotos() {
-  const imgs = $app.querySelectorAll("img[data-foto]");
+async function cmpCargarFotos(scope) {
+  const imgs = (scope || $app).querySelectorAll("img[data-foto]");
   for (const img of imgs) {
+    // Las de un piso cerrado se cargan al abrirlo (una inspección larga tiene cientos)
+    const cuerpo = img.closest("[data-nivcuerpo]");
+    if (img.dataset.cargada || (cuerpo && cuerpo.style.display === "none")) continue;
+    img.dataset.cargada = "1";
     const u = await urlFoto(img.dataset.foto);
     if (u) img.src = u;
     else {
@@ -4534,6 +4567,27 @@ async function cmpPintarLupas(cont) {
         subTxt(r), totTxt(filas), copiar (campos que hereda un renglón nuevo),
         agregar, titulo, sinAyuda } */
 const cmpFilasSpec = {};
+/* ----- Cantidades tipo -----
+   Una cantidad ya calculada que se repite en la obra (la pintura de la
+   escalera, igual en todos los pisos; una ventana tipo) se guarda con un
+   nombre y se usa como un renglón más: 1 × ★ Pintura escalera, o 2 ×, o
+   restándola. Son de la inspección: viajan y se sincronizan con ella. El
+   renglón copia el valor al usarla, así que corregir o borrar después una
+   cantidad tipo no cambia las líneas ya guardadas. Solo hay de superficie (m²)
+   y de longitud (m): son las que reemplazan el par de medidas de un renglón. */
+let cmpTipoPicker = null; // editor con la lista de cantidades tipo abierta
+let cmpTiposAbierto = false;
+function cmpTipos() { const c = cmpDe(st.insp); if (!c.tipos) c.tipos = []; return c.tipos; }
+function cmpTipoCrear(valor, unidad, nombreSug, detalle) {
+  const v = cmpRed(Math.abs(valor), 3);
+  if (!(v > 0)) { alert("Primero anote las medidas: la cantidad tiene que ser mayor que cero para guardarla."); return null; }
+  const nombre = prompt("Nombre de la cantidad tipo (" + cmpFmt(v) + " " + CMP_UNI[unidad] + "):", nombreSug || "");
+  if (!nombre || !nombre.trim()) return null;
+  const t = { id: uid(), nombre: nombre.trim(), valor: v, unidad, detalle: detalle || "", ts: new Date().toISOString() };
+  cmpTipos().push(t);
+  guardar();
+  return t;
+}
 function cmpFilasRef(pref) {
   if (pref === "s") return (cmpBorrador.dims && cmpBorrador.dims.filas) || null;
   if (pref === "c") return cmpComp.filas || null;
@@ -4566,7 +4620,10 @@ function cmpFilasHtml(pref, filas, o) {
     const key = esc(pref + "|" + i);
     const ph = (x, j) => r.circ && j === 0 ? "Diámetro" : r.tri && j < 2 ? (j ? "Altura" : "Base") : cmpEtiqCorta(o.etiq(x));
     // En un círculo el par se captura con una sola medida: el diámetro
-    const medPrin = r.circ && prin.length === 2
+    const medPrin = r.tipo
+      ? sep + `<span style="flex:1;min-width:0;padding:10px 9px;border:1px dashed var(--ink);border-radius:10px;font-weight:700;font-size:14px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap"
+          title="${esc(r.tipoNombre || "")}">★ ${esc(r.tipoNombre || "Cantidad tipo")} · ${cmpFmt(Math.abs(cmpNum(r.tipoValor)))} ${esc(CMP_UNI[o.tipoUni] || "")}</span>`
+      : r.circ && prin.length === 2
       ? sep + inp(key, prin[0], r, "flex:1;min-width:0;text-align:right;font-weight:600;padding-left:6px;padding-right:8px", "Diámetro") +
         `<span style="width:9px;flex:none"></span><span class="aviso" style="flex:1;min-width:0;margin:0;font-weight:600">◯ diámetro</span>`
       : prin.map((x, j) => sep + inp(key, x, r, "flex:1;min-width:0;text-align:right;font-weight:600;padding-left:6px;padding-right:8px", ph(x, j))).join("");
@@ -4586,8 +4643,8 @@ function cmpFilasHtml(pref, filas, o) {
       </div>
       ${lineaExtra}
       <div style="display:flex;flex-wrap:wrap;gap:6px;align-items:center;margin-top:6px">
-        ${o.formas || o.resta ? `<div class="pildoras" style="margin:0;gap:6px;flex-wrap:nowrap">
-          ${o.formas ? `<button data-ftri="${key}" class="${r.tri ? "on" : ""}" style="padding:4px 9px;font-size:12px">△ Triángulo</button>
+        ${(o.formas && !r.tipo) || o.resta ? `<div class="pildoras" style="margin:0;gap:6px;flex-wrap:nowrap">
+          ${o.formas && !r.tipo ? `<button data-ftri="${key}" class="${r.tri ? "on" : ""}" style="padding:4px 9px;font-size:12px">△ Triángulo</button>
           <button data-fcirc="${key}" class="${r.circ ? "on" : ""}" style="padding:4px 9px;font-size:12px">◯ Círculo</button>` : ""}
           ${o.resta ? `<button data-fneg="${key}" class="${r.neg ? "on" : ""}" style="padding:4px 9px;font-size:12px">− Restar</button>` : ""}
         </div>` : ""}
@@ -4612,6 +4669,18 @@ function cmpFilasHtml(pref, filas, o) {
       ${o.resta ? `<button class="btn btn-linea" data-fadd="${esc(pref)}" data-fconneg="1" style="width:auto;padding:6px 11px;font-size:13px">− Agregar descuento</button>` : ""}
       ${filas.length > 1 ? `<b class="mono" data-ftot style="margin-left:auto">${cmpFilasTotTxt(filas, o)}</b>` : ""}
     </div>
+    ${o.tipoUni || o.guardaTipo ? `<div style="display:flex;flex-wrap:wrap;gap:6px;margin-top:6px">
+      ${o.tipoUni ? `<button class="btn ${cmpTipoPicker === pref ? "btn-negro" : "btn-linea"}" data-ftipousar="${esc(pref)}" style="width:auto;padding:6px 11px;font-size:13px">★ Usar cantidad tipo</button>` : ""}
+      ${o.guardaTipo ? `<button class="btn btn-linea" data-ftipoguardar="${esc(pref)}" style="width:auto;padding:6px 11px;font-size:13px">★ Guardar como tipo</button>` : ""}
+    </div>` : ""}
+    ${o.tipoUni && cmpTipoPicker === pref ? (() => {
+      const ts = cmpTipos().filter((t) => t.unidad === o.tipoUni);
+      return `<div class="tarjeta" style="padding:10px;margin:6px 0 0;background:var(--fondo)">
+        ${ts.length ? `<div class="aviso" style="margin:0 0 6px">Toque una para agregarla como renglón (${esc(CMP_UNI[o.tipoUni])}):</div>
+          <div class="pildoras" style="margin:0">${ts.map((t) => `<button data-ftipo="${esc(pref + "|" + t.id)}" style="${cmpPildoraRec}">★ ${esc(t.nombre)} · ${cmpFmt(t.valor)}</button>`).join("")}</div>`
+        : `<p class="aviso" style="margin:0">Aún no hay cantidades tipo en ${esc(CMP_UNI[o.tipoUni])}. Calcule una y toque «★ Guardar como tipo», o guárdela desde el detalle de una línea ya capturada.</p>`}
+      </div>`;
+    })() : ""}
     ${ayuda && !o.sinAyuda ? `<p class="aviso" style="margin:6px 0 0">${ayuda}</p>` : ""}
   </div>`;
 }
@@ -4683,6 +4752,31 @@ function cmpFilasWire(cont, alCambiar, repintar) {
     f.splice(n, 1);
     if (!f.length) f.push(cmpFilaNueva(campos));
     alCambiar(); repintar();
+  }));
+  cont.querySelectorAll("[data-ftipousar]").forEach((b) => (b.onclick = () => {
+    cmpTipoPicker = cmpTipoPicker === b.dataset.ftipousar ? null : b.dataset.ftipousar;
+    repintar();
+  }));
+  cont.querySelectorAll("[data-ftipo]").forEach((b) => (b.onclick = () => {
+    const cut = b.dataset.ftipo.lastIndexOf("|"), pref = b.dataset.ftipo.slice(0, cut);
+    const t = cmpTipos().find((x) => x.id === b.dataset.ftipo.slice(cut + 1));
+    const f = cmpFilasRef(pref), o = cmpFilasSpec[pref];
+    if (!t || !f || !o) return;
+    const nueva = cmpFilaNueva(o.campos);
+    nueva.tipo = t.id; nueva.tipoNombre = t.nombre; nueva.tipoValor = t.valor;
+    const ult = f[f.length - 1];
+    if (ult) for (const x of o.copiar || []) if (x in nueva && cmpStr(ult[x])) nueva[x] = ult[x];
+    // En vez de dejar un renglón vacío arriba, lo ocupa
+    if (ult && cmpFilaVacia(ult) && !ult.neg) f[f.length - 1] = nueva; else f.push(nueva);
+    cmpTipoPicker = null;
+    alCambiar(); repintar();
+  }));
+  cont.querySelectorAll("[data-ftipoguardar]").forEach((b) => (b.onclick = () => {
+    const pref = b.dataset.ftipoguardar, f = cmpFilasRef(pref), o = cmpFilasSpec[pref];
+    if (!f || !o) return;
+    const par = cmpParFila(o.campos);
+    const t = cmpTipoCrear(cmpFilasVal(f, par, o.k), o.tipoUni, o.nombreTipo ? o.nombreTipo() : "", cmpFilasTxt(f, par) + (o.cm ? " (en cm)" : ""));
+    if (t) { alert("Guardada «" + t.nombre + "»: " + cmpFmt(t.valor) + " " + CMP_UNI[t.unidad] + ". Ya puede usarla con «★ Usar cantidad tipo»."); repintar(); }
   }));
   cont.querySelectorAll("[data-fadd]").forEach((b) => (b.onclick = () => {
     const pref = b.dataset.fadd, f = cmpFilasRef(pref), o = cmpFilasSpec[pref];
@@ -4807,10 +4901,11 @@ function cmpLeer() {
       const n = { c: cmpStr(r.c) || "1" };
       for (const x of sp.campos) n[x] = cmpStr(r[x]);
       n.tri = !!r.tri && !r.circ; n.circ = !!r.circ; n.neg = !!r.neg;
+      if (r.tipo) { n.tipo = r.tipo; n.tipoNombre = r.tipoNombre; n.tipoValor = r.tipoValor; n.tri = false; n.circ = false; }
       return n;
     });
     const r0 = filas[0];
-    if (filas.length <= 1 && !(r0 && (r0.tri || r0.circ || r0.neg))) {
+    if (filas.length <= 1 && !(r0 && (r0.tri || r0.circ || r0.neg || r0.tipo))) {
       l.cantidad = r0 ? r0.c : "1";
       for (const x of sp.campos) l[x] = r0 ? r0[x] : "";
     } else {
@@ -5044,7 +5139,8 @@ function cmpCampoHtml(a, cc) {
   if (a.baseCalc === "techo_nervado") {
     if (cc === "largo") return cmpFilasHtml("c", cmpComp.filas || [], {
       campos: CMP_NERV_LOSA, etiq: (x) => (x === "largo" ? "Largo" : "Ancho"), uni: "m²", formas: true, resta: true,
-      titulo: "Área de losa en planta", agregar: "Agregar área"
+      titulo: "Área de losa en planta", agregar: "Agregar área", tipoUni: "m2", guardaTipo: true,
+      nombreTipo: () => ["Losa nervada", cmpBorrador.zona, cmpBorrador.nivel].filter(Boolean).join(" · ")
     });
     if (cc === "nervios") return cmpFilasHtml("n", cmpComp.nervios || [], {
       campos: CMP_NERV_NERV, etiq: (x) => (x === "largoNervio" ? "Largo del nervio" : "Ancho desarrollado"), etC: "N.°", uni: "m²",
@@ -5057,7 +5153,9 @@ function cmpCampoHtml(a, cc) {
     if (cc === "cantidad" || (fm.campos.indexOf(cc) > 0)) return ""; // la cantidad va en cada renglón; las medidas, juntas
     if (cc === fm.campos[0]) {
       const k = cmpFactorCm(a), conProf = fm.campos.indexOf("profundidad") >= 0;
-      const o = { campos: fm.campos, etiq: et, k, cm: !!a.medidaCm, uni: fm.modo === "largo" ? "m" : "m²", copiar: ["profundidad"] };
+      const o = { campos: fm.campos, etiq: et, k, cm: !!a.medidaCm, uni: fm.modo === "largo" ? "m" : "m²", copiar: ["profundidad"],
+        tipoUni: fm.modo === "area" ? "m2" : fm.modo === "largo" ? "m" : null, guardaTipo: fm.modo !== "tramos",
+        nombreTipo: () => [a.nombre, cmpBorrador.zona, cmpBorrador.nivel].filter(Boolean).join(" · ") };
       if (fm.modo === "area") Object.assign(o, { formas: true, resta: true, agregar: "Agregar área",
         // La profundidad no entra en la superficie: el subtotal muestra el área y, si hay, el volumen del parche.
         subTxt: (r) => { const ar = cmpFilaVal(r, fm.par, k); return (ar < 0 ? "− " : "") + cmpFmt(Math.abs(ar)) + " m²" + (conProf && cmpStr(r.profundidad) ? " · " + cmpFmt(Math.abs(cmpFilaVal(r, fm.campos, k)), 3) + " m³" : ""); },
@@ -5085,8 +5183,10 @@ function cmpAlcanceHtml(comp, p, e, inc) {
     if (e.segsOn) {
       campo = `<div style="margin:8px 0 0">
         ${cmpFilasHtml("p:" + comp.partida, e.segs || [], esArea
-          ? { campos: ["ancho", "alto"], etiq: (x) => (x === "ancho" ? "Ancho" : "Alto"), uni: "m²", formas: true, resta: true, sinAyuda: true, titulo: comp.labCampo || "Áreas intervenidas", agregar: "Agregar área" }
-          : { campos: ["largo"], etiq: () => "Longitud", uni: "m", resta: true, sinAyuda: true, titulo: comp.labCampo || "Tramos intervenidos", agregar: "Agregar tramo" })}
+          ? { campos: ["ancho", "alto"], etiq: (x) => (x === "ancho" ? "Ancho" : "Alto"), uni: "m²", formas: true, resta: true, sinAyuda: true, titulo: comp.labCampo || "Áreas intervenidas", agregar: "Agregar área",
+              tipoUni: "m2", guardaTipo: true, nombreTipo: () => [p.descripcion, cmpBorrador.zona, cmpBorrador.nivel].filter(Boolean).join(" · ") }
+          : { campos: ["largo"], etiq: () => "Longitud", uni: "m", resta: true, sinAyuda: true, titulo: comp.labCampo || "Tramos intervenidos", agregar: "Agregar tramo",
+              tipoUni: "m", guardaTipo: true, nombreTipo: () => [p.descripcion, cmpBorrador.zona, cmpBorrador.nivel].filter(Boolean).join(" · ") })}
         <button class="btn btn-linea" style="width:auto;padding:5px 10px;font-size:12px;margin-top:-4px" data-csegoff="${comp.partida}">Volver a una sola cantidad</button></div>`;
     } else {
       campo = `<label class="campo" style="margin:8px 0 0"><span>${comp.labCampo || (esArea ? "Superficie intervenida" : "Longitud intervenida")} (${CMP_UNI[p.unidad]})</span>
@@ -5721,6 +5821,116 @@ function cmpOrdenVisual(lineas) {
   return bloques.flatMap((b) => b.items);
 }
 
+/* ----- Líneas capturadas, por piso -----
+   Una inspección larga junta cientos de líneas: se muestran en una tarjeta por
+   piso que se abre y se cierra, con sus zonas dentro, y cada compuesta como un
+   solo bloque que se abre para ver sus partidas y actuar sobre todas a la vez
+   (replicar a otros pisos, mover, marcar, eliminar). Con una búsqueda o "solo
+   marcadas" activas se abren solos los pisos que tienen coincidencias. */
+let cmpNivAbiertos = {};   // clave de piso -> abierto/cerrado a mano
+let cmpVerGrupo = null;    // compuesta abierta en la lista
+function cmpNivClaveDe(nivelId, nivel) {
+  const nv = nivelId && (st.insp.niveles || []).find((x) => x.id === nivelId);
+  return nv ? nv.id : (cmpStr(nivel) ? "t:" + cmpMovNorm(nivel) : "");
+}
+// Abierto si el inspector lo abrió; si no lo ha tocado, el piso en que está
+// capturando (así ve aparecer lo que acaba de guardar).
+function cmpNivEstaAbierto(k, unoSolo) {
+  if (cmpNivAbiertos[k] !== undefined) return cmpNivAbiertos[k];
+  return unoSolo || k === cmpNivClaveDe(cmpBorrador.nivelId, cmpBorrador.nivel);
+}
+function cmpFilaLineaHtml(l, conFoto) {
+  const p2 = cmpPartidaLinea(l) || { descripcion: "" };
+  const nf = (l.fotos || []).length;
+  const abierta = cmpVer === l.id;
+  const meta = l.derivada ? [l.elemento].filter(Boolean).join(" · ") : [l.elemento, l.zona].filter(Boolean).join(" · ");
+  return `<div class="lista-foto">
+      ${conFoto && nf ? `<img data-foto="${l.fotos[0].id}" data-anotarl="${l.fotos[0].id}" alt="" title="Toque para ampliar"
+        style="width:44px;height:44px;border-radius:8px;object-fit:cover;cursor:zoom-in;flex:none;background:var(--borde)" />` : ""}
+      <button style="flex:1;background:none;border:none;text-align:left;font-family:inherit;font-size:13px;padding:0"
+        data-ver="${l.id}"><b>${esc(l.partida)}</b> ${esc(p2.descripcion)}${l.marcada ? ' <span class="chip a">🚩 volver después</span>' : ""}
+        <br /><span class="aviso">${meta ? esc(meta) + " · " : ""}${nf ? nf + (nf === 1 ? " foto" : " fotos") : "sin foto"} · ${abierta ? "ocultar" : "ver detalle"}</span></button>
+      <b class="mono" style="font-size:14px">${cmpFmt(l.parcial, l.unidad === "m3" ? 3 : 2)} ${CMP_UNI[l.unidad] || ""}</b>
+      <button class="btn-gris" style="width:auto;padding:6px 10px;${l.marcada ? "background:var(--ambar-bg);border-color:var(--ambar)" : ""}" data-marcar="${l.id}" title="Marcar para volver después">${l.marcada ? "🚩" : "⚑"}</button>
+      <button class="btn btn-rojo-linea" style="width:auto;padding:6px 10px" data-borrar="${l.id}">✕</button>
+    </div>
+    ${abierta ? cmpDetalleLinea(l) : ""}`;
+}
+function cmpBloqueHtml(b) {
+  const ls = b.items, l0 = ls[0];
+  const txt = (l) => [l.partida, (cmpPartidaLinea(l) || {}).descripcion, l.elemento, l.zona, l.nivel, l.obs, l.compuesta].filter(Boolean).join(" ");
+  const buscar = esc(ls.map(txt).join(" ").toLowerCase());
+  const marc = ls.some((l) => l.marcada);
+  if (!b.clave.startsWith("g:")) {
+    return `<div data-bloque data-n="1" data-linea="${l0.id}" data-buscar="${buscar}" data-marcada="${marc ? "1" : "0"}">${cmpFilaLineaHtml(l0, true)}</div>`;
+  }
+  const gid = l0.grupo, color = cmpGrupoColor(gid), abierto = cmpVerGrupo === gid;
+  const fotos = ls.flatMap((l) => l.fotos || []);
+  return `<div data-bloque data-n="${ls.length}" data-grupo="${esc(gid)}" data-buscar="${buscar}" data-marcada="${marc ? "1" : "0"}"
+      style="border-left:3px solid ${color};padding-left:8px;margin-bottom:6px">
+    <div class="lista-foto" style="margin-bottom:${abierto ? 4 : 0}px">
+      ${fotos.length ? `<img data-foto="${fotos[0].id}" data-anotarl="${fotos[0].id}" alt="" title="Toque para ampliar"
+        style="width:44px;height:44px;border-radius:8px;object-fit:cover;cursor:zoom-in;flex:none;background:var(--borde)" />` : ""}
+      <button style="flex:1;background:none;border:none;text-align:left;font-family:inherit;font-size:13px;padding:0" data-vergrupo="${esc(gid)}">
+        <b style="color:${color}">⊞ ${esc(l0.compuesta || "Partida compuesta")}</b>${marc ? ' <span class="chip a">🚩</span>' : ""}
+        <br /><span class="aviso">${l0.elemento ? esc(l0.elemento) + " · " : ""}${ls.length} partidas · ${fotos.length ? fotos.length + (fotos.length === 1 ? " foto" : " fotos") : "sin foto"} · ${abierto ? "ocultar" : "ver partidas"}</span></button>
+      <button class="btn-gris" style="width:auto;padding:6px 10px;${marc ? "background:var(--ambar-bg);border-color:var(--ambar)" : ""}" data-marcargrupo="${esc(gid)}" title="Marcar toda la compuesta">${marc ? "🚩" : "⚑"}</button>
+      <button class="btn btn-rojo-linea" style="width:auto;padding:6px 10px" data-borrargrupo="${esc(gid)}" title="Eliminar la compuesta completa">✕</button>
+    </div>
+    ${abierto ? `${ls.map((l) => cmpFilaLineaHtml(l, false)).join("")}
+      <div class="tarjeta" style="margin:2px 0 8px;padding:10px;background:var(--fondo)">
+        <div class="aviso" style="margin:0 0 6px;font-weight:600">Toda la compuesta</div>
+        ${st.index.length > 1 ? `<button class="btn btn-gris" style="width:auto;padding:6px 10px;font-size:12px;margin:0 6px 6px 0" data-movln="${l0.id}">↔ Mover a otra inspección</button>` : ""}
+        ${cmpReplicarUI(l0)}
+      </div>` : ""}
+  </div>`;
+}
+function cmpListaHtml(c) {
+  if (!c.lineas.length) return `<p class="aviso">Las líneas que guarde aparecerán aquí.</p>`;
+  const niveles = st.insp.niveles || [];
+  const pisos = new Map();
+  for (const b of cmpMovBloques(c.lineas)) {
+    const l0 = b.items[0], k = cmpNivClaveDe(l0.nivelId, l0.nivel);
+    if (!pisos.has(k)) {
+      const i = niveles.findIndex((x) => x.id === k);
+      pisos.set(k, { clave: k, nombre: i >= 0 ? niveles[i].nombre : (cmpStr(l0.nivel) || "Sin nivel"), orden: i >= 0 ? i : (k ? 1e4 : 2e4), apts: i >= 0 ? (niveles[i].apts || []) : [], zonas: new Map() });
+    }
+    const piso = pisos.get(k), zk = cmpMovNorm(l0.zona);
+    if (!piso.zonas.has(zk)) piso.zonas.set(zk, { nombre: cmpStr(l0.zona) || "Sin zona", bloques: [] });
+    piso.zonas.get(zk).bloques.push(b);
+  }
+  const lista = Array.from(pisos.values()).sort((a, b) => a.orden - b.orden || a.nombre.localeCompare(b.nombre, "es", { numeric: true }));
+  const unoSolo = lista.length === 1;
+  return lista.map((piso) => {
+    const posZona = (z, zk) => { const i = piso.apts.findIndex((a) => cmpMovNorm(a.nombre) === zk); return i >= 0 ? i : (zk ? 1e4 : 2e4); };
+    const zonas = Array.from(piso.zonas.entries()).sort(([ka, a], [kb, b]) => posZona(a, ka) - posZona(b, kb) || a.nombre.localeCompare(b.nombre, "es", { numeric: true }));
+    const bloques = zonas.flatMap(([, z]) => z.bloques);
+    const nLin = bloques.reduce((s, b) => s + b.items.length, 0);
+    const nComp = bloques.filter((b) => b.clave.startsWith("g:")).length;
+    const nMarc = bloques.reduce((s, b) => s + b.items.filter((l) => l.marcada).length, 0);
+    const abierto = cmpNivEstaAbierto(piso.clave, unoSolo);
+    return `<div class="tarjeta" data-nivtile="${esc(piso.clave)}" style="padding:0;margin-bottom:8px;overflow:hidden">
+      <button data-nivtoggle="${esc(piso.clave)}" style="width:100%;display:flex;align-items:center;gap:10px;background:none;border:none;padding:12px 13px;font-family:inherit;text-align:left;cursor:pointer;color:var(--ink)">
+        <span data-nivflecha style="font-size:13px;width:12px;flex:none">${abierto ? "▾" : "▸"}</span>
+        <span style="flex:1;min-width:0"><b style="font-size:15px">${esc(piso.nombre)}</b>
+          <br /><span class="aviso" style="margin:0">${nLin} ${nLin === 1 ? "línea" : "líneas"}${nComp ? " · " + nComp + (nComp === 1 ? " compuesta" : " compuestas") : ""}${nMarc ? " · 🚩 " + nMarc : ""}</span></span>
+      </button>
+      <div data-nivcuerpo="${esc(piso.clave)}" style="padding:0 10px 8px;${abierto ? "" : "display:none"}">
+        ${zonas.map(([, z]) => `<div data-zonagrupo>
+          <div class="etiq" style="margin:8px 0 6px">${esc(z.nombre)}</div>
+          ${z.bloques.map(cmpBloqueHtml).join("")}
+        </div>`).join("")}
+      </div>
+    </div>`;
+  }).join("");
+}
+function cmpNivMostrar(tile, abierto) {
+  const cuerpo = tile.querySelector("[data-nivcuerpo]"), fl = tile.querySelector("[data-nivflecha]");
+  if (cuerpo) cuerpo.style.display = abierto ? "" : "none";
+  if (fl) fl.textContent = abierto ? "▾" : "▸";
+  if (abierto && cuerpo) cmpCargarFotos(cuerpo);
+}
+
 /* Partidas y compuestas ya usadas en esta inspección, la más reciente primero:
    atajos para no buscar en la lista la misma partida cada vez, y lo que queda
    seleccionado de entrada al abrir la app o al agregar otra partida. */
@@ -5777,35 +5987,7 @@ function rComputos() {
     </div>`;
   }).join("") : `<p class="aviso">Aún no hay cantidades computadas.</p>`;
 
-  let cmpGrupoAnterior = null;
-  const linHtml = c.lineas.length ? cmpOrdenVisual(c.lineas).map((l) => {
-    const p2 = cmpPartidaLinea(l) || { descripcion: "" };
-    const meta = [l.elemento, l.zona, l.nivel].filter(Boolean).join(" · ");
-    const nf = (l.fotos || []).length;
-    const abierta = cmpVer === l.id;
-    const buscar = esc([l.partida, p2.descripcion, l.elemento, l.zona, l.nivel, l.obs].filter(Boolean).join(" ").toLowerCase());
-    const enGrupo = l.derivada && l.grupo;
-    const color = enGrupo ? cmpGrupoColor(l.grupo) : "";
-    const cabezaGrupo = enGrupo && l.grupo !== cmpGrupoAnterior
-      ? `<div class="aviso" style="margin:10px 0 4px;font-weight:700;color:${color};display:flex;align-items:center;gap:5px">
-          <span style="width:9px;height:9px;border-radius:50%;background:${color};flex:none"></span>⊞ ${esc(l.compuesta || "Partida compuesta")}</div>`
-      : "";
-    cmpGrupoAnterior = enGrupo ? l.grupo : null;
-    return `${cabezaGrupo}<div data-linea="${l.id}" data-buscar="${buscar}" data-marcada="${l.marcada ? "1" : "0"}"
-      ${enGrupo ? `style="border-left:3px solid ${color};padding-left:8px;margin-left:-8px"` : ""}>
-      <div class="lista-foto">
-        ${nf ? `<img data-foto="${l.fotos[0].id}" data-anotarl="${l.fotos[0].id}" alt="" title="Toque para ampliar"
-          style="width:44px;height:44px;border-radius:8px;object-fit:cover;cursor:zoom-in;flex:none;background:var(--borde)" />` : ""}
-        <button style="flex:1;background:none;border:none;text-align:left;font-family:inherit;font-size:13px;padding:0"
-          data-ver="${l.id}"><b>${l.partida}</b> ${esc(p2.descripcion)}${enGrupo ? ` <span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:${color}" title="Parte de: ${esc(l.compuesta || "")}"></span>` : ""}${l.marcada ? ' <span class="chip a">🚩 volver después</span>' : ""}
-          <br /><span class="aviso">${esc(meta)} · ${nf ? nf + (nf === 1 ? " foto" : " fotos") : "sin foto"} · ${abierta ? "ocultar" : "ver detalle"}</span></button>
-        <b class="mono" style="font-size:14px">${cmpFmt(l.parcial)} ${CMP_UNI[l.unidad]}</b>
-        <button class="btn-gris" style="width:auto;padding:6px 10px;${l.marcada ? "background:var(--ambar-bg);border-color:var(--ambar)" : ""}" data-marcar="${l.id}" title="Marcar para volver después">${l.marcada ? "🚩" : "⚑"}</button>
-        <button class="btn btn-rojo-linea" style="width:auto;padding:6px 10px" data-borrar="${l.id}">✕</button>
-      </div>
-      ${abierta ? cmpDetalleLinea(l) : ""}
-    </div>`;
-  }).join("") : `<p class="aviso">Las líneas que guarde aparecerán aquí.</p>`;
+  const linHtml = cmpListaHtml(c);
 
   const orig = [["sitio", "En sitio"], ["foto", "Sobre foto"], ["planos", "De planos"], ["muestreo", "Por muestreo"]];
   const simple = cmpModo === "simple";
@@ -5884,13 +6066,29 @@ function rComputos() {
 
     <div class="etiq">Resumen por partida</div>
     ${resHtml}
+    ${cmpTipos().length ? `<div class="tarjeta" style="padding:0;margin:12px 0 0;overflow:hidden">
+      <button id="cmTiposToggle" style="width:100%;display:flex;align-items:center;gap:10px;background:none;border:none;padding:12px 13px;font-family:inherit;text-align:left;cursor:pointer;color:var(--ink)">
+        <span style="font-size:13px;width:12px">${cmpTiposAbierto ? "▾" : "▸"}</span>
+        <span style="flex:1"><b>★ Cantidades tipo (${cmpTipos().length})</b><br /><span class="aviso" style="margin:0">Se usan en los renglones con «★ Usar cantidad tipo»</span></span>
+      </button>
+      ${cmpTiposAbierto ? `<div style="padding:0 10px 10px">${cmpTipos().map((t) => `<div class="lista-foto" style="align-items:flex-start">
+          <span style="flex:1"><b>★ ${esc(t.nombre)}</b> — <b class="mono">${cmpFmt(t.valor)} ${esc(CMP_UNI[t.unidad] || "")}</b>${t.detalle ? `<br /><span class="aviso">${esc(t.detalle)}</span>` : ""}</span>
+          <button class="btn-gris" style="width:auto;padding:6px 10px;font-size:12px" data-tiporen="${esc(t.id)}">Renombrar</button>
+          <button class="btn btn-rojo-linea" style="width:auto;padding:6px 10px" data-tipoborrar="${esc(t.id)}">✕</button>
+        </div>`).join("")}
+        <p class="aviso" style="margin:4px 0 0">Borrar o renombrar una cantidad tipo no cambia las líneas que ya la usan.</p></div>` : ""}
+    </div>` : ""}
     <hr class="sep" />
     <div class="etiq" id="cmLineasEtiq">Líneas capturadas (<span id="cmLineasContador">${c.lineas.length}</span>)</div>
     ${c.lineas.length ? `<div class="grid2" style="margin-bottom:8px">
       <input id="cmFiltroTxt" value="${esc(cmpFiltro.texto)}" placeholder="Buscar por observación, elemento, zona, piso…" />
       <button class="btn ${cmpFiltro.soloMarcadas ? "btn-negro" : "btn-linea"}" id="cmFiltroMarc">🚩 Solo marcadas (${c.lineas.filter((x) => x.marcada).length})</button>
     </div>` : ""}
-    ${c.lineas.length && st.index.length > 1 ? `<button class="btn btn-gris" id="cmMoverVarias" style="width:auto;padding:6px 12px;font-size:13px;margin-bottom:8px">↔ Mover líneas a otra inspección</button>` : ""}
+    ${c.lineas.length ? `<div style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:8px">
+      <button class="btn btn-gris" id="cmNivAbrirTodos" style="width:auto;padding:6px 12px;font-size:13px">▾ Abrir todos los pisos</button>
+      <button class="btn btn-gris" id="cmNivCerrarTodos" style="width:auto;padding:6px 12px;font-size:13px">▸ Cerrar todos</button>
+      ${st.index.length > 1 ? `<button class="btn btn-gris" id="cmMoverVarias" style="width:auto;padding:6px 12px;font-size:13px">↔ Mover líneas a otra inspección</button>` : ""}
+    </div>` : ""}
     ${linHtml}
     <p class="aviso" id="cmLineasVacio" style="display:none">Ninguna línea coincide con la búsqueda.</p>
     ${c.lineas.length ? `<div class="grid2" style="margin-top:12px">
@@ -6125,6 +6323,67 @@ function rComputos() {
       rComputos();
     };
   });
+  $app.querySelectorAll("[data-nivtoggle]").forEach((b) => (b.onclick = () => {
+    const tile = b.closest("[data-nivtile]"), cuerpo = tile.querySelector("[data-nivcuerpo]");
+    const abrir = cuerpo.style.display === "none";
+    cmpNivAbiertos[tile.dataset.nivtile] = abrir;
+    cmpNivMostrar(tile, abrir);
+  }));
+  const nivTodos = (abrir) => () => {
+    $app.querySelectorAll("[data-nivtile]").forEach((t) => { cmpNivAbiertos[t.dataset.nivtile] = abrir; cmpNivMostrar(t, abrir); });
+  };
+  const bAbrirT = document.getElementById("cmNivAbrirTodos");
+  if (bAbrirT) bAbrirT.onclick = nivTodos(true);
+  const bCerrarT = document.getElementById("cmNivCerrarTodos");
+  if (bCerrarT) bCerrarT.onclick = nivTodos(false);
+  $app.querySelectorAll("[data-vergrupo]").forEach((b) => (b.onclick = () => {
+    cmpCapturar();
+    cmpVerGrupo = cmpVerGrupo === b.dataset.vergrupo ? null : b.dataset.vergrupo;
+    cmpVer = null;
+    rComputos();
+  }));
+  $app.querySelectorAll("[data-marcargrupo]").forEach((b) => (b.onclick = () => {
+    const ls = c.lineas.filter((x) => x.grupo === b.dataset.marcargrupo);
+    const todas = ls.every((x) => x.marcada);
+    for (const l of ls) l.marcada = !todas;
+    guardar();
+    rComputos();
+  }));
+  $app.querySelectorAll("[data-borrargrupo]").forEach((b) => (b.onclick = async () => {
+    const gid = b.dataset.borrargrupo;
+    const ls = c.lineas.filter((x) => x.grupo === gid);
+    if (!ls.length) return;
+    const nf = ls.reduce((s, l) => s + (l.fotos || []).length, 0);
+    if (!confirm(`¿Eliminar la compuesta completa «${ls[0].compuesta || "Partida compuesta"}» (${ls.length} partidas${nf ? " y " + nf + (nf === 1 ? " foto" : " fotos") : ""})?`)) return;
+    for (const l of ls) for (const f of (l.fotos || [])) await blobDel("photo:" + f.id);
+    c.lineas = c.lineas.filter((x) => x.grupo !== gid);
+    if (cmpVerGrupo === gid) cmpVerGrupo = null;
+    guardar();
+    rComputos();
+  }));
+  const bTipos = document.getElementById("cmTiposToggle");
+  if (bTipos) bTipos.onclick = () => { cmpCapturar(); cmpTiposAbierto = !cmpTiposAbierto; rComputos(); };
+  $app.querySelectorAll("[data-tiporen]").forEach((b) => (b.onclick = () => {
+    const t = cmpTipos().find((x) => x.id === b.dataset.tiporen);
+    if (!t) return;
+    const nm = prompt("Nuevo nombre de la cantidad tipo:", t.nombre);
+    if (!nm || !nm.trim()) return;
+    t.nombre = nm.trim(); cmpCapturar(); guardar(); rComputos();
+  }));
+  $app.querySelectorAll("[data-tipoborrar]").forEach((b) => (b.onclick = () => {
+    const t = cmpTipos().find((x) => x.id === b.dataset.tipoborrar);
+    if (!t || !confirm("¿Borrar la cantidad tipo «" + t.nombre + "»? Las líneas que ya la usan conservan su cantidad.")) return;
+    const c2 = cmpDe(st.insp); c2.tipos = c2.tipos.filter((x) => x.id !== t.id);
+    cmpCapturar(); guardar(); rComputos();
+  }));
+  // Desde una línea ya capturada: su cantidad queda como tipo
+  $app.querySelectorAll("[data-tipodelinea]").forEach((b) => (b.onclick = () => {
+    const l = c.lineas.find((x) => x.id === b.dataset.tipodelinea);
+    if (!l) return;
+    const p = cmpPartidaLinea(l) || { descripcion: l.partida };
+    const t = cmpTipoCrear(l.parcial, l.unidad, [p.descripcion, l.zona, l.nivel].filter(Boolean).join(" · "), cmpMedidasTxt(l));
+    if (t) { cmpCapturar(); alert("Guardada «" + t.nombre + "»: " + cmpFmt(t.valor) + " " + CMP_UNI[t.unidad] + ". Ya puede usarla con «★ Usar cantidad tipo»."); rComputos(); }
+  }));
   const fTxt = document.getElementById("cmFiltroTxt");
   if (fTxt) fTxt.oninput = (e) => { cmpFiltro.texto = e.target.value; cmpAplicarFiltro(); };
   const fMarc = document.getElementById("cmFiltroMarc");
