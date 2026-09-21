@@ -142,8 +142,9 @@
 <script>
 "use strict";
 /* ================= Constantes ================= */
-const VERSION = "3.88";
+const VERSION = "3.89";
 const CHANGELOG = [
+  ["3.89", "Nuevo: mover cómputos a otra inspección, para cuando se capturaron partidas en el edificio equivocado (por ejemplo, al volver a entrar a la app quedó abierta otra inspección y no se notó). En Cómputos métricos, el botón \"↔ Mover líneas a otra inspección\" (arriba de la lista) permite marcar varias líneas a la vez, con un atajo para marcar todas las de un mismo día; también está \"↔ Mover a otra inspección\" dentro del detalle de cada línea. Se elige el edificio de destino y cada línea cae en el nivel que se llame igual allá (se puede cambiar). Las fotos se van con su línea, y una partida compuesta se mueve entera."],
   ["3.88", "Nuevo \"acceso rápido\" para zonas comunes: dentro de \"Zonas comunes\" cada zona tiene una ⭐ para marcarla (por ejemplo, la escalera principal). Las zonas marcadas aparecen como atajo arriba de cada piso, para entrar y volver sin tener que ir y venir hasta \"Zonas comunes\" cada vez. El botón \"‹ Volver\" desde ahí regresa directo al piso de donde saliste."],
   ["3.87", "Arreglado: el botón \"Usar descripción anterior\" de las fotos no aparecía si acababas de abrir o recargar la app, porque solo miraba lo tecleado en esa sesión. Ahora toma la descripción de la última foto ya guardada en la misma unidad, así que aparece desde la primera vez que agregas una foto sin descripción."],
   ["3.86", "En \"Mis inspecciones\", el botón \"+ Nueva inspección\" ahora está arriba, justo debajo del título y el texto de ayuda, en vez de al final de la lista."],
@@ -1716,25 +1717,32 @@ let _timerGuardar = null;
 function guardar() {
   ponEstado("Guardando…", false);
   clearTimeout(_timerGuardar);
-  _timerGuardar = setTimeout(async () => {
-    try {
-      if (st.inspId && st.insp) {
-        st.insp._ts = new Date().toISOString();
-        await kvSet("insp:" + st.inspId, JSON.stringify(st.insp));
-        const e = st.index.find((x) => x.id === st.inspId);
-        if (e) {
-          e.nombre = st.insp.edificio.nombre; e.informe = st.insp.edificio.informe; e.fecha = st.insp.edificio.fecha;
-          e.atc = st.insp.edificio.atcGlobal || "";
-          e.nComp = ((st.insp.computos && st.insp.computos.lineas) || []).length;
-        }
-        await kvSet("index", JSON.stringify(st.index));
-        programarSubida();
+  _timerGuardar = setTimeout(guardarYa, 500);
+}
+// Lo mismo que guardar() pero sin esperar los 500 ms: para cuando lo que sigue
+// depende de que la escritura ya esté hecha (p. ej. mover líneas a otra
+// inspección y luego abrir esa otra). Devuelve si se pudo guardar.
+async function guardarYa() {
+  clearTimeout(_timerGuardar);
+  try {
+    if (st.inspId && st.insp) {
+      st.insp._ts = new Date().toISOString();
+      await kvSet("insp:" + st.inspId, JSON.stringify(st.insp));
+      const e = st.index.find((x) => x.id === st.inspId);
+      if (e) {
+        e.nombre = st.insp.edificio.nombre; e.informe = st.insp.edificio.informe; e.fecha = st.insp.edificio.fecha;
+        e.atc = st.insp.edificio.atcGlobal || "";
+        e.nComp = ((st.insp.computos && st.insp.computos.lineas) || []).length;
       }
-      ponEstado("Guardado ✓", false);
-    } catch (err) {
-      ponEstado("⚠ SIN GUARDAR", true);
+      await kvSet("index", JSON.stringify(st.index));
+      programarSubida();
     }
-  }, 500);
+    ponEstado("Guardado ✓", false);
+    return true;
+  } catch (err) {
+    ponEstado("⚠ SIN GUARDAR", true);
+    return false;
+  }
 }
 function ponEstado(t, mal) {
   const el = document.getElementById("hdrEstado");
@@ -1812,6 +1820,7 @@ document.getElementById("btnVolver").onclick = () => {
   else if (p.n === "computos") { if (cmpDescartar()) nav(p.volverA || { n: "casa" }); }
   else if (p.n === "dashboard") nav({ n: "casa" });
   else if (p.n === "medir") nav({ n: "computos", volverA: p.volverA });
+  else if (p.n === "movercmp") { cmpMov = null; nav({ n: "computos", volverA: p.volverA }); }
   else if (p.n === "mover") { const nv = st.insp.niveles.find((x) => x.apts.some((a) => a.id === p.moverApt)); nav(nv ? { n: "unidad", nivelId: nv.id, unidadId: p.moverApt } : { n: "casa" }); }
   else if (p.n === "moverfoto") nav({ n: "unidad", nivelId: p.nivelId, unidadId: p.unidadId });
   else if (p.n === "renumerar") nav({ n: "nivel", nivelId: st.pantalla.nivelId });
@@ -1844,6 +1853,7 @@ function render() {
   else if (p.n === "computos") rComputos();
   else if (p.n === "dashboard") rDashboard();
   else if (p.n === "medir") rMedir();
+  else if (p.n === "movercmp") rMoverCmp();
   else if (p.n === "mover") rMover();
   else if (p.n === "moverfoto") rMoverFoto();
   else if (p.n === "renumerar") rRenumerar();
@@ -3975,6 +3985,7 @@ function cmpDetalleLinea(l) {
     <button class="btn btn-linea" style="width:auto;padding:6px 11px;font-size:12px;margin:0 6px 6px 0" data-derivaddfoto="${l.id}">📷 Agregar foto a esta línea</button>
     <p class="aviso" id="derivFotoMsg_${l.id}" style="margin:0"></p>
     ` : `<button class="btn btn-linea" style="width:auto;padding:6px 11px;font-size:12px;margin:0 6px 6px 0" data-editln="${l.id}">✎ Editar / corregir</button>`}
+    ${st.index.length > 1 ? `<button class="btn btn-gris" style="width:auto;padding:6px 10px;font-size:12px;margin:0 6px 6px 0" data-movln="${l.id}">↔ Mover a otra inspección</button>` : ""}
     ${cmpReplicarUI(l)}
   </div>`;
 }
@@ -5546,6 +5557,7 @@ function rComputos() {
       <input id="cmFiltroTxt" value="${esc(cmpFiltro.texto)}" placeholder="Buscar por observación, elemento, zona, piso…" />
       <button class="btn ${cmpFiltro.soloMarcadas ? "btn-negro" : "btn-linea"}" id="cmFiltroMarc">🚩 Solo marcadas (${c.lineas.filter((x) => x.marcada).length})</button>
     </div>` : ""}
+    ${c.lineas.length && st.index.length > 1 ? `<button class="btn btn-gris" id="cmMoverVarias" style="width:auto;padding:6px 12px;font-size:13px;margin-bottom:8px">↔ Mover líneas a otra inspección</button>` : ""}
     ${linHtml}
     <p class="aviso" id="cmLineasVacio" style="display:none">Ninguna línea coincide con la búsqueda.</p>
     ${c.lineas.length ? `<div class="grid2" style="margin-top:12px">
@@ -5781,6 +5793,9 @@ function rComputos() {
   cmpAplicarFiltro();
 
   $app.querySelectorAll("[data-editln]").forEach((b) => (b.onclick = () => cmpEditarLinea(b.dataset.editln)));
+  $app.querySelectorAll("[data-movln]").forEach((b) => (b.onclick = () => cmpMovAbrir(b.dataset.movln)));
+  const bMovVarias = document.getElementById("cmMoverVarias");
+  if (bMovVarias) bMovVarias.onclick = () => cmpMovAbrir(null);
   $app.querySelectorAll("[data-anotarl]").forEach((b) => (b.onclick = () => abrirEditorFoto(b.dataset.anotarl, rComputos)));
 
   // Edición liviana de líneas derivadas (compuestas): no tienen dimensiones
@@ -5916,6 +5931,274 @@ function rComputos() {
     a.download = (b.informe ? "BSP-2026-" + b.informe : "BSP-2026") + "-computos.json";
     a.click();
     URL.revokeObjectURL(a.href);
+  };
+}
+
+/* ================= Mover cómputos a otra inspección =================
+   Para cuando se capturaron líneas en la inspección equivocada (p. ej. al
+   volver a entrar a la app quedó abierta otra edificación y no se notó).
+   Una compuesta se mueve siempre entera: sus partidas derivadas comparten
+   la medida base y no tienen sentido por separado.
+
+   Orden de escritura: primero el destino, después el origen. Si algo falla a
+   mitad, lo peor que queda es la línea repetida en las dos, nunca perdida; y
+   al repetir el movimiento, las que ya están en el destino no se duplican.
+   Las fotos no se copian: el blob es global (photo:<id>) y blobsDeInsp() las
+   encuentra en la inspección que ahora tenga la línea. */
+let cmpMov = null; // { sel: Set de bloques, destId, dest, err, mapa: {nivel de origen: nivelId del destino | ""}, hecho }
+
+// Un bloque es una compuesta entera (su grupo) o una línea suelta.
+const cmpMovClave = (l) => (l.derivada && l.grupo ? "g:" + l.grupo : "l:" + l.id);
+const cmpMovNorm = (s) => String(s || "").trim().toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g, "");
+const cmpMovNivelClave = (l) => l.nivelId || "t:" + cmpMovNorm(l.nivel);
+
+// Nivel del destino donde cae una línea: el que se eligió a mano o, si no, el
+// que se llame igual. "" = ninguno: la línea conserva el nombre como texto.
+function cmpMovNivelDest(mapa, dest, l) {
+  const k = cmpMovNivelClave(l);
+  if (Object.prototype.hasOwnProperty.call(mapa, k)) return mapa[k];
+  const n = cmpMovNorm(l.nivel);
+  const nv = n ? ((dest && dest.niveles) || []).find((x) => cmpMovNorm(x.nombre) === n) : null;
+  return nv ? nv.id : "";
+}
+
+function cmpMovBloques(lineas) {
+  const m = new Map();
+  for (const l of cmpOrdenVisual(lineas)) {
+    const k = cmpMovClave(l);
+    if (!m.has(k)) m.set(k, []);
+    m.get(k).push(l);
+  }
+  return Array.from(m, ([clave, items]) => ({ clave, items }));
+}
+
+function cmpMovDia(ts) {
+  const d = ts ? new Date(ts) : null;
+  if (!d || isNaN(d)) return { k: "", t: "Sin fecha", hora: "" };
+  const z = (n) => String(n).padStart(2, "0");
+  const kd = (x) => x.getFullYear() + "-" + z(x.getMonth() + 1) + "-" + z(x.getDate());
+  const k = kd(d);
+  const t = k === kd(new Date()) ? "Hoy" : k === kd(new Date(Date.now() - 864e5)) ? "Ayer"
+    : z(d.getDate()) + "/" + z(d.getMonth() + 1) + "/" + d.getFullYear();
+  return { k, t, hora: z(d.getHours()) + ":" + z(d.getMinutes()) };
+}
+
+function cmpMovAbrir(preId) {
+  if (cmpEditId) { alert("Termine o cancele la edición de la línea antes de mover líneas."); return; }
+  cmpCapturar();
+  const c = cmpDe(st.insp);
+  const pre = preId ? c.lineas.find((x) => x.id === preId) : null;
+  cmpMov = { sel: new Set(pre ? [cmpMovClave(pre)] : []), destId: "", dest: null, err: "", mapa: {}, hecho: null };
+  nav({ n: "movercmp", volverA: st.pantalla.volverA });
+}
+
+function rMoverCmp() {
+  if (!cmpMov) cmpMov = { sel: new Set(), destId: "", dest: null, err: "", mapa: {}, hecho: null };
+  const M = cmpMov;
+  if (M.hecho) return rMoverCmpHecho();
+  const c = cmpDe(st.insp);
+  const b = st.insp.edificio;
+  const bloques = cmpMovBloques(c.lineas);
+  const selLineas = c.lineas.filter((l) => M.sel.has(cmpMovClave(l)));
+  const nSel = selLineas.length;
+  const nFotos = selLineas.reduce((s, l) => s + (l.fotos || []).length, 0);
+  const plural = (n, uno, varios) => n + " " + (n === 1 ? uno : varios);
+
+  // Destino: mismo orden que "Mis inspecciones" (más nueva primero)
+  const destinos = st.index.filter((e) => e.id !== st.inspId).map((e, i) => [e, i])
+    .sort(([ea, i], [eb, j]) => (eb.fecha || "").localeCompare(ea.fecha || "") || j - i)
+    .map(([e]) => e);
+  let destHtml = `<label class="campo"><span>Inspección de destino</span>
+      <select id="mcDest"><option value="">Seleccione</option>
+        ${destinos.map((e) => `<option value="${esc(e.id)}" ${e.id === M.destId ? "selected" : ""}>${esc(e.nombre || "(sin nombre)")}${e.informe ? " · BSP-2026-" + esc(e.informe) : ""}${e.fecha ? " · " + esc(e.fecha) : ""}</option>`).join("")}
+      </select></label>`;
+  if (M.err) destHtml += `<p class="error">${esc(M.err)}</p>`;
+  else if (M.destId && !M.dest) destHtml += `<p class="aviso">Cargando…</p>`;
+  else if (M.dest) {
+    const destNombre = M.dest.edificio.nombre || "sin nombre";
+    const nd = M.dest.niveles || [];
+    const nivOrigen = new Map();
+    for (const l of selLineas) { const k = cmpMovNivelClave(l); if (!nivOrigen.has(k)) nivOrigen.set(k, l); }
+    if (nivOrigen.size) {
+      destHtml += `<div class="etiq">Nivel en el destino</div>`;
+      if (!nd.length) destHtml += `<p class="aviso" style="margin-top:0">«${esc(destNombre)}» no tiene niveles creados: las líneas conservan el nombre del nivel como texto.</p>`;
+      else {
+        destHtml += `<p class="aviso" style="margin-top:0">Cada línea va al nivel que se llame igual. Cámbielo si en el otro edificio se llama distinto.</p>`;
+        for (const [k, l] of nivOrigen) {
+          const v = cmpMovNivelDest(M.mapa, M.dest, l);
+          const nombre = l.nivel || "";
+          destHtml += `<label class="campo"><span>${nombre ? esc(nombre) : "Sin nivel"} →</span>
+            <select data-movniv="${esc(k)}">
+              ${nd.map((nv) => `<option value="${esc(nv.id)}" ${nv.id === v ? "selected" : ""}>${esc(nv.nombre)}</option>`).join("")}
+              <option value="" ${v ? "" : "selected"}>${nombre ? `Dejar «${esc(nombre)}» como texto, sin nivel del destino` : "Sin nivel"}</option>
+            </select></label>`;
+        }
+      }
+    }
+    destHtml += `<button class="btn btn-negro" id="mcGo" ${nSel ? "" : 'disabled style="opacity:.5"'}>${nSel ? `Mover ${plural(nSel, "línea", "líneas")} a «${esc(destNombre)}»` : "Marque abajo las líneas a mover"}</button>`;
+  }
+
+  // Líneas agrupadas por día de captura, los bloques más recientes primero
+  let lista = "", diaAnt = null;
+  for (const bl of bloques) {
+    const l0 = bl.items[0];
+    const dia = cmpMovDia(l0.ts);
+    if (dia.k !== diaAnt) {
+      diaAnt = dia.k;
+      const delDia = bloques.filter((x) => cmpMovDia(x.items[0].ts).k === dia.k);
+      const nLin = delDia.reduce((s, x) => s + x.items.length, 0);
+      const todos = delDia.every((x) => M.sel.has(x.clave));
+      lista += `<div style="display:flex;align-items:center;justify-content:space-between;gap:8px;margin:14px 0 6px">
+        <div class="etiq" style="margin:0">${esc(dia.t)} · ${plural(nLin, "línea", "líneas")}</div>
+        <button class="btn-gris" style="width:auto;padding:5px 10px;font-size:12px;border-radius:8px" data-movdia="${esc(dia.k)}">${todos ? "Desmarcar el día" : "Marcar todo el día"}</button>
+      </div>`;
+    }
+    const on = M.sel.has(bl.clave);
+    const meta = [l0.elemento, l0.zona, l0.nivel].filter(Boolean).join(" · ");
+    const nf = bl.items.reduce((s, l) => s + (l.fotos || []).length, 0);
+    const pie = `<span class="aviso">${esc(meta || "Sin ubicación")} · ${nf ? plural(nf, "foto", "fotos") : "sin foto"}${dia.hora ? " · " + dia.hora : ""}</span>`;
+    const cant = (l) => `${cmpFmt(l.parcial)} ${CMP_UNI[l.unidad] || ""}`;
+    const cuerpo = bl.clave.startsWith("g:")
+      ? `<b>⊞ ${esc(l0.compuesta || "Partida compuesta")}</b> · ${bl.items.length} partidas<br />
+        ${bl.items.map((l) => `<span style="display:block">${esc(l.partida)} ${esc((cmpPartidaLinea(l) || {}).descripcion || "")} — ${cant(l)}</span>`).join("")}${pie}`
+      : `<b>${esc(l0.partida)}</b> ${esc((cmpPartidaLinea(l0) || {}).descripcion || "")} — <b>${cant(l0)}</b><br />${pie}`;
+    lista += `<label class="lista-foto" style="align-items:flex-start;cursor:pointer;${on ? "border-color:var(--ink);background:var(--fondo)" : ""}">
+      <input type="checkbox" data-movsel="${esc(bl.clave)}" ${on ? "checked" : ""} style="width:22px;height:22px;min-height:0;padding:0;flex:none;margin:1px 0 0" />
+      <span style="flex:1">${cuerpo}</span></label>`;
+  }
+  const todas = bloques.length && bloques.every((x) => M.sel.has(x.clave));
+
+  $app.innerHTML = `
+    <h2>Mover cómputos a otra inspección</h2>
+    <p class="sub">Desde: ${esc(b.nombre || "Sin nombre")}${b.informe ? " · BSP-2026-" + esc(b.informe) : ""}</p>
+    <div class="tarjeta">
+      <div class="etiq">Llevar a</div>
+      <p class="aviso" style="margin-top:0">${nSel ? `<b>${plural(nSel, "línea marcada", "líneas marcadas")}</b>${nFotos ? " · " + plural(nFotos, "foto", "fotos") : ""}` : "Marque abajo las líneas que quiere mover."}</p>
+      ${destHtml}
+    </div>
+    <p class="aviso">Una partida compuesta se mueve entera, con todas sus partidas. Las fotos se van con su línea.</p>
+    <div style="display:flex;align-items:center;justify-content:space-between;gap:8px">
+      <div class="etiq" style="margin:0">Líneas de esta inspección (${c.lineas.length})</div>
+      ${bloques.length ? `<button class="btn-gris" style="width:auto;padding:5px 10px;font-size:12px;border-radius:8px" id="mcTodas">${todas ? "Desmarcar todas" : "Marcar todas"}</button>` : ""}
+    </div>
+    ${lista || `<p class="aviso">Esta inspección no tiene líneas de cómputo.</p>`}
+    <button class="btn btn-linea" id="mcCancelar" style="margin-top:12px">Cancelar</button>`;
+
+  document.getElementById("mcDest").onchange = async (e) => {
+    const v = e.target.value;
+    M.destId = v; M.dest = null; M.err = ""; M.mapa = {};
+    rMoverCmp();
+    if (!v) return;
+    try {
+      const raw = await kvGet("insp:" + v);
+      if (cmpMov !== M || M.destId !== v) return;
+      if (raw) M.dest = JSON.parse(raw);
+      else M.err = "No se encontró esa inspección en este dispositivo.";
+    } catch (err) { M.err = "No se pudo leer esa inspección."; }
+    if (st.pantalla.n === "movercmp") rMoverCmp();
+  };
+  $app.querySelectorAll("[data-movniv]").forEach((s) => (s.onchange = (e) => { M.mapa[s.dataset.movniv] = e.target.value; rMoverCmp(); }));
+  $app.querySelectorAll("[data-movsel]").forEach((cb) => (cb.onchange = () => {
+    if (cb.checked) M.sel.add(cb.dataset.movsel); else M.sel.delete(cb.dataset.movsel);
+    rMoverCmp();
+  }));
+  $app.querySelectorAll("[data-movdia]").forEach((bt) => (bt.onclick = () => {
+    const delDia = bloques.filter((x) => cmpMovDia(x.items[0].ts).k === bt.dataset.movdia);
+    const todos = delDia.every((x) => M.sel.has(x.clave));
+    for (const x of delDia) { if (todos) M.sel.delete(x.clave); else M.sel.add(x.clave); }
+    rMoverCmp();
+  }));
+  const bTodas = document.getElementById("mcTodas");
+  if (bTodas) bTodas.onclick = () => {
+    for (const x of bloques) { if (todas) M.sel.delete(x.clave); else M.sel.add(x.clave); }
+    rMoverCmp();
+  };
+  const go = document.getElementById("mcGo");
+  if (go) go.onclick = cmpMovEjecutar;
+  document.getElementById("mcCancelar").onclick = () => { const v = st.pantalla.volverA; cmpMov = null; nav({ n: "computos", volverA: v }); };
+}
+
+async function cmpMovEjecutar() {
+  const M = cmpMov;
+  if (!M || !M.dest || !M.destId) return;
+  const c = cmpDe(st.insp);
+  const mover = c.lineas.filter((l) => M.sel.has(cmpMovClave(l)));
+  if (!mover.length) return;
+  const nf = mover.reduce((s, l) => s + (l.fotos || []).length, 0);
+  const destNombre = M.dest.edificio.nombre || "sin nombre";
+  if (!confirm(`¿Mover ${mover.length} ${mover.length === 1 ? "línea" : "líneas"}${nf ? ` con ${nf} ${nf === 1 ? "foto" : "fotos"}` : ""} a «${destNombre}»? Se quitan de «${st.insp.edificio.nombre || "esta inspección"}».`)) return;
+
+  const origenId = st.inspId;
+  let dest, sueltas = 0;
+  try {
+    // Se relee el destino justo antes de escribir: pudo cambiar desde que se
+    // abrió esta pantalla (p. ej. entró una sincronización).
+    const raw = await kvGet("insp:" + M.destId);
+    if (!raw) throw new Error("esa inspección ya no está en este dispositivo");
+    dest = JSON.parse(raw);
+    const cd = cmpDe(dest);
+    const ya = new Set(cd.lineas.map((x) => x.id));
+    for (const l of mover) {
+      if (ya.has(l.id)) continue;
+      const nl = JSON.parse(JSON.stringify(l));
+      const nid = cmpMovNivelDest(M.mapa, dest, l);
+      const nv = nid ? (dest.niveles || []).find((x) => x.id === nid) : null;
+      if (nv) { nl.nivelId = nv.id; nl.nivel = nv.nombre; }
+      else { nl.nivelId = ""; if (l.nivel) sueltas++; }
+      // El pie de foto nombra el nivel: si cambió, se corrige solo ese tramo.
+      // No se redacta de nuevo con cmpPie() porque eso recalcula la cantidad
+      // con el catálogo de hoy, y el pie debe seguir diciendo lo que se midió.
+      if (nl.nivel !== l.nivel) {
+        const antes = ". " + [l.elemento, l.zona, l.nivel].filter(Boolean).join(", ") + ".";
+        const despues = ". " + [nl.elemento, nl.zona, nl.nivel].filter(Boolean).join(", ") + ".";
+        for (const f of nl.fotos || []) if (f.pie && f.pie.includes(antes)) f.pie = f.pie.replace(antes, () => despues);
+      }
+      cd.lineas.push(nl);
+    }
+    dest._ts = new Date().toISOString();
+    await kvSet("insp:" + M.destId, JSON.stringify(dest));
+  } catch (e) {
+    alert("No se pudo mover: " + ((e && e.message) || e) + ". No se cambió nada.");
+    return;
+  }
+  const ed = st.index.find((x) => x.id === M.destId);
+  if (ed) ed.nComp = dest.computos.lineas.length;
+
+  const ids = new Set(mover.map((l) => l.id));
+  c.lineas = c.lineas.filter((l) => !ids.has(l.id));
+  if (ids.has(cmpVer)) cmpVer = null;
+  const ok = await guardarYa();
+  // La subida automática solo cubre la inspección abierta: el destino se sube
+  // aparte, y antes que el origen (mismo orden que en el dispositivo).
+  if (supa && nube.sesion && navigator.onLine) subirInsp(M.destId).then(() => subirInsp(origenId)).catch(() => {});
+  M.hecho = { n: mover.length, nf, sueltas, ok, destId: M.destId, destNombre, destInforme: dest.edificio.informe || "" };
+  rMoverCmp();
+  window.scrollTo(0, 0);
+}
+
+function rMoverCmpHecho() {
+  const H = cmpMov.hecho;
+  const b = st.insp.edificio;
+  $app.innerHTML = `
+    <h2>Líneas movidas</h2>
+    <div class="tarjeta" style="background:var(--verde-bg);border-color:var(--verde)">
+      <p style="margin:0;color:var(--verde-tx)"><b>✓ ${H.n} ${H.n === 1 ? "línea movida" : "líneas movidas"}</b>${H.nf ? ` con ${H.nf} ${H.nf === 1 ? "foto" : "fotos"}` : ""}
+        a «${esc(H.destNombre)}»${H.destInforme ? " · BSP-2026-" + esc(H.destInforme) : ""}.</p>
+      ${H.sueltas ? `<p class="aviso" style="margin:6px 0 0">${H.sueltas === 1 ? "1 línea quedó" : H.sueltas + " líneas quedaron"} sin nivel del destino y ${H.sueltas === 1 ? "conserva" : "conservan"} el nombre del nivel como texto.</p>` : ""}
+    </div>
+    ${H.ok ? "" : `<div class="tarjeta" style="background:var(--rojo-bg);border-color:var(--rojo)">
+      <p style="margin:0;color:var(--rojo-tx)">Las líneas ya están en «${esc(H.destNombre)}», pero no se pudo guardar el cambio en esta inspección: puede que sigan apareciendo aquí. Si pasa, vuelva a moverlas; en el destino no se duplican.</p></div>`}
+    <button class="btn btn-negro" id="mcAbrirDest">Abrir los cómputos de «${esc(H.destNombre)}»</button>
+    <button class="btn btn-linea" id="mcVolver" style="margin-top:8px">Volver a los cómputos de «${esc(b.nombre || "esta inspección")}»</button>`;
+  document.getElementById("mcVolver").onclick = () => { const v = st.pantalla.volverA; cmpMov = null; nav({ n: "computos", volverA: v }); };
+  document.getElementById("mcAbrirDest").onclick = async () => {
+    const raw = await kvGet("insp:" + H.destId);
+    if (!raw) { alert("No se pudo abrir esa inspección."); return; }
+    if (!cmpDescartar()) return;
+    cmpVer = null; cmpFiltro = { texto: "", soloMarcadas: false };
+    st.insp = JSON.parse(raw); st.inspId = H.destId; st.urls = {};
+    cmpMov = null;
+    nav(st.insp.listo ? { n: "computos" } : { n: "setup" });
   };
 }
 
