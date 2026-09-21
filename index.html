@@ -142,8 +142,9 @@
 <script>
 "use strict";
 /* ================= Constantes ================= */
-const VERSION = "3.90";
+const VERSION = "3.91";
 const CHANGELOG = [
+  ["3.91", "Nuevo \"◯ Círculo\" en los renglones de área, junto a \"△ Triángulo\": se anota solo el diámetro y calcula π × diámetro² ÷ 4. Se combina con \"− Restar\" para descontar huecos circulares (sumideros, pases de tubería, ventanas redondas). Está en todas las partidas de área y de volumen (en volumen, círculo por alto: un cilindro), en los parches de columna, viga, muro y losa maciza (círculo por profundidad para el mortero), en la losa nervada y en lo intervenido de cada componente."],
   ["3.90", "Todas las medidas van ahora por renglones, tantos como hagan falta, según lo que pida cada partida: longitud (tramos), largo × ancho o alto (áreas), largo × ancho × alto (volúmenes) y barras × largo × diámetro (cabillas, cada renglón con su diámetro). Aplica a las partidas simples y a las compuestas: en columna, viga, muro y losa maciza cada parche lleva su propio largo, ancho y profundidad, y el mortero sale de sumar el volumen de cada uno; en la grieta cada tramo lleva su ancho de banda; en la losa nervada, la losa y los nervios van por renglones; y lo intervenido de cada componente también. En áreas y volúmenes un renglón puede marcarse \"△ Triángulo\" (base × altura ÷ 2), y en longitudes, áreas y volúmenes \"− Restar\" descuenta el renglón (puertas, ventanas, vanos); también está el botón \"− Agregar descuento\". La medición de longitud sobre foto cae en un renglón. Y arriba de la lista de partidas aparecen las últimas que usaste en esa inspección, para escogerlas de un toque; al volver a entrar queda seleccionada la última."],
   ["3.89", "Nuevo: mover cómputos a otra inspección, para cuando se capturaron partidas en el edificio equivocado (por ejemplo, al volver a entrar a la app quedó abierta otra inspección y no se notó). En Cómputos métricos, el botón \"↔ Mover líneas a otra inspección\" (arriba de la lista) permite marcar varias líneas a la vez, con un atajo para marcar todas las de un mismo día; también está \"↔ Mover a otra inspección\" dentro del detalle de cada línea. Se elige el edificio de destino y cada línea cae en el nivel que se llame igual allá (se puede cambiar). Las fotos se van con su línea, y una partida compuesta se mueve entera."],
   ["3.88", "Nuevo \"acceso rápido\" para zonas comunes: dentro de \"Zonas comunes\" cada zona tiene una ⭐ para marcarla (por ejemplo, la escalera principal). Las zonas marcadas aparecen como atajo arriba de cada piso, para entrar y volver sin tener que ir y venir hasta \"Zonas comunes\" cada vez. El botón \"‹ Volver\" desde ahí regresa directo al piso de donde saliste."],
@@ -697,43 +698,59 @@ const cmpFmt = (v, d) => Number.isFinite(v)
    puede ser triángulo (÷ 2), y en longitud, superficie y volumen puede restar
    (puertas, ventanas, vanos, tramos que no van). Un solo renglón que suma y no
    es triángulo es la medida de siempre, y así se guarda: en los campos de
-   siempre, sin lista (ver cmpLeer).
+   siempre, sin lista (ver cmpLeer). Donde va el triángulo va también el
+   círculo: π × diámetro² ÷ 4, con el diámetro en la primera medida del par
+   (en volumen, por el alto o la profundidad: un cilindro).
    Cada renglón es { c: cantidad, <campo>: valor…, tri, neg } con los mismos
    nombres de campo que la línea o la compuesta ("largo", "alto", "diametro",
    "profundidad"…). El teclado decimal de iOS no trae signo menos: restar es un
    botón, aunque un "-" tecleado también sirve. k pasa las medidas a metros
    (0,01 cuando la compuesta mide en cm); el diámetro nunca se convierte. */
 const cmpStr = (v) => String(v == null ? "" : v).trim();
-const CMP_FILA_META = { c: 1, tri: 1, neg: 1 };
+const CMP_FILA_META = { c: 1, tri: 1, circ: 1, neg: 1 };
 function cmpFilaNueva(campos, neg) {
   const r = { c: "1" };
   for (const x of campos || []) r[x] = "";
-  r.tri = false; r.neg = !!neg;
+  r.tri = false; r.circ = false; r.neg = !!neg;
   return r;
 }
+// Par de medidas del área (las dos primeras que no son diámetro de cabilla):
+// en un círculo se reemplazan por π × Ø² ÷ 4, con Ø en la primera.
+const cmpParFila = (campos) => campos.filter((x) => x !== "diametro").slice(0, 2);
 // Un renglón sin ninguna medida tecleada no cuenta (el diámetro solo, tampoco).
 function cmpFilaVacia(r) { return !Object.keys(r).some((x) => !CMP_FILA_META[x] && x !== "diametro" && cmpStr(r[x])); }
 function cmpCamposDeFilas(filas) { const r = (filas || [])[0]; return r ? Object.keys(r).filter((x) => !CMP_FILA_META[x]) : []; }
 function cmpFilaVal(r, campos, k) {
+  const f = k || 1;
   let v = Math.abs(cmpNum(r.c, 1));
-  for (const x of campos) v *= x === "diametro" ? (CMP_CABILLA[r.diametro] || 0) : Math.abs(cmpNum(r[x])) * (k || 1);
-  if (r.tri) v *= 0.5;
+  const par = r.circ ? cmpParFila(campos) : [];
+  const circ = par.length === 2;
+  if (circ) { const d = Math.abs(cmpNum(r[par[0]])) * f; v *= Math.PI * d * d / 4; }
+  for (const x of campos) {
+    if (circ && par.indexOf(x) >= 0) continue;
+    v *= x === "diametro" ? (CMP_CABILLA[r.diametro] || 0) : Math.abs(cmpNum(r[x])) * f;
+  }
+  if (r.tri && !circ) v *= 0.5;
   return r.neg ? -v : v;
 }
 function cmpFilasVal(filas, campos, k) { return (filas || []).reduce((s, r) => s + cmpFilaVal(r, campos, k), 0); }
 // Longitud de los renglones que suman, para lo que se mide a lo largo (rodapié,
-// sellado de grieta). Lo que resta y los triángulos no la cambian.
+// sellado de grieta). Lo que resta, los triángulos y los círculos no la cambian.
 function cmpFilasLargo(filas, campo, k) {
-  return (filas || []).filter((r) => !r.neg && !r.tri)
+  return (filas || []).filter((r) => !r.neg && !r.tri && !r.circ)
     .reduce((s, r) => s + Math.abs(cmpNum(r.c, 1)) * Math.abs(cmpNum(r[campo])) * (k || 1), 0);
 }
-// "3,50 × 2,60 + 4,00 × 1,50 ÷ 2 − 2 × 0,90 × 2,10" / "4 × 3,00 × Ø 1/2""
+// "3,50 × 2,60 + 4,00 × 1,50 ÷ 2 − 2 × círculo Ø 0,60" / "4 × 3,00 × Ø 1/2""
 function cmpFilasTxt(filas, campos) {
   const cs = campos || cmpCamposDeFilas(filas);
+  const med = (r, x) => x === "diametro" ? "Ø " + (r.diametro || "?") : cmpFmt(Math.abs(cmpNum(r[x])));
   return (filas || []).filter((r) => !cmpFilaVacia(r)).map((r, i) => {
     const n = Math.abs(cmpNum(r.c, 1));
-    const t = (n !== 1 ? cmpFmt(n, Number.isInteger(n) ? 0 : 2) + " × " : "") +
-      cs.map((x) => x === "diametro" ? "Ø " + (r.diametro || "?") : cmpFmt(Math.abs(cmpNum(r[x])))).join(" × ") + (r.tri ? " ÷ 2" : "");
+    const par = r.circ ? cmpParFila(cs) : [];
+    const partes = par.length === 2
+      ? ["círculo Ø " + med(r, par[0])].concat(cs.filter((x) => par.indexOf(x) < 0).map((x) => med(r, x)))
+      : cs.map((x) => med(r, x));
+    const t = (n !== 1 ? cmpFmt(n, Number.isInteger(n) ? 0 : 2) + " × " : "") + partes.join(" × ") + (r.tri && !par.length ? " ÷ 2" : "");
     return (r.neg ? (i ? " − " : "− ") : (i ? " + " : "")) + t;
   }).join("");
 }
@@ -745,15 +762,24 @@ function cmpFilasErrores(filas, campos, etiq, o) {
   lista.forEach((r, i) => {
     if (cmpFilaVacia(r)) return;
     const cual = lista.length > 1 ? " (renglón " + (i + 1) + ")" : "";
+    const par = r.circ ? cmpParFila(campos) : [];
     campos.forEach((x, j) => {
       if (x === "diametro") { if (!(r.diametro in CMP_CABILLA)) e.push("Seleccione el diámetro de la cabilla" + cual + "."); return; }
+      if (par.length === 2 && x === par[1]) return; // el círculo solo usa el diámetro
       if (opc.indexOf(x) >= 0 && !cmpStr(r[x])) return;
-      if (!(Math.abs(cmpNum(r[x], NaN)) > 0)) e.push((r.tri && j < 2 ? (j ? "La altura" : "La base") : etiq(x)) + " debe ser mayor que cero" + cual + ".");
+      const nombre = par.length === 2 && x === par[0] ? "El diámetro" : r.tri && j < 2 ? (j ? "La altura" : "La base") : etiq(x);
+      if (!(Math.abs(cmpNum(r[x], NaN)) > 0)) e.push(nombre + " debe ser mayor que cero" + cual + ".");
     });
     if (!(Math.abs(cmpNum(r.c, 1)) > 0)) e.push("La cantidad debe ser mayor que cero" + cual + ".");
   });
   if (!lista.some((r) => !cmpFilaVacia(r))) {
-    if (!op.opcional) for (const x of campos) if (opc.indexOf(x) < 0) e.push(x === "diametro" ? "Seleccione el diámetro de la cabilla." : etiq(x) + " debe ser mayor que cero.");
+    if (!op.opcional) {
+      const par = lista[0] && lista[0].circ ? cmpParFila(campos) : [];
+      for (const x of campos) {
+        if (opc.indexOf(x) >= 0 || (par.length === 2 && x === par[1])) continue;
+        e.push(x === "diametro" ? "Seleccione el diámetro de la cabilla." : (par.length === 2 && x === par[0] ? "El diámetro" : etiq(x)) + " debe ser mayor que cero.");
+      }
+    }
   } else if (!e.length && cmpFilasVal(lista, campos.filter((x) => opc.indexOf(x) < 0)) <= 0) {
     e.push("Lo que se resta no puede ser igual o mayor que lo que suma.");
   }
@@ -4538,7 +4564,12 @@ function cmpFilasHtml(pref, filas, o) {
       placeholder="${esc(ph)}" aria-label="${esc(ph)}" style="${estilo}" />`;
   const filasHtml = filas.map((r, i) => {
     const key = esc(pref + "|" + i);
-    const ph = (x, j) => r.tri && j < 2 ? (j ? "Altura" : "Base") : cmpEtiqCorta(o.etiq(x));
+    const ph = (x, j) => r.circ && j === 0 ? "Diámetro" : r.tri && j < 2 ? (j ? "Altura" : "Base") : cmpEtiqCorta(o.etiq(x));
+    // En un círculo el par se captura con una sola medida: el diámetro
+    const medPrin = r.circ && prin.length === 2
+      ? sep + inp(key, prin[0], r, "flex:1;min-width:0;text-align:right;font-weight:600;padding-left:6px;padding-right:8px", "Diámetro") +
+        `<span style="width:9px;flex:none"></span><span class="aviso" style="flex:1;min-width:0;margin:0;font-weight:600">◯ diámetro</span>`
+      : prin.map((x, j) => sep + inp(key, x, r, "flex:1;min-width:0;text-align:right;font-weight:600;padding-left:6px;padding-right:8px", ph(x, j))).join("");
     const lineaExtra = extra.map((x) => x === "diametro"
       ? `<div style="display:flex;gap:6px;align-items:center;margin-top:6px"><span class="aviso" style="margin:0;white-space:nowrap">Diámetro</span>
           <select data-fcampo="${key}|diametro" style="flex:1;min-width:0;padding-top:8px;padding-bottom:8px">
@@ -4551,12 +4582,13 @@ function cmpFilasHtml(pref, filas, o) {
       <div style="display:flex;gap:5px;align-items:center">
         <input data-fcampo="${key}|c" inputmode="decimal" value="${esc(r.c == null ? "1" : r.c)}" placeholder="1" aria-label="${esc(o.etC || "Cantidad")}"
           style="width:50px;flex:none;text-align:center;padding-left:4px;padding-right:4px" />
-        ${prin.map((x, j) => sep + inp(key, x, r, "flex:1;min-width:0;text-align:right;font-weight:600;padding-left:6px;padding-right:8px", ph(x, j))).join("")}
+        ${medPrin}
       </div>
       ${lineaExtra}
       <div style="display:flex;flex-wrap:wrap;gap:6px;align-items:center;margin-top:6px">
         ${o.formas || o.resta ? `<div class="pildoras" style="margin:0;gap:6px;flex-wrap:nowrap">
-          ${o.formas ? `<button data-ftri="${key}" class="${r.tri ? "on" : ""}" style="padding:4px 9px;font-size:12px">△ Triángulo</button>` : ""}
+          ${o.formas ? `<button data-ftri="${key}" class="${r.tri ? "on" : ""}" style="padding:4px 9px;font-size:12px">△ Triángulo</button>
+          <button data-fcirc="${key}" class="${r.circ ? "on" : ""}" style="padding:4px 9px;font-size:12px">◯ Círculo</button>` : ""}
           ${o.resta ? `<button data-fneg="${key}" class="${r.neg ? "on" : ""}" style="padding:4px 9px;font-size:12px">− Restar</button>` : ""}
         </div>` : ""}
         <span style="margin-left:auto;display:flex;gap:6px;align-items:center">
@@ -4566,8 +4598,8 @@ function cmpFilasHtml(pref, filas, o) {
       </div>
     </div>`;
   }).join("");
-  const ayuda = [o.formas ? "«△ Triángulo» calcula base × altura ÷ 2." : "",
-    o.resta ? "«− Restar» descuenta el renglón" + (o.formas ? ": puertas, ventanas y demás vanos." : ".") : ""].filter(Boolean).join(" ");
+  const ayuda = [o.formas ? "«△ Triángulo» calcula base × altura ÷ 2. «◯ Círculo» calcula π × diámetro² ÷ 4." : "",
+    o.resta ? "«− Restar» descuenta el renglón" + (o.formas ? ": puertas, ventanas, huecos y demás vanos, también los circulares." : ".") : ""].filter(Boolean).join(" ");
   return `<div data-fed="${esc(pref)}" style="grid-column:1 / -1;margin-bottom:10px">
     ${o.titulo ? `<div class="aviso" style="font-weight:600;margin:0 0 4px">${esc(o.titulo)}</div>` : ""}
     <div style="display:flex;gap:5px;font-size:11px;font-weight:600;color:var(--gris);margin-bottom:3px;padding:0 9px">
@@ -4633,7 +4665,13 @@ function cmpFilasWire(cont, alCambiar, repintar) {
   });
   cont.querySelectorAll("[data-ftri]").forEach((b) => (b.onclick = () => {
     const [f, n] = fila(b.dataset.ftri); if (!f || !f[n]) return;
-    f[n].tri = !f[n].tri; alCambiar(); repintar();
+    f[n].tri = !f[n].tri; if (f[n].tri) f[n].circ = false; alCambiar(); repintar();
+  }));
+  cont.querySelectorAll("[data-fcirc]").forEach((b) => (b.onclick = () => {
+    const [f, n] = fila(b.dataset.fcirc); if (!f || !f[n]) return;
+    f[n].circ = !f[n].circ; if (f[n].circ) f[n].tri = false; alCambiar(); repintar();
+    const d = document.querySelector('[data-fcampo="' + CSS.escape(b.dataset.fcirc + "|" + cmpParFila(cmpFilasSpec[b.dataset.fcirc.slice(0, b.dataset.fcirc.lastIndexOf("|"))].campos)[0]) + '"]');
+    if (f[n].circ && d && !cmpStr(d.value)) d.focus();
   }));
   cont.querySelectorAll("[data-fneg]").forEach((b) => (b.onclick = () => {
     const [f, n] = fila(b.dataset.fneg); if (!f || !f[n]) return;
@@ -4762,14 +4800,17 @@ function cmpLeer() {
   // campos de siempre; si hay varios, triángulos o descuentos, va la lista.
   const sp = cmpFilasSimple(p);
   if (sp && !cmpBorrador.fijo && D.filas && D.filas.length) {
-    const filas = D.filas.filter((r) => !cmpFilaVacia(r)).map((r) => {
+    // Si no hay nada tecleado se conserva el primer renglón, para que la
+    // validación sepa qué pedir (en un círculo, el diámetro).
+    const llenos = D.filas.filter((r) => !cmpFilaVacia(r));
+    const filas = (llenos.length ? llenos : D.filas.slice(0, 1)).map((r) => {
       const n = { c: cmpStr(r.c) || "1" };
       for (const x of sp.campos) n[x] = cmpStr(r[x]);
-      n.tri = !!r.tri; n.neg = !!r.neg;
+      n.tri = !!r.tri && !r.circ; n.circ = !!r.circ; n.neg = !!r.neg;
       return n;
     });
     const r0 = filas[0];
-    if (filas.length <= 1 && !(r0 && (r0.tri || r0.neg))) {
+    if (filas.length <= 1 && !(r0 && (r0.tri || r0.circ || r0.neg))) {
       l.cantidad = r0 ? r0.c : "1";
       for (const x of sp.campos) l[x] = r0 ? r0[x] : "";
     } else {
