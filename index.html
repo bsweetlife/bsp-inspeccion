@@ -142,8 +142,9 @@
 <script>
 "use strict";
 /* ================= Constantes ================= */
-const VERSION = "3.89";
+const VERSION = "3.90";
 const CHANGELOG = [
+  ["3.90", "Todas las medidas van ahora por renglones, tantos como hagan falta, según lo que pida cada partida: longitud (tramos), largo × ancho o alto (áreas), largo × ancho × alto (volúmenes) y barras × largo × diámetro (cabillas, cada renglón con su diámetro). Aplica a las partidas simples y a las compuestas: en columna, viga, muro y losa maciza cada parche lleva su propio largo, ancho y profundidad, y el mortero sale de sumar el volumen de cada uno; en la grieta cada tramo lleva su ancho de banda; en la losa nervada, la losa y los nervios van por renglones; y lo intervenido de cada componente también. En áreas y volúmenes un renglón puede marcarse \"△ Triángulo\" (base × altura ÷ 2), y en longitudes, áreas y volúmenes \"− Restar\" descuenta el renglón (puertas, ventanas, vanos); también está el botón \"− Agregar descuento\". La medición de longitud sobre foto cae en un renglón. Y arriba de la lista de partidas aparecen las últimas que usaste en esa inspección, para escogerlas de un toque; al volver a entrar queda seleccionada la última."],
   ["3.89", "Nuevo: mover cómputos a otra inspección, para cuando se capturaron partidas en el edificio equivocado (por ejemplo, al volver a entrar a la app quedó abierta otra inspección y no se notó). En Cómputos métricos, el botón \"↔ Mover líneas a otra inspección\" (arriba de la lista) permite marcar varias líneas a la vez, con un atajo para marcar todas las de un mismo día; también está \"↔ Mover a otra inspección\" dentro del detalle de cada línea. Se elige el edificio de destino y cada línea cae en el nivel que se llame igual allá (se puede cambiar). Las fotos se van con su línea, y una partida compuesta se mueve entera."],
   ["3.88", "Nuevo \"acceso rápido\" para zonas comunes: dentro de \"Zonas comunes\" cada zona tiene una ⭐ para marcarla (por ejemplo, la escalera principal). Las zonas marcadas aparecen como atajo arriba de cada piso, para entrar y volver sin tener que ir y venir hasta \"Zonas comunes\" cada vez. El botón \"‹ Volver\" desde ahí regresa directo al piso de donde saliste."],
   ["3.87", "Arreglado: el botón \"Usar descripción anterior\" de las fotos no aparecía si acababas de abrir o recargar la app, porque solo miraba lo tecleado en esa sesión. Ahora toma la descripción de la última foto ya guardada en la misma unidad, así que aparece desde la primera vez que agregas una foto sin descripción."],
@@ -688,8 +689,104 @@ const cmpFmt = (v, d) => Number.isFinite(v)
   ? v.toLocaleString("es-VE", { minimumFractionDigits: d === undefined ? 2 : d, maximumFractionDigits: d === undefined ? 2 : d })
   : "0,00";
 
+/* ----- Medidas por renglones -----
+   Toda partida que se mide (longitud, superficie, volumen o peso de cabilla)
+   se captura como una lista de renglones, tantos como hagan falta: cada uno es
+   cantidad × sus medidas (largo; largo × ancho o alto; largo × ancho × alto o
+   profundidad; barras × largo × diámetro). En superficie y volumen un renglón
+   puede ser triángulo (÷ 2), y en longitud, superficie y volumen puede restar
+   (puertas, ventanas, vanos, tramos que no van). Un solo renglón que suma y no
+   es triángulo es la medida de siempre, y así se guarda: en los campos de
+   siempre, sin lista (ver cmpLeer).
+   Cada renglón es { c: cantidad, <campo>: valor…, tri, neg } con los mismos
+   nombres de campo que la línea o la compuesta ("largo", "alto", "diametro",
+   "profundidad"…). El teclado decimal de iOS no trae signo menos: restar es un
+   botón, aunque un "-" tecleado también sirve. k pasa las medidas a metros
+   (0,01 cuando la compuesta mide en cm); el diámetro nunca se convierte. */
+const cmpStr = (v) => String(v == null ? "" : v).trim();
+const CMP_FILA_META = { c: 1, tri: 1, neg: 1 };
+function cmpFilaNueva(campos, neg) {
+  const r = { c: "1" };
+  for (const x of campos || []) r[x] = "";
+  r.tri = false; r.neg = !!neg;
+  return r;
+}
+// Un renglón sin ninguna medida tecleada no cuenta (el diámetro solo, tampoco).
+function cmpFilaVacia(r) { return !Object.keys(r).some((x) => !CMP_FILA_META[x] && x !== "diametro" && cmpStr(r[x])); }
+function cmpCamposDeFilas(filas) { const r = (filas || [])[0]; return r ? Object.keys(r).filter((x) => !CMP_FILA_META[x]) : []; }
+function cmpFilaVal(r, campos, k) {
+  let v = Math.abs(cmpNum(r.c, 1));
+  for (const x of campos) v *= x === "diametro" ? (CMP_CABILLA[r.diametro] || 0) : Math.abs(cmpNum(r[x])) * (k || 1);
+  if (r.tri) v *= 0.5;
+  return r.neg ? -v : v;
+}
+function cmpFilasVal(filas, campos, k) { return (filas || []).reduce((s, r) => s + cmpFilaVal(r, campos, k), 0); }
+// Longitud de los renglones que suman, para lo que se mide a lo largo (rodapié,
+// sellado de grieta). Lo que resta y los triángulos no la cambian.
+function cmpFilasLargo(filas, campo, k) {
+  return (filas || []).filter((r) => !r.neg && !r.tri)
+    .reduce((s, r) => s + Math.abs(cmpNum(r.c, 1)) * Math.abs(cmpNum(r[campo])) * (k || 1), 0);
+}
+// "3,50 × 2,60 + 4,00 × 1,50 ÷ 2 − 2 × 0,90 × 2,10" / "4 × 3,00 × Ø 1/2""
+function cmpFilasTxt(filas, campos) {
+  const cs = campos || cmpCamposDeFilas(filas);
+  return (filas || []).filter((r) => !cmpFilaVacia(r)).map((r, i) => {
+    const n = Math.abs(cmpNum(r.c, 1));
+    const t = (n !== 1 ? cmpFmt(n, Number.isInteger(n) ? 0 : 2) + " × " : "") +
+      cs.map((x) => x === "diametro" ? "Ø " + (r.diametro || "?") : cmpFmt(Math.abs(cmpNum(r[x])))).join(" × ") + (r.tri ? " ÷ 2" : "");
+    return (r.neg ? (i ? " − " : "− ") : (i ? " + " : "")) + t;
+  }).join("");
+}
+// o: { opcional (la lista puede quedar vacía), camposOpc (medidas que pueden faltar) }
+function cmpFilasErrores(filas, campos, etiq, o) {
+  const op = o || {}, opc = op.camposOpc || [];
+  const e = [];
+  const lista = filas || [];
+  lista.forEach((r, i) => {
+    if (cmpFilaVacia(r)) return;
+    const cual = lista.length > 1 ? " (renglón " + (i + 1) + ")" : "";
+    campos.forEach((x, j) => {
+      if (x === "diametro") { if (!(r.diametro in CMP_CABILLA)) e.push("Seleccione el diámetro de la cabilla" + cual + "."); return; }
+      if (opc.indexOf(x) >= 0 && !cmpStr(r[x])) return;
+      if (!(Math.abs(cmpNum(r[x], NaN)) > 0)) e.push((r.tri && j < 2 ? (j ? "La altura" : "La base") : etiq(x)) + " debe ser mayor que cero" + cual + ".");
+    });
+    if (!(Math.abs(cmpNum(r.c, 1)) > 0)) e.push("La cantidad debe ser mayor que cero" + cual + ".");
+  });
+  if (!lista.some((r) => !cmpFilaVacia(r))) {
+    if (!op.opcional) for (const x of campos) if (opc.indexOf(x) < 0) e.push(x === "diametro" ? "Seleccione el diámetro de la cabilla." : etiq(x) + " debe ser mayor que cero.");
+  } else if (!e.length && cmpFilasVal(lista, campos.filter((x) => opc.indexOf(x) < 0)) <= 0) {
+    e.push("Lo que se resta no puede ser igual o mayor que lo que suma.");
+  }
+  return e;
+}
+// Campos que una partida simple captura por renglones: todos menos la cantidad,
+// que va en cada renglón. Las de und/gbl solo cuentan y no llevan renglones.
+function cmpFilasSimple(p) {
+  if (!p) return null;
+  const campos = cmpCampos(p).filter((c) => c !== "cantidad");
+  if (!campos.length) return null;
+  const u = p.unidad;
+  return {
+    campos, uni: CMP_UNI[u] || u, etiq: (x) => cmpEtiq(p, x),
+    formas: u === "m2" || u === "m3", resta: u === "m" || u === "m2" || u === "m3",
+    etC: u === "kg" ? "Barras" : "Cant.", copiar: ["diametro"],
+    agregar: u === "m" ? "Agregar tramo" : u === "kg" ? "Agregar barras" : u === "m3" ? "Agregar volumen" : "Agregar área"
+  };
+}
+// Texto de cómo se llegó a la cantidad de una línea (Excel, PDF).
+function cmpMedidasTxt(l) {
+  if (l.derivada) return l.baseMedida || "";
+  if (l.parcialFijo != null) return "Medida sobre fotografía";
+  if (l.filas && l.filas.length) return cmpFilasTxt(l.filas);
+  const p = cmpPartidaLinea(l);
+  if (!p) return "";
+  return cmpCampos(p).map((c) => c === "diametro" ? "Ø " + (l.diametro || "")
+    : cmpFmt(cmpNum(l[c], c === "cantidad" ? 1 : 0), c === "cantidad" ? 0 : 2)).join(" × ");
+}
+
 function cmpParcial(l, p) {
   if (l && l.parcialFijo != null) return cmpRed(cmpNum(l.parcialFijo));
+  if (l && l.filas && l.filas.length) return cmpRed(cmpFilasVal(l.filas, cmpCamposDeFilas(l.filas)));
   if (!p) return 0;
   let v = cmpNum(l.cantidad, 1);
   for (const c of cmpCampos(p)) {
@@ -707,7 +804,9 @@ function cmpValidar(l, p) {
     if (cmpNum(l.parcialFijo) <= 0) e.push("La cantidad medida debe ser mayor que cero.");
     return e;
   }
-  for (const c of cmpCampos(p)) {
+  if (l.filas && l.filas.length) {
+    e.push(...cmpFilasErrores(l.filas, cmpCamposDeFilas(l.filas), (x) => cmpEtiq(p, x)));
+  } else for (const c of cmpCampos(p)) {
     if (c === "diametro") {
       if (!l.diametro || !(l.diametro in CMP_CABILLA)) e.push("Seleccione el diámetro de la cabilla.");
       continue;
@@ -724,6 +823,10 @@ function cmpPie(l, p, iso) {
   const u = [l.elemento, l.zona, l.nivel].filter(Boolean).join(", ");
   if (u) t.push(u);
   if (p.unidad === "kg" && l.diametro) t.push("Cabilla " + l.diametro);
+  if (p.unidad === "kg" && l.filas) {
+    const ds = l.filas.map((r) => r.diametro).filter((d, i, a) => d && a.indexOf(d) === i);
+    if (ds.length) t.push((ds.length === 1 ? "Cabilla " : "Cabillas ") + ds.join(", "));
+  }
   if (l.pintura) t.push(cmpPinturaTxt(l));
   const mag = { m: "Longitud medida", m2: "Superficie medida", m3: "Volumen medido", kg: "Peso computado" }[p.unidad] || "Cantidad";
   t.push(mag + ": " + cmpFmt(cmpParcial(l, p), p.unidad === "m3" ? 3 : 2) + " " + CMP_UNI[p.unidad]);
@@ -864,11 +967,10 @@ const CMP_COMPUESTAS = [
     campos: ["cantidad", "largo", "ancho", "profundidad"],
     etiquetas: { cantidad: "N.° de columnas", largo: "Longitud a reparar (cm)", ancho: "Ancho de la zona (cm)", profundidad: "Profundidad (cm)" },
     camposInfo: ["profundidad"],
-    sumableArea: true,
     medidaCm: true,
     magnitud: "Superficie a reparar",
     unidad: "m2",
-    nota: "Las cabillas nuevas se computan aparte, en kg, con la partida 03.02. Si hay varios parches en la misma columna, use «Σ sumar varias zonas» para cargar cada uno con su propio largo × ancho.",
+    nota: "Las cabillas nuevas se computan aparte, en kg, con la partida 03.02. Si hay varios parches en la misma columna, use «+ Agregar área» para cargar cada uno con su propio largo × ancho.",
     componentes: [
       { partida: "02.01", factor: 1, nota: "Demolición del friso en el tramo a reparar" },
       { partida: "02.04", factor: 1, nota: "Picado hasta concreto sano" },
@@ -951,11 +1053,10 @@ const CMP_COMPUESTAS = [
     campos: ["cantidad", "largo", "ancho", "profundidad"],
     etiquetas: { cantidad: "N.° de vigas", largo: "Longitud a reparar (cm)", ancho: "Ancho de la zona (cm)", profundidad: "Profundidad (cm)" },
     camposInfo: ["profundidad"],
-    sumableArea: true,
     medidaCm: true,
     magnitud: "Superficie a reparar",
     unidad: "m2",
-    nota: "Las cabillas nuevas se computan aparte, en kg, con la partida 03.02. Si hay varios parches en la misma viga, use «Σ sumar varias zonas» para cargar cada uno con su propio largo × ancho.",
+    nota: "Las cabillas nuevas se computan aparte, en kg, con la partida 03.02. Si hay varios parches en la misma viga, use «+ Agregar área» para cargar cada uno con su propio largo × ancho.",
     componentes: [
       { partida: "02.01", factor: 1, nota: "Demolición del friso en el tramo a reparar" },
       { partida: "02.04", factor: 1, nota: "Picado hasta concreto sano" },
@@ -971,11 +1072,10 @@ const CMP_COMPUESTAS = [
     campos: ["cantidad", "largo", "ancho", "profundidad"],
     etiquetas: { cantidad: "N.° de muros/pantallas", largo: "Longitud a reparar (cm)", ancho: "Alto de la zona (cm)", profundidad: "Profundidad (cm)" },
     camposInfo: ["profundidad"],
-    sumableArea: true,
     medidaCm: true,
     magnitud: "Superficie a reparar",
     unidad: "m2",
-    nota: "Las cabillas nuevas se computan aparte, en kg, con la partida 03.02. Si hay varios parches en el mismo muro, use «Σ sumar varias zonas» para cargar cada uno con su propio largo × alto.",
+    nota: "Las cabillas nuevas se computan aparte, en kg, con la partida 03.02. Si hay varios parches en el mismo muro, use «+ Agregar área» para cargar cada uno con su propio largo × alto.",
     componentes: [
       { partida: "02.01", factor: 1, nota: "Demolición del friso en el tramo a reparar" },
       { partida: "02.04", factor: 1, nota: "Picado hasta concreto sano" },
@@ -1022,7 +1122,7 @@ const CMP_COMPUESTAS = [
     magnitud: "Superficie a reparar",
     unidad: "m2",
     baseCalc: "techo_nervado",
-    nota: "Se mide el área de losa en planta y se le suma la superficie de los nervios reparados (N.° × largo × ancho desarrollado). Las cabillas nuevas se computan aparte, en kg, con la partida 03.02.",
+    nota: "Se mide el área de losa en planta y se le suma la superficie de los nervios reparados (N.° × largo × ancho desarrollado). Si hay varias zonas de losa o grupos de nervios de distinto largo, agregue un renglón por cada uno. Las cabillas nuevas se computan aparte, en kg, con la partida 03.02.",
     componentes: [
       { partida: "02.01", factor: 1, nota: "Demolición del friso en la zona a reparar" },
       { partida: "02.04", factor: 1, nota: "Picado hasta concreto sano" },
@@ -1038,10 +1138,9 @@ const CMP_COMPUESTAS = [
     campos: ["cantidad", "largo", "ancho", "profundidad"],
     etiquetas: { cantidad: "N.° de zonas", largo: "Largo de la zona (m)", ancho: "Ancho de la zona (m)", profundidad: "Profundidad (m)" },
     camposInfo: ["profundidad"],
-    sumableArea: true,
     magnitud: "Superficie a reparar",
     unidad: "m2",
-    nota: "Para techo sin nervios (losa maciza). Las cabillas nuevas se computan aparte, en kg, con la partida 03.02. Si el techo tiene nervios expuestos, use la compuesta \"Reparación de techo (losa nervada)\". Si hay varios parches, use «Σ sumar varias zonas» para cargar cada uno con su propio largo × ancho.",
+    nota: "Para techo sin nervios (losa maciza). Las cabillas nuevas se computan aparte, en kg, con la partida 03.02. Si el techo tiene nervios expuestos, use la compuesta \"Reparación de techo (losa nervada)\". Si hay varios parches, use «+ Agregar área» para cargar cada uno con su propio largo × ancho.",
     componentes: [
       { partida: "02.01", factor: 1, nota: "Demolición del friso en el tramo a reparar" },
       { partida: "02.04", factor: 1, nota: "Picado hasta concreto sano" },
@@ -1056,11 +1155,10 @@ const CMP_COMPUESTAS = [
     nombre: "Tratamiento de grieta en pared",
     campos: ["cantidad", "largo", "ancho"],
     etiquetas: { cantidad: "N.° de grietas", largo: "Longitud de la grieta (m)", ancho: "Ancho de banda a resanar (m)" },
-    sumable: "largo",
     magnitud: "Longitud de grieta",
     unidad: "m",
     baseCampo: "largo",
-    nota: "El sellado se computa por la longitud de la grieta. El friso y la pintura se computan por la banda resanada: longitud por ancho de banda.",
+    nota: "El sellado se computa por la longitud de la grieta. El friso y la pintura se computan por la banda resanada: longitud por ancho de banda. Si la grieta cambia de dirección o de ancho, use «+ Agregar tramo»: cada tramo lleva su propia longitud y su propio ancho de banda.",
     componentes: [
       { partida: "04.02", factor: 1, base: "largo", nota: "Sellado de la grieta, por su longitud" },
       { partida: "04.04", factor: 1, base: "area", nota: "Friso de la banda: longitud por ancho" },
@@ -1527,50 +1625,54 @@ function cmpSugerencias() {
 }
 
 /* Superficie o longitud base de la partida compuesta */
-function cmpSegSuma() {
-  return (cmpComp.segs || []).reduce((sum, x) => sum + cmpNum(x), 0);
+// Cómo se mide una compuesta por renglones (ver "Medidas por renglones"):
+//  area:   superficie de dos medidas (largo × ancho o × alto). Si la compuesta
+//          lleva profundidad, va en cada renglón: cada parche con la suya.
+//  tramos: la grieta, donde cada tramo trae su longitud y su ancho de banda.
+//  largo:  compuesta por longitud (las que arma la IA): tramos de largo.
+// techo_nervado tiene su propio cálculo (losa + nervios, cada uno con sus
+// renglones) y se atiende aparte.
+function cmpFilasDe(a) {
+  if (!a || a.baseCalc) return null;
+  const info = a.camposInfo || [];
+  const d = a.campos.filter((c) => c !== "cantidad" && info.indexOf(c) < 0);
+  const prof = info.indexOf("profundidad") >= 0 ? ["profundidad"] : [];
+  if (a.unidad === "m2" && d.length === 2) return { modo: "area", par: d, campos: d.concat(prof) };
+  if (a.baseCampo === d[0] && d.length === 2) return { modo: "tramos", par: d, campos: d };
+  if (a.baseCampo === d[0] && d.length === 1) return { modo: "largo", par: d, campos: d };
+  return null;
 }
-// Suma de áreas de varias zonas (largo × ancho por zona) — el equivalente de
-// cmpSegSuma() para columna/viga/muro/techo_maciza cuando el daño tiene
-// varios parches en el mismo elemento en vez de uno solo. Si la compuesta
-// mide en centímetros (medidaCm), cada dimensión se pasa a metros antes de
-// multiplicar, para que el área salga siempre en m².
-function cmpZonaSuma(a) {
-  const f = (a && a.medidaCm) ? 0.01 : 1;
-  return (cmpComp.segs || []).reduce((sum, z) => sum + (cmpNum(z && z.a) * f) * (cmpNum(z && z.b) * f), 0);
-}
-// Valor efectivo de un campo base, respetando el modo "sumar varias". Las
-// compuestas con medidaCm (columna/viga/muro) capturan largo/ancho/profundidad
-// en centímetros -- más cómodo de teclear en obra -- así que aquí se pasan a
-// metros antes de que el resto de las fórmulas (que siempre trabajan en
-// metros) las use. "cantidad" nunca se convierte: no es una medida lineal.
+const CMP_NERV_LOSA = ["largo", "ancho"], CMP_NERV_NERV = ["largoNervio", "anchoNervio"];
+// Las compuestas con medidaCm (columna/viga/muro) capturan en centímetros --
+// más cómodo de teclear en obra -- y aquí se pasan a metros, que es con lo que
+// trabajan todas las fórmulas. "cantidad" nunca se convierte.
+const cmpFactorCm = (a) => (a && a.medidaCm ? 0.01 : 1);
 function cmpBaseCampoVal(a, cc) {
-  if (cmpComp.segsOn && a && a.sumable === cc) return cmpRed(cmpSegSuma());
-  // "cantidad" no aplica cuando se suman tramos de una sola magnitud (grieta):
-  // ahí ya no hay "N.° de elementos" que multiplicar, es una sola medida larga.
-  // En cambio en el modo de varias zonas (columna/viga/muro) sí puede haber
-  // varios elementos idénticos con el mismo patrón de zonas, así que "cantidad"
-  // se mantiene visible y multiplica el total.
-  if (cc === "cantidad" && cmpComp.segsOn && !(a && a.sumableArea)) return 1;
   const v = cmpNum(cmpComp.base[cc], cc === "cantidad" ? 1 : 0);
-  return (a && a.medidaCm && cc !== "cantidad") ? v * 0.01 : v;
+  return cc !== "cantidad" ? v * cmpFactorCm(a) : v;
 }
 function cmpBaseCompuesta() {
   const a = cmpCompuesta(cmpComp.id);
   if (!a) return 0;
-  if (a.baseCalc === "techo_nervado") {
-    const aLosa = cmpNum(cmpComp.base.largo) * cmpNum(cmpComp.base.ancho);
-    const aNerv = cmpNum(cmpComp.base.nervios) * cmpNum(cmpComp.base.largoNervio) * cmpNum(cmpComp.base.anchoNervio);
-    return cmpRed(aLosa + aNerv);
+  if (a.baseCalc === "techo_nervado") return cmpRed(cmpFilasVal(cmpComp.filas, CMP_NERV_LOSA) + cmpFilasVal(cmpComp.nervios, CMP_NERV_NERV));
+  const fm = cmpFilasDe(a);
+  if (fm) {
+    const k = cmpFactorCm(a);
+    return cmpRed(fm.modo === "tramos" ? cmpFilasLargo(cmpComp.filas, fm.par[0], k) : cmpFilasVal(cmpComp.filas, fm.par, k));
   }
-  if (cmpComp.segsOn && a.sumableArea) return cmpRed(cmpBaseCampoVal(a, "cantidad") * cmpZonaSuma(a));
   // La magnitud principal que se muestra en el recuadro. Si la compuesta
-  // declara baseCampo, esa es la magnitud rectora (p. ej. la longitud de la
-  // grieta); si no, se multiplican todos los campos dimensionales.
+  // declara baseCampo, esa es la magnitud rectora; si no, se multiplican todos
+  // los campos dimensionales.
   if (a.baseCampo) return cmpRed(cmpBaseCampoVal(a, "cantidad") * cmpBaseCampoVal(a, a.baseCampo));
   let v = cmpBaseCampoVal(a, "cantidad");
   for (const c of a.campos) { if (c === "cantidad" || (a.camposInfo && a.camposInfo.indexOf(c) >= 0)) continue; v *= cmpBaseCampoVal(a, c); }
   return cmpRed(v);
+}
+// Volumen de una compuesta con profundidad por renglón (mortero por volumen).
+function cmpVolumenCompuesta() {
+  const a = cmpCompuesta(cmpComp.id), fm = cmpFilasDe(a);
+  if (fm) return fm.campos.indexOf("profundidad") >= 0 ? cmpRed(cmpFilasVal(cmpComp.filas, fm.campos, cmpFactorCm(a))) : 0;
+  return cmpRed(cmpBaseCampoVal(a, "cantidad") * cmpBaseCampoVal(a, "largo") * cmpBaseCampoVal(a, "ancho") * cmpBaseCampoVal(a, "profundidad"));
 }
 
 function cmpBaseMedidaTxt() {
@@ -1578,49 +1680,45 @@ function cmpBaseMedidaTxt() {
   if (!a) return "";
   const info = a.camposInfo || [];
   const unidLineal = a.medidaCm ? " cm" : " m";
-  if (cmpComp.segsOn && a.sumableArea) {
-    const zonas = (cmpComp.segs || []).filter((z) => cmpNum(z && z.a) > 0 && cmpNum(z && z.b) > 0);
-    let t = "área sumada de " + zonas.length + (zonas.length === 1 ? " zona" : " zonas") + " = " + cmpFmt(cmpZonaSuma(a)) + " m²";
-    const infoVals = info.filter((x) => cmpNum(cmpComp.base[x]) > 0)
-      .map((x) => (a.etiquetas[x] || x).replace(/\s*\((m|cm)\)\s*$/, "") + " " + cmpFmt(cmpNum(cmpComp.base[x])) + unidLineal);
-    if (infoVals.length) t += "  ·  " + infoVals.join("  ·  ");
-    return t;
-  }
-  if (cmpComp.segsOn) {
-    return "longitud sumada de " + (cmpComp.segs || []).filter((x) => cmpNum(x) > 0).length + " tramos = " + cmpFmt(cmpSegSuma()) + " m" +
-      (cmpNum(cmpComp.base.ancho) > 0 ? " · banda " + cmpFmt(cmpNum(cmpComp.base.ancho)) + " m" : "");
+  const fm = cmpFilasDe(a);
+  if (fm) {
+    const filas = cmpComp.filas || [], k = cmpFactorCm(a);
+    if (fm.modo === "tramos") {
+      return "tramos (longitud × banda) " + cmpFilasTxt(filas, fm.par) + unidLineal + " = " + cmpFmt(cmpFilasLargo(filas, fm.par[0], k)) +
+        " m de longitud y " + cmpFmt(cmpFilasVal(filas, fm.par, k)) + " m² de banda";
+    }
+    return cmpFilasTxt(filas, fm.par) + (a.medidaCm ? " (en cm)" : "") + " = " + cmpFmt(cmpFilasVal(filas, fm.par, k)) + " " + CMP_UNI[a.unidad];
   }
   if (a.baseCalc === "techo_nervado") {
-    const la = cmpNum(cmpComp.base.largo), an = cmpNum(cmpComp.base.ancho);
-    const nn = cmpNum(cmpComp.base.nervios), ln = cmpNum(cmpComp.base.largoNervio), wn = cmpNum(cmpComp.base.anchoNervio);
-    const aLosa = cmpRed(la * an), aNerv = cmpRed(nn * ln * wn);
-    let t = "losa " + cmpFmt(la) + " × " + cmpFmt(an) + " = " + cmpFmt(aLosa) + " m²";
-    if (aNerv > 0) t += " + " + cmpFmt(nn, 0) + " nervios × " + cmpFmt(ln) + " × " + cmpFmt(wn) + " = " + cmpFmt(aNerv) + " m²";
-    return t + " = " + cmpFmt(cmpBaseCompuesta()) + " " + CMP_UNI[a.unidad];
+    const aLosa = cmpRed(cmpFilasVal(cmpComp.filas, CMP_NERV_LOSA)), aNerv = cmpRed(cmpFilasVal(cmpComp.nervios, CMP_NERV_NERV));
+    const partes = [];
+    if (cmpFilasTxt(cmpComp.filas, CMP_NERV_LOSA)) partes.push("losa " + cmpFilasTxt(cmpComp.filas, CMP_NERV_LOSA) + " = " + cmpFmt(aLosa) + " m²");
+    if (aNerv > 0) partes.push("nervios (N.° × largo × ancho) " + cmpFilasTxt(cmpComp.nervios, CMP_NERV_NERV) + " = " + cmpFmt(aNerv) + " m²");
+    return partes.join(" + ") + " = " + cmpFmt(cmpBaseCompuesta()) + " " + CMP_UNI[a.unidad];
   }
   const dim = a.campos.filter((x) => x !== "cantidad" && info.indexOf(x) < 0);
-  let t = cmpFmt(cmpNum(cmpComp.base.cantidad, 1), 0) + " × " +
-    dim.map((x) => cmpFmt(cmpNum(cmpComp.base[x])) + unidLineal).join(" × ") +
-    " = " + cmpFmt(cmpBaseCompuesta()) + " " + CMP_UNI[a.unidad];
   const infoVals = info.filter((x) => cmpNum(cmpComp.base[x]) > 0)
     .map((x) => (a.etiquetas[x] || x).replace(/\s*\((m|cm)\)\s*$/, "") + " " + cmpFmt(cmpNum(cmpComp.base[x])) + unidLineal);
-  if (infoVals.length) t += "  ·  " + infoVals.join("  ·  ");
-  return t;
+  return cmpFmt(cmpNum(cmpComp.base.cantidad, 1), 0) + " × " +
+    dim.map((x) => cmpFmt(cmpNum(cmpComp.base[x])) + unidLineal).join(" × ") +
+    " = " + cmpFmt(cmpBaseCompuesta()) + " " + CMP_UNI[a.unidad] + (infoVals.length ? "  ·  " + infoVals.join("  ·  ") : "");
 }
 
 // Cantidad de un componente, respetando que use la magnitud rectora ("largo"),
-// el área completa ("area") o, por defecto, la base general de la compuesta.
+// el área completa ("area"), el volumen o, por defecto, la base general.
 function cmpBaseDe(comp) {
   const a = cmpCompuesta(cmpComp.id);
-  const n = cmpBaseCampoVal(a, "cantidad");
-  const zonasOn = cmpComp.segsOn && a.sumableArea;
-  if (comp.base === "volumen") {
-    const area = zonasOn ? cmpZonaSuma(a) : cmpBaseCampoVal(a, "largo") * cmpBaseCampoVal(a, "ancho");
-    return cmpRed(n * area * cmpBaseCampoVal(a, "profundidad"));
+  if (comp.base === "volumen") return cmpVolumenCompuesta();
+  const fm = cmpFilasDe(a);
+  if (fm) {
+    const filas = cmpComp.filas, k = cmpFactorCm(a);
+    if (comp.base === "largo") return cmpRed(fm.modo === "largo" ? cmpFilasVal(filas, fm.par, k) : cmpFilasLargo(filas, fm.par[0], k));
+    if (comp.base === "area") return cmpRed(fm.modo === "largo" ? 0 : cmpFilasVal(filas, fm.par, k));
+    return cmpBaseCompuesta();
   }
+  const n = cmpBaseCampoVal(a, "cantidad");
   if (comp.base === "largo") return cmpRed(n * cmpBaseCampoVal(a, "largo"));
   if (comp.base === "area") {
-    if (zonasOn) return cmpRed(n * cmpZonaSuma(a));
     let v = n;
     for (const c of a.campos) { if (c === "cantidad" || (a.camposInfo && a.camposInfo.indexOf(c) >= 0)) continue; v *= cmpBaseCampoVal(a, c); }
     return cmpRed(v);
@@ -1641,8 +1739,7 @@ function cmpCarasDe(tipo) {
 function cmpCompParcial(p, e) {
   if (e.segsOn) {
     const segs = e.segs || [];
-    if (p.unidad === "m2") return cmpRed(segs.reduce((s, x) => s + cmpNum(x.a) * cmpNum(x.b), 0), 2);
-    return cmpRed(segs.reduce((s, x) => s + cmpNum(x.a), 0), 2);
+    return cmpRed(cmpFilasVal(segs, p.unidad === "m2" ? ["ancho", "alto"] : ["largo"]), 2);
   }
   return cmpRed(cmpNum(e.cant), 2);
 }
@@ -3867,7 +3964,8 @@ async function cmpZip(btn) {
       const med = cmpCampos(p).filter((x) => x !== "cantidad")
         .map((x) => cmpEtiq(p, x) + " " + (x === "diametro" ? (l.diametro || "") : cmpFmt(cmpNum(l[x])))).join("  ·  ");
       T.push("  " + l.partida + "  " + [l.elemento, l.zona, l.nivel].filter(Boolean).join(" · "));
-      T.push("      " + cmpFmt(cmpNum(l.cantidad), 0) + " × " + med +
+      if (l.filas && l.filas.length) T.push("      Medidas: " + cmpFilasTxt(l.filas) + "  =  " + cmpFmt(l.parcial) + " " + CMP_UNI[l.unidad]);
+      else T.push("      " + cmpFmt(cmpNum(l.cantidad), 0) + " × " + med +
         "  =  " + cmpFmt(l.parcial) + " " + CMP_UNI[l.unidad]);
       T.push("      Origen: " + (l.origen === "sitio" ? "medida en sitio" : l.origen === "foto" ? "medida sobre fotografia con escala" : l.origen === "planos" ? "tomada de planos" : "estimada por muestreo") +
         "  ·  " + ((l.fotos || []).length) + " fotografía(s)");
@@ -3952,8 +4050,10 @@ function cmpAplicarFiltro() {
 }
 function cmpDetalleLinea(l) {
   const p = cmpPartidaLinea(l) || {};
-  const med = cmpCampos(p).map((x) =>
-    cmpEtiq(p, x) + ": " + (x === "diametro" ? (l.diametro || "—") : cmpFmt(cmpNum(l[x])))).join("  ·  ");
+  const med = l.filas && l.filas.length
+    ? "Medidas: " + cmpFilasTxt(l.filas) + " = " + cmpFmt(cmpParcial(l, p), l.unidad === "m3" ? 3 : 2) + " " + (CMP_UNI[l.unidad] || "")
+    : cmpCampos(p).map((x) =>
+      cmpEtiq(p, x) + ": " + (x === "diametro" ? (l.diametro || "—") : cmpFmt(cmpNum(l[x])))).join("  ·  ");
   const org = l.origen === "sitio" ? "Medida en sitio"
     : l.origen === "foto" ? "Medida sobre fotografía con escala"
     : l.origen === "planos" ? "Cantidad tomada de planos" : "Cantidad estimada por muestreo";
@@ -4027,6 +4127,7 @@ function cmpReplicar(l, nivelIds) {
     for (const nid of nivelIds) {
       const cl = Object.assign({}, l, { id: uid(), nivelId: nid, nivel: nombreDe(nid) || l.nivel, zonaId: "", fotos: [], ts: new Date().toISOString() });
       if (l.pintura) cl.pintura = Object.assign({}, l.pintura);
+      if (l.filas) cl.filas = l.filas.map((r) => Object.assign({}, r));
       c.lineas.push(cl);
       n++;
     }
@@ -4397,6 +4498,167 @@ async function cmpPintarLupas(cont) {
   }
 }
 
+/* Editor de renglones (ver "Medidas por renglones"). El prefijo dice de qué
+   lista se trata: "s" la línea simple, "c" la medición base de una compuesta,
+   "n" los nervios de la losa nervada, "p:<partida>" lo intervenido de un
+   componente. La lista se busca cada vez por el prefijo porque los repintados
+   reemplazan los borradores; la configuración del último pintado queda en
+   cmpFilasSpec para refrescar subtotales sin repintar (y sin perder el foco).
+   o: { campos, etiq(campo), etC, uni, formas (triángulo), resta, k, cm,
+        subTxt(r), totTxt(filas), copiar (campos que hereda un renglón nuevo),
+        agregar, titulo, sinAyuda } */
+const cmpFilasSpec = {};
+function cmpFilasRef(pref) {
+  if (pref === "s") return (cmpBorrador.dims && cmpBorrador.dims.filas) || null;
+  if (pref === "c") return cmpComp.filas || null;
+  if (pref === "n") return cmpComp.nervios || null;
+  if (pref.indexOf("p:") === 0) { const e = cmpComp.comps[pref.slice(2)]; return (e && e.segs) || null; }
+  return null;
+}
+const cmpEtiqCorta = (t) => cmpStr(t).replace(/\s*\((m|cm)\)\s*$/, "");
+function cmpFilaSubTxt(r, o) {
+  if (cmpFilaVacia(r)) return "—";
+  if (o.subTxt) return o.subTxt(r);
+  const v = cmpFilaVal(r, o.campos, o.k);
+  return (v < 0 ? "− " : "") + cmpFmt(Math.abs(v), o.uni === "m³" ? 3 : 2) + " " + o.uni;
+}
+function cmpFilasTotTxt(filas, o) {
+  if (o.totTxt) return o.totTxt(filas);
+  return "Σ " + cmpFmt(cmpFilasVal(filas, o.campos, o.k), o.uni === "m³" ? 3 : 2) + " " + o.uni;
+}
+function cmpFilasHtml(pref, filas, o) {
+  cmpFilasSpec[pref] = o;
+  const lab = (x) => cmpEtiqCorta(o.etiq(x)) + (x === "diametro" ? "" : o.cm ? " (cm)" : " (m)");
+  // Las dos primeras medidas van en la línea de la cantidad; la tercera (alto,
+  // profundidad) y el diámetro, en una segunda línea con su nombre al lado.
+  const prin = o.campos.filter((x) => x !== "diametro").slice(0, 2);
+  const extra = o.campos.filter((x) => prin.indexOf(x) < 0);
+  const sep = `<span style="width:9px;flex:none;opacity:.6;text-align:center">×</span>`;
+  const inp = (key, x, r, estilo, ph) => `<input data-fcampo="${key}|${x}" inputmode="decimal" value="${esc(r[x] == null ? "" : r[x])}"
+      placeholder="${esc(ph)}" aria-label="${esc(ph)}" style="${estilo}" />`;
+  const filasHtml = filas.map((r, i) => {
+    const key = esc(pref + "|" + i);
+    const ph = (x, j) => r.tri && j < 2 ? (j ? "Altura" : "Base") : cmpEtiqCorta(o.etiq(x));
+    const lineaExtra = extra.map((x) => x === "diametro"
+      ? `<div style="display:flex;gap:6px;align-items:center;margin-top:6px"><span class="aviso" style="margin:0;white-space:nowrap">Diámetro</span>
+          <select data-fcampo="${key}|diametro" style="flex:1;min-width:0;padding-top:8px;padding-bottom:8px">
+            <option value="">Seleccione</option>
+            ${Object.keys(CMP_CABILLA).map((d) => `<option value="${esc(d)}" ${r.diametro === d ? "selected" : ""}>${esc(d)} · ${cmpFmt(CMP_CABILLA[d], 3)} kg/m</option>`).join("")}
+          </select></div>`
+      : `<div style="display:flex;gap:6px;align-items:center;margin-top:6px"><span class="aviso" style="margin:0;white-space:nowrap">× ${esc(lab(x))}</span>
+          ${inp(key, x, r, "flex:1;min-width:0;text-align:right;font-weight:600;padding-left:6px;padding-right:8px", cmpEtiqCorta(o.etiq(x)))}</div>`).join("");
+    return `<div data-ffila="${key}" style="border:1px solid ${r.neg ? "var(--rojo)" : "var(--borde)"};background:${r.neg ? "var(--rojo-bg)" : "var(--blanco)"};border-radius:10px;padding:8px;margin-bottom:6px">
+      <div style="display:flex;gap:5px;align-items:center">
+        <input data-fcampo="${key}|c" inputmode="decimal" value="${esc(r.c == null ? "1" : r.c)}" placeholder="1" aria-label="${esc(o.etC || "Cantidad")}"
+          style="width:50px;flex:none;text-align:center;padding-left:4px;padding-right:4px" />
+        ${prin.map((x, j) => sep + inp(key, x, r, "flex:1;min-width:0;text-align:right;font-weight:600;padding-left:6px;padding-right:8px", ph(x, j))).join("")}
+      </div>
+      ${lineaExtra}
+      <div style="display:flex;flex-wrap:wrap;gap:6px;align-items:center;margin-top:6px">
+        ${o.formas || o.resta ? `<div class="pildoras" style="margin:0;gap:6px;flex-wrap:nowrap">
+          ${o.formas ? `<button data-ftri="${key}" class="${r.tri ? "on" : ""}" style="padding:4px 9px;font-size:12px">△ Triángulo</button>` : ""}
+          ${o.resta ? `<button data-fneg="${key}" class="${r.neg ? "on" : ""}" style="padding:4px 9px;font-size:12px">− Restar</button>` : ""}
+        </div>` : ""}
+        <span style="margin-left:auto;display:flex;gap:6px;align-items:center">
+          <b class="mono" data-fsub style="font-size:12px;white-space:nowrap;${r.neg ? "color:var(--rojo-tx)" : ""}">${cmpFilaSubTxt(r, o)}</b>
+          ${filas.length > 1 ? `<button class="btn-rojo-linea" data-fdel="${key}" style="width:auto;padding:4px 9px;font-size:12px;border-radius:8px" aria-label="Quitar renglón">✕</button>` : ""}
+        </span>
+      </div>
+    </div>`;
+  }).join("");
+  const ayuda = [o.formas ? "«△ Triángulo» calcula base × altura ÷ 2." : "",
+    o.resta ? "«− Restar» descuenta el renglón" + (o.formas ? ": puertas, ventanas y demás vanos." : ".") : ""].filter(Boolean).join(" ");
+  return `<div data-fed="${esc(pref)}" style="grid-column:1 / -1;margin-bottom:10px">
+    ${o.titulo ? `<div class="aviso" style="font-weight:600;margin:0 0 4px">${esc(o.titulo)}</div>` : ""}
+    <div style="display:flex;gap:5px;font-size:11px;font-weight:600;color:var(--gris);margin-bottom:3px;padding:0 9px">
+      <span style="width:50px;flex:none;text-align:center">${esc(o.etC || "Cant.")}</span>
+      ${prin.map((x) => `<span style="width:9px;flex:none"></span><span style="flex:1;min-width:0">${esc(lab(x))}</span>`).join("")}
+    </div>
+    ${filasHtml}
+    <div style="display:flex;flex-wrap:wrap;gap:6px;align-items:center">
+      <button class="btn btn-linea" data-fadd="${esc(pref)}" style="width:auto;padding:6px 11px;font-size:13px">+ ${esc(o.agregar || "Agregar renglón")}</button>
+      ${o.resta ? `<button class="btn btn-linea" data-fadd="${esc(pref)}" data-fconneg="1" style="width:auto;padding:6px 11px;font-size:13px">− Agregar descuento</button>` : ""}
+      ${filas.length > 1 ? `<b class="mono" data-ftot style="margin-left:auto">${cmpFilasTotTxt(filas, o)}</b>` : ""}
+    </div>
+    ${ayuda && !o.sinAyuda ? `<p class="aviso" style="margin:6px 0 0">${ayuda}</p>` : ""}
+  </div>`;
+}
+// Pasa lo tecleado en un campo de renglón a su lista. Un "-" no se guarda como
+// número: vuelve descuento el renglón (solo donde se puede restar).
+function cmpFilaAsignar(el) {
+  const partes = String(el.dataset.fcampo || "").split("|");
+  if (partes.length !== 3) return null;
+  const [pref, i, campo] = partes;
+  const filas = cmpFilasRef(pref);
+  const r = filas && filas[+i];
+  if (!r) return null;
+  let v = el.value;
+  if (campo !== "diametro" && v.indexOf("-") >= 0) {
+    v = v.replace(/-/g, "");
+    el.value = v;
+    const o = cmpFilasSpec[pref];
+    if (o && o.resta) r.neg = true;
+  }
+  r[campo] = v;
+  return pref + "|" + i;
+}
+function cmpFilasLeerDom() { document.querySelectorAll("[data-fcampo]").forEach(cmpFilaAsignar); }
+function cmpFilasRefrescar(key) {
+  const cut = key.lastIndexOf("|"), pref = key.slice(0, cut);
+  const ed = document.querySelector('[data-fed="' + CSS.escape(pref) + '"]');
+  const filas = cmpFilasRef(pref), o = cmpFilasSpec[pref];
+  if (!ed || !filas || !o) return;
+  const r = filas[+key.slice(cut + 1)];
+  const box = ed.querySelector('[data-ffila="' + CSS.escape(key) + '"]');
+  if (box && r) {
+    box.style.borderColor = r.neg ? "var(--rojo)" : "var(--borde)";
+    box.style.background = r.neg ? "var(--rojo-bg)" : "var(--blanco)";
+    const sub = box.querySelector("[data-fsub]");
+    if (sub) { sub.textContent = cmpFilaSubTxt(r, o); sub.style.color = r.neg ? "var(--rojo-tx)" : ""; }
+    const bn = box.querySelector("[data-fneg]");
+    if (bn) bn.classList.toggle("on", !!r.neg);
+  }
+  const tot = ed.querySelector("[data-ftot]");
+  if (tot) tot.textContent = cmpFilasTotTxt(filas, o);
+}
+function cmpFilasWire(cont, alCambiar, repintar) {
+  const fila = (key) => { const cut = key.lastIndexOf("|"); const f = cmpFilasRef(key.slice(0, cut)); return f ? [f, +key.slice(cut + 1)] : [null, -1]; };
+  cont.querySelectorAll("[data-fcampo]").forEach((el) => {
+    el[el.tagName === "SELECT" ? "onchange" : "oninput"] = () => {
+      const key = cmpFilaAsignar(el);
+      if (key == null) return;
+      cmpFilasRefrescar(key);
+      alCambiar();
+    };
+  });
+  cont.querySelectorAll("[data-ftri]").forEach((b) => (b.onclick = () => {
+    const [f, n] = fila(b.dataset.ftri); if (!f || !f[n]) return;
+    f[n].tri = !f[n].tri; alCambiar(); repintar();
+  }));
+  cont.querySelectorAll("[data-fneg]").forEach((b) => (b.onclick = () => {
+    const [f, n] = fila(b.dataset.fneg); if (!f || !f[n]) return;
+    f[n].neg = !f[n].neg; alCambiar(); repintar();
+  }));
+  cont.querySelectorAll("[data-fdel]").forEach((b) => (b.onclick = () => {
+    const [f, n] = fila(b.dataset.fdel); if (!f) return;
+    const campos = cmpCamposDeFilas(f);
+    f.splice(n, 1);
+    if (!f.length) f.push(cmpFilaNueva(campos));
+    alCambiar(); repintar();
+  }));
+  cont.querySelectorAll("[data-fadd]").forEach((b) => (b.onclick = () => {
+    const pref = b.dataset.fadd, f = cmpFilasRef(pref), o = cmpFilasSpec[pref];
+    if (!f || !o) return;
+    const nueva = cmpFilaNueva(o.campos, b.dataset.fconneg === "1");
+    const prev = f[f.length - 1];
+    if (prev) for (const x of o.copiar || []) if (x in nueva && cmpStr(prev[x])) nueva[x] = prev[x];
+    f.push(nueva);
+    alCambiar(); repintar();
+    const primero = document.querySelector('[data-fcampo="' + CSS.escape(pref + "|" + (f.length - 1) + "|" + o.campos.filter((x) => x !== "diametro")[0]) + '"]');
+    if (primero) primero.focus();
+  }));
+}
+
 function cmpPintarDims() {
   const p = cmpPartidaBorrador();
   const cont = document.getElementById("cmDims");
@@ -4416,6 +4678,26 @@ function cmpPintarDims() {
     document.getElementById("cmQuitarFijo").onclick = () => {
       cmpBorrador.fijo = null; cmpBorrador.medicion = null; cmpPintarDims();
     };
+    cmpCinta();
+    return;
+  }
+
+  const sp = cmpFilasSimple(p);
+  if (sp) {
+    // Renglones desde los campos de siempre (medición sobre foto, "Repetir
+    // última", editar una línea vieja) o si la partida cambió de medidas.
+    const mismos = D.filas && D.filas.length && cmpCamposDeFilas(D.filas).slice().sort().join() === sp.campos.slice().sort().join();
+    if (!mismos) {
+      const r = cmpFilaNueva(sp.campos);
+      r.c = cmpStr(D.cantidad) || "1";
+      for (const x of sp.campos) r[x] = cmpStr(D[x]);
+      D.filas = [r];
+    }
+    const aux = CMP_AUX[p.codigo];
+    cont.innerHTML = cmpFilasHtml("s", D.filas, sp) + (aux ? `<div style="grid-column:1 / -1">${cmpAuxHtml("cmD_" + aux)}</div>` : "");
+    cmpFilasWire(cont, () => { cmpBorrador.atipicoOk = false; cmpCinta(); }, cmpPintarDims);
+    // La calculadora de perímetro llena el último renglón
+    if (aux) cmpAuxWire(cont, "cmD_" + aux, (v) => { const f = D.filas; f[f.length - 1][aux] = v; });
     cmpCinta();
     return;
   }
@@ -4455,12 +4737,12 @@ function cmpHayCambiosSinGuardar(simple) {
   if (cmpBorrador.elemento || cmpBorrador.obs || cmpBorrador.marcada || (cmpBorrador.fotos && cmpBorrador.fotos.length)) return true;
   if (simple) {
     const D = cmpBorrador.dims || {};
-    return Object.keys(D).some((k) => String(D[k] || "").trim() !== "");
+    return Object.keys(D).some((k) => k === "filas" ? (D.filas || []).some((r) => !cmpFilaVacia(r)) : String(D[k] || "").trim() !== "");
   }
   const a = cmpCompuesta(cmpComp.id);
   if (!a) return false;
   return a.campos.some((cc) => String(cmpComp.base[cc] || "").trim() !== "") ||
-    !!(cmpComp.segs && cmpComp.segs.some((v) => String(v || "").trim() !== ""));
+    (cmpComp.filas || []).some((r) => !cmpFilaVacia(r)) || (cmpComp.nervios || []).some((r) => !cmpFilaVacia(r));
 }
 function cmpLeer() {
   const p = cmpPartidaBorrador();
@@ -4476,6 +4758,26 @@ function cmpLeer() {
     marcada: !!cmpBorrador.marcada
   };
   for (const c of cmpCampos(p)) l[c] = D[c] === undefined ? (c === "cantidad" ? "1" : "") : D[c];
+  // Medidas por renglones: uno solo que suma y no es triángulo se guarda en los
+  // campos de siempre; si hay varios, triángulos o descuentos, va la lista.
+  const sp = cmpFilasSimple(p);
+  if (sp && !cmpBorrador.fijo && D.filas && D.filas.length) {
+    const filas = D.filas.filter((r) => !cmpFilaVacia(r)).map((r) => {
+      const n = { c: cmpStr(r.c) || "1" };
+      for (const x of sp.campos) n[x] = cmpStr(r[x]);
+      n.tri = !!r.tri; n.neg = !!r.neg;
+      return n;
+    });
+    const r0 = filas[0];
+    if (filas.length <= 1 && !(r0 && (r0.tri || r0.neg))) {
+      l.cantidad = r0 ? r0.c : "1";
+      for (const x of sp.campos) l[x] = r0 ? r0[x] : "";
+    } else {
+      l.cantidad = "1";
+      for (const x of sp.campos) l[x] = "";
+      l.filas = filas;
+    }
+  }
   if (cmpBorrador.fijo) l.parcialFijo = cmpBorrador.fijo.valor;
   if (cmpBorrador.medicion) l.medicion = cmpBorrador.medicion;
   if (cmpBorrador.partida === "99.99") l.otroDesc = String(cmpBorrador.otroDesc || "").trim();
@@ -4519,6 +4821,7 @@ function cmpEditarLinea(id) {
   if (l.partida === "99.99") { cmpBorrador.otroDesc = l.otroDesc || ""; cmpBorrador.otroUni = l.unidad || "und"; }
   if (l.pintura) cmpBorrador.pintura = { tipo: l.pintura.tipo, colorHex: l.pintura.colorHex || "", colorNombre: l.pintura.colorNombre || "", colorManual: true };
   for (const cc of cmpCampos(p)) cmpBorrador.dims[cc] = l[cc] != null ? l[cc] : "";
+  if (l.filas && l.filas.length) cmpBorrador.dims.filas = l.filas.map((r) => Object.assign({}, r));
   if (l.parcialFijo != null) cmpBorrador.fijo = { valor: l.parcialFijo, unidad: l.unidad };
   if (l.medicion) cmpBorrador.medicion = l.medicion;
   rComputos();
@@ -4549,7 +4852,11 @@ function cmpCinta() {
     return;
   }
   const piezas = [];
-  for (const c of cmpCampos(p)) {
+  if (l.filas) {
+    const nd = l.filas.filter((r) => r.neg).length, na = l.filas.length - nd;
+    const nom = { m: ["tramo", "tramos"], m2: ["área", "áreas"], m3: ["volumen", "volúmenes"], kg: ["grupo de barras", "grupos de barras"] }[p.unidad] || ["renglón", "renglones"];
+    piezas.push(na + " " + nom[na === 1 ? 0 : 1] + (nd ? " − " + nd + (nd === 1 ? " descuento" : " descuentos") : ""));
+  } else for (const c of cmpCampos(p)) {
     if (c === "cantidad") {
       const n = cmpNum(l.cantidad, 1);
       piezas.push(cmpFmt(n, Number.isInteger(n) ? 0 : 2));
@@ -4683,6 +4990,7 @@ function cmpCapturar() {
   // que demoran en confirmar el último dígito) puede ganarle al evento. Antes de
   // validar o guardar, se vuelve a leer el DOM para no perder lo ya tecleado.
   document.querySelectorAll("#cmComp [data-base]").forEach((i) => { cmpComp.base[i.dataset.base] = i.value; });
+  cmpFilasLeerDom();
   document.querySelectorAll("#cmComp [data-cant]").forEach((i) => {
     const k = i.dataset.cant;
     cmpComp.comps[k] = cmpComp.comps[k] || {};
@@ -4691,46 +4999,39 @@ function cmpCapturar() {
 }
 
 function cmpCampoHtml(a, cc) {
-  const seg = a.sumable === cc;
-  const zonaPar = a.sumableArea && (cc === "largo" || cc === "ancho");
-  if (cc === "cantidad" && cmpComp.segsOn && !a.sumableArea) return "";
-  if (zonaPar && cmpComp.segsOn) {
-    if (cc === "ancho") return ""; // el par largo × ancho ya se dibuja junto con "largo"
-    const zonas = cmpComp.segs || [];
-    const etLargo = (a.etiquetas.largo || "Largo").replace(/\s*\((m|cm)\)\s*$/, "");
-    const etAncho = (a.etiquetas.ancho || "Ancho").replace(/\s*\((m|cm)\)\s*$/, "");
-    return `<div class="campo" style="grid-column:1 / -1">
-      <span>Zonas a reparar · ${zonas.length} ${zonas.length === 1 ? "zona" : "zonas"}</span>
-      ${zonas.map((z, i) => `<div style="display:flex;gap:6px;align-items:center;margin-bottom:5px">
-        <input data-zona="${i}|a" inputmode="decimal" value="${esc((z && z.a) || "")}" placeholder="${esc(etLargo)}" style="text-align:right;font-weight:600" />
-        <span style="opacity:.6">×</span>
-        <input data-zona="${i}|b" inputmode="decimal" value="${esc((z && z.b) || "")}" placeholder="${esc(etAncho)}" style="text-align:right;font-weight:600" />
-        <button class="btn btn-rojo-linea" style="width:auto;padding:6px 11px" data-zonadel="${i}">✕</button></div>`).join("")}
-      <div style="display:flex;gap:8px;align-items:center;margin-top:2px">
-        <button class="btn btn-linea" style="width:auto;padding:6px 11px;font-size:13px" data-zonaadd>+ agregar zona</button>
-        <button class="btn btn-linea" style="width:auto;padding:6px 11px;font-size:13px" data-zonaoff>una sola</button>
-        <b class="mono" id="cmZonaSuma" style="margin-left:auto">Σ ${cmpFmt(cmpRed(cmpZonaSuma(a)))} m²</b>
-      </div></div>`;
+  const et = (x) => a.etiquetas[x] || CMP_TXT[x] || x;
+  if (a.baseCalc === "techo_nervado") {
+    if (cc === "largo") return cmpFilasHtml("c", cmpComp.filas || [], {
+      campos: CMP_NERV_LOSA, etiq: (x) => (x === "largo" ? "Largo" : "Ancho"), uni: "m²", formas: true, resta: true,
+      titulo: "Área de losa en planta", agregar: "Agregar área"
+    });
+    if (cc === "nervios") return cmpFilasHtml("n", cmpComp.nervios || [], {
+      campos: CMP_NERV_NERV, etiq: (x) => (x === "largoNervio" ? "Largo del nervio" : "Ancho desarrollado"), etC: "N.°", uni: "m²",
+      copiar: ["anchoNervio"], titulo: "Nervios reparados (si los hay)", agregar: "Agregar nervios"
+    });
+    return "";
   }
-  if (seg && cmpComp.segsOn) {
-    const segs = cmpComp.segs || [];
-    return `<div class="campo" style="grid-column:1 / -1">
-      <span>${esc(a.etiquetas[cc] || CMP_TXT[cc])} · ${segs.length} ${segs.length === 1 ? "tramo" : "tramos"}</span>
-      ${segs.map((v, i) => `<div style="display:flex;gap:6px;margin-bottom:5px">
-        <input data-seg="${i}" inputmode="decimal" value="${esc(v)}" placeholder="0,00" style="text-align:right;font-weight:600" />
-        <button class="btn btn-rojo-linea" style="width:auto;padding:6px 11px" data-segdel="${i}">✕</button></div>`).join("")}
-      <div style="display:flex;gap:8px;align-items:center;margin-top:2px">
-        <button class="btn btn-linea" style="width:auto;padding:6px 11px;font-size:13px" data-segadd>+ agregar</button>
-        <button class="btn btn-linea" style="width:auto;padding:6px 11px;font-size:13px" data-segoff>una sola</button>
-        <b class="mono" id="cmSegSuma" style="margin-left:auto">Σ ${cmpFmt(cmpRed(cmpSegSuma()))} m</b>
-      </div></div>`;
+  const fm = cmpFilasDe(a);
+  if (fm) {
+    if (cc === "cantidad" || (fm.campos.indexOf(cc) > 0)) return ""; // la cantidad va en cada renglón; las medidas, juntas
+    if (cc === fm.campos[0]) {
+      const k = cmpFactorCm(a), conProf = fm.campos.indexOf("profundidad") >= 0;
+      const o = { campos: fm.campos, etiq: et, k, cm: !!a.medidaCm, uni: fm.modo === "largo" ? "m" : "m²", copiar: ["profundidad"] };
+      if (fm.modo === "area") Object.assign(o, { formas: true, resta: true, agregar: "Agregar área",
+        // La profundidad no entra en la superficie: el subtotal muestra el área y, si hay, el volumen del parche.
+        subTxt: (r) => { const ar = cmpFilaVal(r, fm.par, k); return (ar < 0 ? "− " : "") + cmpFmt(Math.abs(ar)) + " m²" + (conProf && cmpStr(r.profundidad) ? " · " + cmpFmt(Math.abs(cmpFilaVal(r, fm.campos, k)), 3) + " m³" : ""); },
+        totTxt: (f) => "Σ " + cmpFmt(cmpFilasVal(f, fm.par, k)) + " m²" + (conProf ? " · " + cmpFmt(cmpFilasVal(f, fm.campos, k), 3) + " m³" : "") });
+      if (fm.modo === "tramos") Object.assign(o, { agregar: "Agregar tramo",
+        subTxt: (r) => cmpFmt(Math.abs(cmpNum(r.c, 1)) * Math.abs(cmpNum(r[fm.par[0]])) * k) + " m · " + cmpFmt(Math.abs(cmpFilaVal(r, fm.par, k))) + " m²",
+        totTxt: (f) => "Σ " + cmpFmt(cmpFilasLargo(f, fm.par[0], k)) + " m · " + cmpFmt(cmpFilasVal(f, fm.par, k)) + " m²" });
+      if (fm.modo === "largo") Object.assign(o, { resta: true, agregar: "Agregar tramo" });
+      return cmpFilasHtml("c", cmpComp.filas || [], o);
+    }
   }
   return `<label class="campo"><span>${esc(a.etiquetas[cc] || CMP_TXT[cc])}</span>
     <input data-base="${cc}" inputmode="decimal" style="text-align:right;font-weight:600"
       value="${esc(cmpComp.base[cc] == null ? (cc === "cantidad" ? "1" : "") : cmpComp.base[cc])}"
-      placeholder="${cc === "cantidad" ? "1" : "0,00"}" />
-    ${seg ? `<button class="btn btn-linea" style="width:auto;padding:4px 11px;font-size:12px;margin-top:6px" data-segon>Σ sumar varias</button>` : ""}
-    ${zonaPar && cc === "ancho" ? `<button class="btn btn-linea" style="width:auto;padding:4px 11px;font-size:12px;margin-top:6px" data-zonaon>Σ sumar varias zonas</button>` : ""}</label>`;
+      placeholder="${cc === "cantidad" ? "1" : "0,00"}" /></label>`;
 }
 function cmpAlcanceHtml(comp, p, e, inc) {
   if (!inc || (p.unidad !== "m2" && p.unidad !== "m")) return "";
@@ -4741,24 +5042,11 @@ function cmpAlcanceHtml(comp, p, e, inc) {
   let campo = "";
   if (parcial) {
     if (e.segsOn) {
-      const segs = e.segs || [];
-      const filas = segs.map((sg, i) => esArea
-        ? `<div style="display:flex;gap:6px;align-items:center;margin-bottom:5px">
-            <input data-cseg="${comp.partida}|${i}|a" inputmode="decimal" value="${esc(sg.a || "")}" placeholder="ancho" style="text-align:right" />
-            <span style="opacity:.6">×</span>
-            <input data-cseg="${comp.partida}|${i}|b" inputmode="decimal" value="${esc(sg.b || "")}" placeholder="alto" style="text-align:right" />
-            <button class="btn btn-rojo-linea" style="width:auto;padding:6px 10px" data-csegdel="${comp.partida}|${i}">✕</button></div>`
-        : `<div style="display:flex;gap:6px;align-items:center;margin-bottom:5px">
-            <input data-cseg="${comp.partida}|${i}|a" inputmode="decimal" value="${esc(sg.a || "")}" placeholder="longitud" style="text-align:right" />
-            <button class="btn btn-rojo-linea" style="width:auto;padding:6px 10px" data-csegdel="${comp.partida}|${i}">✕</button></div>`).join("");
-      campo = `<div class="campo" style="margin:8px 0 0">
-        <span>${esArea ? "Áreas intervenidas" : "Tramos intervenidos"} · ${segs.length} ${segs.length === 1 ? "renglón" : "renglones"}</span>
-        ${filas}
-        <div style="display:flex;gap:8px;align-items:center;margin-top:2px">
-          <button class="btn btn-linea" style="width:auto;padding:6px 11px;font-size:13px" data-csegadd="${comp.partida}">+ agregar</button>
-          <button class="btn btn-linea" style="width:auto;padding:6px 11px;font-size:13px" data-csegoff="${comp.partida}">una sola</button>
-          <b class="mono" data-cqtot="${comp.partida}" style="margin-left:auto">Σ ${cmpFmt(cmpCompParcial(p, e))} ${CMP_UNI[p.unidad]}</b>
-        </div></div>`;
+      campo = `<div style="margin:8px 0 0">
+        ${cmpFilasHtml("p:" + comp.partida, e.segs || [], esArea
+          ? { campos: ["ancho", "alto"], etiq: (x) => (x === "ancho" ? "Ancho" : "Alto"), uni: "m²", formas: true, resta: true, sinAyuda: true, titulo: comp.labCampo || "Áreas intervenidas", agregar: "Agregar área" }
+          : { campos: ["largo"], etiq: () => "Longitud", uni: "m", resta: true, sinAyuda: true, titulo: comp.labCampo || "Tramos intervenidos", agregar: "Agregar tramo" })}
+        <button class="btn btn-linea" style="width:auto;padding:5px 10px;font-size:12px;margin-top:-4px" data-csegoff="${comp.partida}">Volver a una sola cantidad</button></div>`;
     } else {
       campo = `<label class="campo" style="margin:8px 0 0"><span>${comp.labCampo || (esArea ? "Superficie intervenida" : "Longitud intervenida")} (${CMP_UNI[p.unidad]})</span>
         <input data-cant="${comp.partida}" inputmode="decimal" style="text-align:right" value="${esc(e.cant || "")}" placeholder="0,00" />
@@ -4778,6 +5066,18 @@ function cmpPintarCompuesta() {
   const base = cmpBaseCompuesta();
 
   const auxCampo = (a.id === "encamisado") ? "ancho" : "";
+  const fm = cmpFilasDe(a);
+  // Primer renglón desde los campos sueltos (así llega lo que ya estaba escrito)
+  const filaDesde = (campos, cant) => { const r = cmpFilaNueva(campos); r.c = cmpStr(cant) || "1"; for (const x of campos) r[x] = cmpStr(cmpComp.base[x]); return r; };
+  if (fm && (!cmpComp.filas || !cmpComp.filas.length)) cmpComp.filas = [filaDesde(fm.campos, cmpComp.base.cantidad)];
+  if (a.baseCalc === "techo_nervado") {
+    if (!cmpComp.filas || !cmpComp.filas.length) cmpComp.filas = [filaDesde(CMP_NERV_LOSA, "1")];
+    if (!cmpComp.nervios || !cmpComp.nervios.length) {
+      const r = cmpFilaNueva(CMP_NERV_NERV);
+      r.c = cmpStr(cmpComp.base.nervios) || "1"; r.largoNervio = cmpStr(cmpComp.base.largoNervio); r.anchoNervio = cmpStr(cmpComp.base.anchoNervio);
+      cmpComp.nervios = [r];
+    }
+  }
   const dims = a.campos.map((cc) => cmpCampoHtml(a, cc)).join("");
 
   const comps = a.componentes.map((comp) => {
@@ -4798,9 +5098,12 @@ function cmpPintarCompuesta() {
   }).join("");
 
   const incl = a.componentes.filter((x) => cmpIncluido(x));
+  const recC = cmpRecientes(4).compuestas;
 
   cont.innerHTML = `
     ${cmpDictadoHtml()}
+    ${recC.length ? `<div class="etiq" style="margin-top:0">Usadas en esta inspección</div>
+    <div class="pildoras">${recC.map((id) => { const x = cmpCompuesta(id); return x ? `<button data-recc="${esc(id)}" class="${id === cmpComp.id ? "on" : ""}" style="${cmpPildoraRec}">⊞ ${esc(x.nombre)}</button>` : ""; }).join("")}</div>` : ""}
     <label class="campo"><span>Partida compuesta</span>
       <select id="cmCompSel">
         ${cmpComp.id === "__medida" ? `<option value="__medida" selected>${esc((cmpMedidaDef && cmpMedidaDef.nombre) || "Compuesta a medida")}</option>` : ""}
@@ -4833,6 +5136,10 @@ function cmpPintarCompuesta() {
   document.getElementById("cmCompSel").onchange = (e) => {
     cmpCapturar(); cmpComp = { id: e.target.value, base: {}, comps: {}, carasFrisar: 0, carasPintar: 0 }; rComputos();
   };
+  cont.querySelectorAll("[data-recc]").forEach((btn) => (btn.onclick = () => {
+    if (btn.dataset.recc === cmpComp.id) return;
+    cmpCapturar(); cmpComp = { id: btn.dataset.recc, base: {}, comps: {}, carasFrisar: 0, carasPintar: 0 }; rComputos();
+  }));
   const bDicAbrir = document.getElementById("cmDictarAbrir");
   if (bDicAbrir) bDicAbrir.onclick = () => { cmpDictado.abierto = true; rComputos(); };
   const bDicCerrar = document.getElementById("cmDictarCerrar");
@@ -4848,49 +5155,7 @@ function cmpPintarCompuesta() {
       cmpActualizarComp();
     };
   });
-  cont.querySelectorAll("[data-seg]").forEach((i) => {
-    i.oninput = (e) => {
-      cmpComp.segs[+e.target.dataset.seg] = e.target.value;
-      const sm = document.getElementById("cmSegSuma");
-      if (sm) sm.textContent = "Σ " + cmpFmt(cmpRed(cmpSegSuma())) + " m";
-      cmpActualizarComp();
-    };
-  });
-  cont.querySelectorAll("[data-segon]").forEach((b) => (b.onclick = () => {
-    cmpComp.segsOn = true;
-    if (!cmpComp.segs || !cmpComp.segs.length) cmpComp.segs = [cmpComp.base[a.sumable] || ""];
-    cmpPintarCompuesta();
-  }));
-  cont.querySelectorAll("[data-segoff]").forEach((b) => (b.onclick = () => { cmpComp.segsOn = false; cmpPintarCompuesta(); }));
-  cont.querySelectorAll("[data-segadd]").forEach((b) => (b.onclick = () => { (cmpComp.segs = cmpComp.segs || []).push(""); cmpPintarCompuesta(); }));
-  cont.querySelectorAll("[data-segdel]").forEach((b) => (b.onclick = () => {
-    cmpComp.segs.splice(+b.dataset.segdel, 1);
-    if (!cmpComp.segs.length) cmpComp.segsOn = false;
-    cmpPintarCompuesta();
-  }));
-  cont.querySelectorAll("[data-zona]").forEach((i) => {
-    i.oninput = (e) => {
-      const [idx, campo] = e.target.dataset.zona.split("|");
-      cmpComp.segs = cmpComp.segs || [];
-      cmpComp.segs[+idx] = cmpComp.segs[+idx] || { a: "", b: "" };
-      cmpComp.segs[+idx][campo] = e.target.value;
-      const sm = document.getElementById("cmZonaSuma");
-      if (sm) sm.textContent = "Σ " + cmpFmt(cmpRed(cmpZonaSuma(a))) + " m²";
-      cmpActualizarComp();
-    };
-  });
-  cont.querySelectorAll("[data-zonaon]").forEach((b) => (b.onclick = () => {
-    cmpComp.segsOn = true;
-    if (!cmpComp.segs || !cmpComp.segs.length) cmpComp.segs = [{ a: cmpComp.base.largo || "", b: cmpComp.base.ancho || "" }];
-    cmpPintarCompuesta();
-  }));
-  cont.querySelectorAll("[data-zonaoff]").forEach((b) => (b.onclick = () => { cmpComp.segsOn = false; cmpPintarCompuesta(); }));
-  cont.querySelectorAll("[data-zonaadd]").forEach((b) => (b.onclick = () => { (cmpComp.segs = cmpComp.segs || []).push({ a: "", b: "" }); cmpPintarCompuesta(); }));
-  cont.querySelectorAll("[data-zonadel]").forEach((b) => (b.onclick = () => {
-    cmpComp.segs.splice(+b.dataset.zonadel, 1);
-    if (!cmpComp.segs.length) cmpComp.segsOn = false;
-    cmpPintarCompuesta();
-  }));
+  cmpFilasWire(cont, cmpActualizarComp, cmpPintarCompuesta);
   cont.querySelectorAll("[data-caras]").forEach((b) => {
     b.onclick = () => {
       const [tipo, n] = b.dataset.caras.split("|");
@@ -4899,7 +5164,11 @@ function cmpPintarCompuesta() {
       cmpPintarCompuesta();
     };
   });
-  if (auxCampo) cmpAuxWire(cont, "cmB_" + auxCampo, (v) => { cmpComp.base[auxCampo] = v; });
+  if (auxCampo) cmpAuxWire(cont, "cmB_" + auxCampo, (v) => {
+    const f = fm && cmpComp.filas;
+    if (f && f.length && fm.campos.indexOf(auxCampo) >= 0) f[f.length - 1][auxCampo] = v;
+    else cmpComp.base[auxCampo] = v;
+  });
   cont.querySelectorAll("[data-inc]").forEach((btn) => {
     btn.onclick = () => {
       const k = btn.dataset.inc;
@@ -4931,35 +5200,16 @@ function cmpPintarCompuesta() {
   cont.querySelectorAll("[data-csegon]").forEach((b) => (b.onclick = () => {
     const k = b.dataset.csegon; const e = (cmpComp.comps[k] = cmpComp.comps[k] || {});
     e.segsOn = true;
-    if (!e.segs || !e.segs.length) e.segs = [{ a: e.cant || "", b: "" }];
+    const pc = cmpPartida(k);
+    if (!e.segs || !e.segs.length) {
+      if (pc && pc.unidad === "m2") e.segs = [cmpFilaNueva(["ancho", "alto"])];
+      else { const r = cmpFilaNueva(["largo"]); r.largo = cmpStr(e.cant); e.segs = [r]; }
+    }
     cmpPintarCompuesta();
   }));
   cont.querySelectorAll("[data-csegoff]").forEach((b) => (b.onclick = () => {
     const k = b.dataset.csegoff; (cmpComp.comps[k] = cmpComp.comps[k] || {}).segsOn = false; cmpPintarCompuesta();
   }));
-  cont.querySelectorAll("[data-csegadd]").forEach((b) => (b.onclick = () => {
-    const k = b.dataset.csegadd; const e = (cmpComp.comps[k] = cmpComp.comps[k] || {});
-    (e.segs = e.segs || []).push({ a: "", b: "" }); cmpPintarCompuesta();
-  }));
-  cont.querySelectorAll("[data-csegdel]").forEach((b) => (b.onclick = () => {
-    const [k, i] = b.dataset.csegdel.split("|"); const e = cmpComp.comps[k] || {};
-    if (e.segs) e.segs.splice(+i, 1);
-    if (e.segs && !e.segs.length) e.segsOn = false;
-    cmpPintarCompuesta();
-  }));
-  cont.querySelectorAll("[data-cseg]").forEach((i) => {
-    i.oninput = (ev) => {
-      const [k, idx, campo] = ev.target.dataset.cseg.split("|");
-      const e = (cmpComp.comps[k] = cmpComp.comps[k] || {});
-      e.segs = e.segs || [];
-      e.segs[+idx] = e.segs[+idx] || { a: "", b: "" };
-      e.segs[+idx][campo] = ev.target.value;
-      const p = cmpPartida(k);
-      const t = cont.querySelector('[data-cqtot="' + k + '"]');
-      if (t) t.textContent = "Σ " + cmpFmt(cmpCompParcial(p, e)) + " " + CMP_UNI[p.unidad];
-      cmpActualizarComp();
-    };
-  });
   cmpPinturaWire(cont);
   cmpBarraActualizar(a.magnitud, cmpFmt(base), CMP_UNI[a.unidad]);
 }
@@ -4987,10 +5237,9 @@ async function cmpGuardarCompuesta(mantenerZona) {
   const errs = [];
   if (!String(cmpBorrador.zona || "").trim()) errs.push("Indique la zona donde tomó la medida.");
   const incl = a.componentes.filter((x) => cmpIncluido(x));
+  const fm = cmpFilasDe(a);
   for (const cc of a.campos) {
-    if (cmpComp.segsOn && a.sumable === cc) continue;
-    if (cmpComp.segsOn && a.sumableArea && (cc === "largo" || cc === "ancho")) continue;
-    if (cmpComp.segsOn && cc === "cantidad" && !a.sumableArea) continue;
+    if (fm && (cc === "cantidad" || fm.campos.indexOf(cc) >= 0)) continue;
     if (a.baseCalc) continue;
     const esInfo = a.camposInfo && a.camposInfo.indexOf(cc) >= 0;
     // Un campo "info" (como profundidad) no entra en la superficie, pero si
@@ -5002,9 +5251,17 @@ async function cmpGuardarCompuesta(mantenerZona) {
     const v = cmpNum(cmpComp.base[cc], cc === "cantidad" ? 1 : NaN);
     if (!Number.isFinite(v) || v <= 0) errs.push((a.etiquetas[cc] || CMP_TXT[cc]) + " debe ser mayor que cero.");
   }
+  if (fm) {
+    // La profundidad solo hace falta si se genera algo por volumen (mortero)
+    const porVolumen = incl.some((x) => x.base === "volumen");
+    errs.push(...cmpFilasErrores(cmpComp.filas, fm.campos, (x) => a.etiquetas[x] || CMP_TXT[x] || x, { camposOpc: porVolumen ? [] : ["profundidad"] }));
+  }
+  if (a.baseCalc === "techo_nervado") {
+    const etN = { largo: "El largo de la losa", ancho: "El ancho de la losa", largoNervio: "El largo del nervio", anchoNervio: "El ancho desarrollado del nervio" };
+    errs.push(...cmpFilasErrores(cmpComp.filas, CMP_NERV_LOSA, (x) => etN[x], { opcional: true }));
+    errs.push(...cmpFilasErrores(cmpComp.nervios, CMP_NERV_NERV, (x) => etN[x], { opcional: true }));
+  }
   if (a.baseCalc && cmpBaseCompuesta() <= 0) errs.push("La superficie a reparar debe ser mayor que cero.");
-  if (cmpComp.segsOn && a.sumable && cmpSegSuma() <= 0) errs.push("Agregue al menos un tramo con longitud mayor que cero.");
-  if (cmpComp.segsOn && a.sumableArea && cmpZonaSuma(a) <= 0) errs.push("Agregue al menos una zona con largo y ancho mayores que cero.");
   if (!incl.length) errs.push("Debe incluir al menos una partida.");
   for (const x of incl) if (cmpCantidadComponente(x) <= 0)
     errs.push("La cantidad de la partida " + x.partida + " debe ser mayor que cero.");
@@ -5038,8 +5295,11 @@ async function cmpGuardarCompuesta(mantenerZona) {
       unidad: x.unidad || p.unidad, parcialFijo: q, parcial: q,
       marcada: !!cmpBorrador.marcada,
       derivada: true, grupo: gid, compuesta: a.nombre,
-      baseMedida: (x.base === "volumen"
-        ? (cmpFmt(cmpBaseCompuesta()) + " m² × " + cmpFmt(cmpNum(cmpComp.base.profundidad)) + (a.medidaCm ? " cm (prof.)" : " m (prof.)") + " = " + cmpFmt(cmpBaseDe(x), 3) + " m³")
+      baseMedida: (x.base === "largo" && fm && fm.modo === "area"
+        ? "longitud de las áreas que suman = " + cmpFmt(cmpBaseDe(x)) + " m"
+        : x.base === "volumen"
+        ? (fm ? "largo × ancho × profundidad " + cmpFilasTxt(cmpComp.filas, fm.campos) + (a.medidaCm ? " (en cm)" : "") + " = " + cmpFmt(cmpBaseDe(x), 3) + " m³"
+          : cmpFmt(cmpBaseCompuesta()) + " m² × " + cmpFmt(cmpNum(cmpComp.base.profundidad)) + (a.medidaCm ? " cm (prof.)" : " m (prof.)") + " = " + cmpFmt(cmpBaseDe(x), 3) + " m³")
         : baseTxt) + (x.factor !== 1 ? "  ×" + x.factor : "") +
         (x.caras ? "  ·  " + cmpCarasDe(x.caras) + (cmpCarasDe(x.caras) === 1 ? " cara" : " caras") : "") +
         ((e.alcance || x.alcanceDef) === "parcial" ? "  ·  alcance parcial declarado" : ""),
@@ -5372,8 +5632,21 @@ async function rMedir() {
     } else {
       cmpBorrador.fijo = null;
       if (!cmpBorrador.dims) cmpBorrador.dims = {};
-      cmpBorrador.dims.cantidad = "1";
-      cmpBorrador.dims.largo = cmpFmt(valor);
+      const D = cmpBorrador.dims, f = D.filas;
+      if (f && f.length && "largo" in f[0]) {
+        // En el último renglón si está vacío; si no, en uno nuevo
+        const ult = f[f.length - 1];
+        if (!cmpStr(ult.largo)) ult.largo = cmpFmt(valor);
+        else {
+          const n = cmpFilaNueva(cmpCamposDeFilas(f));
+          n.largo = cmpFmt(valor);
+          if ("diametro" in n) n.diametro = ult.diametro || "";
+          f.push(n);
+        }
+      } else {
+        D.cantidad = "1";
+        D.largo = cmpFmt(valor);
+      }
     }
     cmpMed = null;
     nav({ n: "computos", volverA: st.pantalla.volverA });
@@ -5407,11 +5680,28 @@ function cmpOrdenVisual(lineas) {
   return bloques.flatMap((b) => b.items);
 }
 
+/* Partidas y compuestas ya usadas en esta inspección, la más reciente primero:
+   atajos para no buscar en la lista la misma partida cada vez, y lo que queda
+   seleccionado de entrada al abrir la app o al agregar otra partida. */
+function cmpRecientes(n) {
+  const orden = cmpDe(st.insp).lineas.slice().sort((x, y) => cmpStr(y.ts).localeCompare(cmpStr(x.ts)));
+  const partidas = [], compuestas = [];
+  for (const l of orden) {
+    if (l.derivada) {
+      const a = catTodasCompuestas().find((x) => x.nombre === l.compuesta);
+      if (a && compuestas.indexOf(a.id) < 0) compuestas.push(a.id);
+    } else if (l.partida !== "99.99" && cmpPartida(l.partida) && partidas.indexOf(l.partida) < 0) partidas.push(l.partida);
+  }
+  return { partidas: partidas.slice(0, n || 4), compuestas: compuestas.slice(0, n || 4) };
+}
+const cmpPildoraRec = `max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap`;
+
 function rComputos() {
   const c = cmpDe(st.insp);
   const b = st.insp.edificio;
-  if (!cmpBorrador.partida) cmpBorrador.partida = CMP_CAT[0].codigo;
-  if (!cmpComp.id) cmpComp = { id: CMP_COMPUESTAS[0].id, base: {}, comps: {}, carasFrisar: 0, carasPintar: 0 };
+  const rec = cmpRecientes(4);
+  if (!cmpBorrador.partida) cmpBorrador.partida = rec.partidas[0] || CMP_CAT[0].codigo;
+  if (!cmpComp.id) cmpComp = { id: rec.compuestas[0] || CMP_COMPUESTAS[0].id, base: {}, comps: {}, carasFrisar: 0, carasPintar: 0 };
 
   let grupo = "", opts = "";
   for (const p of catTodasPartidas()) {
@@ -5500,6 +5790,8 @@ function rComputos() {
       ${catCrearHtml("computos")}
 
       <div id="cmSimple" ${simple ? "" : 'style="display:none"'}>
+        ${rec.partidas.length ? `<div class="etiq" style="margin-top:0">Usadas en esta inspección</div>
+        <div class="pildoras">${rec.partidas.map((cod) => { const pr = cmpPartida(cod); return `<button data-recp="${esc(cod)}" class="${cod === cmpBorrador.partida ? "on" : ""}" style="${cmpPildoraRec}">${esc(cod)} ${esc(pr ? pr.descripcion : "")}</button>`; }).join("")}</div>` : ""}
         <label class="campo"><span>Partida</span><select id="cmPart">${opts}</select></label>
         ${cmpBorrador.partida === "99.99" ? `
         <label class="campo"><span>Descripción de la partida</span><input id="cmOtroDesc" value="${esc(cmpBorrador.otroDesc || "")}" placeholder="Describa el trabajo" /></label>
@@ -5604,6 +5896,10 @@ function rComputos() {
 
   const pt = document.getElementById("cmPart");
   if (pt) pt.onchange = (e) => { cmpBorrador.partida = e.target.value; cmpBorrador.dims = {}; cmpBorrador.atipicoOk = false; rComputos(); };
+  $app.querySelectorAll("[data-recp]").forEach((btn) => (btn.onclick = () => {
+    if (btn.dataset.recp === cmpBorrador.partida) return;
+    cmpCapturar(); cmpBorrador.partida = btn.dataset.recp; cmpBorrador.dims = {}; cmpBorrador.atipicoOk = false; rComputos();
+  }));
   const od = document.getElementById("cmOtroDesc");
   if (od) od.oninput = (e) => { cmpBorrador.otroDesc = e.target.value; };
   const ou = document.getElementById("cmOtroUni");
@@ -5688,6 +5984,7 @@ function rComputos() {
     }
     l.unidad = p.unidad;
     l.factor = p.unidad === "kg" ? (CMP_CABILLA[l.diametro] || 1) : 1;
+    if (l.filas) delete l.factor;
     l.parcial = cmpParcial(l, p);
     if (cmpEditId) {
       const ied = c.lineas.findIndex((x) => x.id === cmpEditId);
@@ -5762,6 +6059,7 @@ function rComputos() {
       nivel: u.nivel, nivelId: u.nivelId || "", zonaSel: "", elemento: "", obs: u.obs || "", fotos: [],
       dims: cmpCampos(cmpPartida(u.partida)).reduce((o, k) => { o[k] = u[k]; return o; }, {}),
       pintura: u.pintura ? { tipo: u.pintura.tipo, colorHex: u.pintura.colorHex || "", colorNombre: u.pintura.colorNombre || "", colorManual: true } : {} };
+    if (u.filas && u.filas.length) cmpBorrador.dims.filas = u.filas.map((r) => Object.assign({}, r));
     rComputos();
   };
 
@@ -6397,6 +6695,7 @@ async function dashExportarExcel(c, b) {
       { header: "Zona", key: "zona", width: 16 },
       { header: "Nivel", key: "nivel", width: 14 },
       { header: "Observación", key: "obs", width: 36 },
+      { header: "Medidas", key: "medidas", width: 34 },
       { header: "Origen", key: "origen", width: 14 },
       { header: "Cantidad", key: "cantidad", width: 12 },
       { header: "Unidad", key: "unidad", width: 9 },
@@ -6409,7 +6708,7 @@ async function dashExportarExcel(c, b) {
       const row = ws.addRow({
         codigo: l.partida, partida: p.descripcion || "",
         elemento: l.elemento || "", zona: l.zona || "", nivel: l.nivel || "",
-        obs: l.obs || "", origen: DASH_ORIGEN_TXT[l.origen] || l.origen || "",
+        obs: l.obs || "", medidas: cmpMedidasTxt(l), origen: DASH_ORIGEN_TXT[l.origen] || l.origen || "",
         cantidad: cmpNum(l.parcial), unidad: CMP_UNI[l.unidad] || l.unidad || "",
         marcada: l.marcada ? "Sí" : ""
       });
@@ -6574,7 +6873,8 @@ async function dashExportarPDF(c, b) {
       const tituloLineas = pdf.splitTextToSize(titulo, anchoTexto).slice(0, 2);
       const ubic = [l.elemento, l.zona].filter(Boolean).join(" · ");
       const obsLineas = l.obs ? pdf.splitTextToSize("Observación: " + l.obs, anchoTexto).slice(0, 3) : [];
-      const derivLineas = (l.derivada && l.baseMedida) ? pdf.splitTextToSize("Derivado de: " + l.baseMedida, anchoTexto).slice(0, 2) : [];
+      const derivLineas = (l.derivada && l.baseMedida) ? pdf.splitTextToSize("Derivado de: " + l.baseMedida, anchoTexto).slice(0, 2)
+        : (l.filas && l.filas.length) ? pdf.splitTextToSize("Medidas: " + cmpFilasTxt(l.filas), anchoTexto).slice(0, 2) : [];
       const textoAlto = 4.6 * tituloLineas.length + (ubic ? 4.3 : 0) + 3.9 * obsLineas.length + 3.6 * derivLineas.length + 7;
       const altoTarjeta = Math.max(altoFoto, textoAlto) + 5;
 
